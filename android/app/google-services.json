@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "943688238219",
+    "project_id": "havruta-app",
+    "storage_bucket": "havruta-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:943688238219:android:3bf03ae83406e54b43c08e",
+        "android_client_info": {
+          "package_name": "com.example.havruta"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9ZnLfaWOLL5Je44iHWoREk3DNee-oU6o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
