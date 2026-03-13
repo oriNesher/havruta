@@ -1,0 +1,207 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'services/firestore_service.dart';
+
+class CompetitionInviteSection extends StatefulWidget {
+  final String competitionId;
+  final String competitionTitle;
+  final String currentUserUid;
+
+  const CompetitionInviteSection({
+    super.key,
+    required this.competitionId,
+    required this.competitionTitle,
+    required this.currentUserUid,
+  });
+
+  @override
+  State<CompetitionInviteSection> createState() =>
+      _CompetitionInviteSectionState();
+}
+
+class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
+  final TextEditingController usernameController = TextEditingController();
+  final FirestoreService firestoreService = FirestoreService();
+
+  bool isLoading = false;
+
+  Future<void> inviteUser() async {
+    final username = usernameController.text.trim();
+
+    if (username.isEmpty) return;
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final userDoc = await firestoreService.findUserByUsername(username);
+
+      if (userDoc == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User not found')),
+        );
+        return;
+      }
+
+      final data = userDoc.data();
+      final toUid = data['uid'];
+      final toUsername = data['username'] ?? '';
+
+      if (toUid == widget.currentUserUid) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You cannot invite yourself')),
+        );
+        return;
+      }
+
+      final exists = await firestoreService.inviteAlreadyExists(
+        competitionId: widget.competitionId,
+        toUid: toUid,
+      );
+
+      if (exists) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invite already sent')),
+        );
+        return;
+      }
+
+      await firestoreService.sendCompetitionInvite(
+        competitionId: widget.competitionId,
+        competitionTitle: widget.competitionTitle,
+        fromUid: widget.currentUserUid,
+        toUid: toUid,
+        toUsername: toUsername,
+      );
+
+      usernameController.clear();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invite sent')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending invite: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    usernameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Invite users',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: usernameController,
+                decoration: const InputDecoration(
+                  labelText: 'Username',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: isLoading ? null : inviteUser,
+              child: isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Invite'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Pending invites',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: firestoreService.getCompetitionPendingInvites(
+            widget.competitionId,
+          ),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return Text('Error: ${snapshot.error}');
+            }
+
+            final docs = snapshot.data?.docs ?? [];
+
+            if (docs.isEmpty) {
+              return const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('No pending invites'),
+              );
+            }
+
+            return Column(
+              children: docs.map((doc) {
+                final data = doc.data();
+                final username = data['toUsername'] ?? '';
+                final toUid = data['toUid'] ?? '';
+
+                return Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.mail_outline),
+                    title: Text(
+                      username.toString().isNotEmpty ? username : toUid,
+                    ),
+                    subtitle: const Text('Pending'),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
