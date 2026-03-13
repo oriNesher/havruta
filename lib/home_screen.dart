@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'create_competition_screen.dart';
+import 'competition_details_screen.dart';
 import 'services/firestore_service.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -97,36 +98,58 @@ class HomeScreen extends StatelessWidget {
                     itemCount: docs.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
-                      final competition = docs[index].data();
+                      final doc = docs[index];
+                      final competition = doc.data();
 
+                      final competitionId = doc.id;
                       final title = competition['title'] ?? '';
                       final description = competition['description'] ?? '';
-                      final targetNumber = competition['targetNumber'];
+                      final targetNumber = competition['targetNumber'] ?? 0;
                       final unit = competition['unit'] ?? '';
                       final status = competition['status'] ?? '';
+                      final createdBy = competition['createdBy'] ?? '';
 
-                      return Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CompetitionDetailsScreen(
+                                competitionId: competitionId,
+                                title: title,
+                                description: description,
+                                targetNumber: targetNumber,
+                                unit: unit,
+                                status: status,
+                                createdBy: createdBy,
                               ),
-                              if (description.toString().isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Text(description),
+                            ),
+                          );
+                        },
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (description.toString().isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(description),
+                                ],
+                                const SizedBox(height: 12),
+                                Text('Target: $targetNumber $unit'),
+                                const SizedBox(height: 4),
+                                Text('Status: $status'),
                               ],
-                              const SizedBox(height: 12),
-                              Text('Target: $targetNumber $unit'),
-                              const SizedBox(height: 4),
-                              Text('Status: $status'),
-                            ],
+                            ),
                           ),
                         ),
                       );

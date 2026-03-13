@@ -27,7 +27,7 @@ class FirestoreService {
     required String unit,
     required String createdBy,
   }) async {
-    await _db.collection('competitions').add({
+    final competitionRef = await _db.collection('competitions').add({
       'title': title,
       'description': description,
       'targetNumber': targetNumber,
@@ -37,6 +37,12 @@ class FirestoreService {
       'status': 'active',
       'winnerUid': null,
       'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    await competitionRef.collection('participants').doc(createdBy).set({
+      'uid': createdBy,
+      'progress': 0,
+      'joinedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -51,4 +57,22 @@ class FirestoreService {
   Future<QuerySnapshot<Map<String, dynamic>>> getCompetitions() {
     return _db.collection('competitions').get();
   }
+
+  /// Add new participant to an existing competition
+  Future<void> addParticipant({
+  required String competitionId,
+  required String uid,
+}) async {
+  final competitionRef = _db.collection('competitions').doc(competitionId);
+
+  await competitionRef.update({
+    'participantUids': FieldValue.arrayUnion([uid]),
+  });
+
+  await competitionRef.collection('participants').doc(uid).set({
+    'uid': uid,
+    'progress': 0,
+    'joinedAt': FieldValue.serverTimestamp(),
+  });
+}
 }
