@@ -4,10 +4,7 @@ class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   /// Create user document in Firestore
-  Future<void> createUser({
-    required String uid,
-    required String email,
-  }) async {
+  Future<void> createUser({required String uid, required String email}) async {
     await _db.collection('users').doc(uid).set({
       'uid': uid,
       'email': email,
@@ -36,10 +33,18 @@ class FirestoreService {
       'targetNumber': targetNumber,
       'unit': unit,
       'createdBy': createdBy,
+      'participantUids': [createdBy],
       'status': 'active',
       'winnerUid': null,
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> getUserCompetitions(String uid) {
+    return _db
+        .collection('competitions')
+        .where('participantUids', arrayContains: uid)
+        .snapshots();
   }
 
   /// Get all competitions
