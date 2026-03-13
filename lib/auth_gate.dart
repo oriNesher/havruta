@@ -11,46 +11,55 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
-    return StreamBuilder(
+    return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnapshot) {
-
-        // עדיין בטעינה
         if (authSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // לא מחובר
+        if (authSnapshot.hasError) {
+          return const Scaffold(
+            body: Center(child: Text('Auth error')),
+          );
+        }
+
         if (!authSnapshot.hasData) {
           return const LoginScreen();
         }
 
         final user = authSnapshot.data!;
 
-        return FutureBuilder(
+        return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           future: FirebaseFirestore.instance
-              .collection("users")
+              .collection('users')
               .doc(user.uid)
               .get(),
           builder: (context, userSnapshot) {
-
             if (userSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
               );
             }
 
-            final data = userSnapshot.data?.data();
+            if (userSnapshot.hasError) {
+              return const Scaffold(
+                body: Center(child: Text('User data error')),
+              );
+            }
 
-            // אין username
-            if (data == null || data["username"] == null) {
+            if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
               return const UsernameScreen();
             }
 
-            // הכל תקין
+            final data = userSnapshot.data!.data();
+
+            if (data == null || data['username'] == null) {
+              return const UsernameScreen();
+            }
+
             return const HomeScreen();
           },
         );
