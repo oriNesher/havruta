@@ -109,49 +109,98 @@ class HomeScreen extends StatelessWidget {
                       final status = competition['status'] ?? '';
                       final createdBy = competition['createdBy'] ?? '';
 
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => CompetitionDetailsScreen(
-                                competitionId: competitionId,
-                                title: title,
-                                description: description,
-                                targetNumber: targetNumber,
-                                unit: unit,
-                                status: status,
-                                createdBy: createdBy,
+                      return StreamBuilder<
+                          DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('competitions')
+                            .doc(competitionId)
+                            .collection('participants')
+                            .doc(user.uid)
+                            .snapshots(),
+                        builder: (context, participantSnapshot) {
+                          final participantData = participantSnapshot.data?.data();
+                          final myProgress = participantData?['progress'] ?? 0;
+
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CompetitionDetailsScreen(
+                                    competitionId: competitionId,
+                                    title: title,
+                                    description: description,
+                                    targetNumber: targetNumber,
+                                    unit: unit,
+                                    status: status,
+                                    createdBy: createdBy,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      title,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    if (description.toString().isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Text(description),
+                                    ],
+                                    const SizedBox(height: 12),
+                                    Text('Target: $targetNumber $unit'),
+                                    const SizedBox(height: 4),
+                                    Text('Status: $status'),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'My progress: $myProgress / $targetNumber',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          onPressed: () async {
+                                            try {
+                                              await firebaseService
+                                                  .incrementMyProgress(
+                                                competitionId: competitionId,
+                                                uid: user.uid,
+                                              );
+                                            } catch (e) {
+                                              if (!context.mounted) return;
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Error updating progress: $e',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                          icon: const Icon(Icons.add_circle),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           );
                         },
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  title,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                if (description.toString().isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  Text(description),
-                                ],
-                                const SizedBox(height: 12),
-                                Text('Target: $targetNumber $unit'),
-                                const SizedBox(height: 4),
-                                Text('Status: $status'),
-                              ],
-                            ),
-                          ),
-                        ),
                       );
                     },
                   );
