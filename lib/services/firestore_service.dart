@@ -79,7 +79,6 @@ class FirestoreService {
         .collection('competitions')
         .doc(competitionId)
         .collection('participants')
-        .orderBy('joinedAt')
         .snapshots();
   }
 
@@ -220,9 +219,7 @@ class FirestoreService {
       'joinedAt': FieldValue.serverTimestamp(),
     });
 
-    await inviteRef.update({
-      'status': 'accepted',
-    });
+    await inviteRef.update({'status': 'accepted'});
   }
 
   /// Decline an invite
@@ -230,5 +227,12 @@ class FirestoreService {
     await _db.collection('competition_invites').doc(inviteId).update({
       'status': 'declined',
     });
+  }
+
+  /// Save FCM token for notification service
+  Future<void> saveUserFcmToken(String uid, String token) async {
+    await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      'fcmTokens': FieldValue.arrayUnion([token]),
+    }, SetOptions(merge: true));
   }
 }

@@ -15,11 +15,7 @@ class HomeScreen extends StatelessWidget {
     final firestoreService = FirestoreService();
 
     if (user == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('No logged in user'),
-        ),
-      );
+      return const Scaffold(body: Center(child: Text('No logged in user')));
     }
 
     return Scaffold(
@@ -41,10 +37,7 @@ class HomeScreen extends StatelessWidget {
           children: [
             Text(
               'Hello ${user.email ?? ""}',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
-              ),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 20),
             SizedBox(
@@ -64,10 +57,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 24),
             const Text(
               'Pending Invites',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -76,9 +66,7 @@ class HomeScreen extends StatelessWidget {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
-                      child: CircularProgressIndicator(),
-                    ),
+                    child: Center(child: CircularProgressIndicator()),
                   );
                 }
 
@@ -124,16 +112,15 @@ class HomeScreen extends StatelessWidget {
                                   child: ElevatedButton(
                                     onPressed: () async {
                                       try {
-                                        final username =
-                                            await firestoreService.getMyUsername(
-                                          user.uid,
-                                        );
+                                        final username = await firestoreService
+                                            .getMyUsername(user.uid);
 
                                         if (username == null ||
                                             username.trim().isEmpty) {
                                           if (!context.mounted) return;
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             const SnackBar(
                                               content: Text(
                                                 'Could not find your username',
@@ -145,15 +132,16 @@ class HomeScreen extends StatelessWidget {
 
                                         await firestoreService
                                             .acceptCompetitionInvite(
-                                          inviteId: inviteId,
-                                          competitionId: competitionId,
-                                          uid: user.uid,
-                                          username: username,
-                                        );
+                                              inviteId: inviteId,
+                                              competitionId: competitionId,
+                                              uid: user.uid,
+                                              username: username,
+                                            );
                                       } catch (e) {
                                         if (!context.mounted) return;
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text(
                                               'Error accepting invite: $e',
@@ -172,12 +160,13 @@ class HomeScreen extends StatelessWidget {
                                       try {
                                         await firestoreService
                                             .declineCompetitionInvite(
-                                          inviteId: inviteId,
-                                        );
+                                              inviteId: inviteId,
+                                            );
                                       } catch (e) {
                                         if (!context.mounted) return;
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text(
                                               'Error declining invite: $e',
@@ -202,10 +191,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 24),
             const Text(
               'My Competitions',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -214,9 +200,7 @@ class HomeScreen extends StatelessWidget {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
-                      child: CircularProgressIndicator(),
-                    ),
+                    child: Center(child: CircularProgressIndicator()),
                   );
                 }
 
@@ -289,13 +273,14 @@ class HomeScreen extends StatelessWidget {
                                       try {
                                         await firestoreService
                                             .incrementMyProgress(
-                                          competitionId: competitionId,
-                                          uid: user.uid,
-                                        );
+                                              competitionId: competitionId,
+                                              uid: user.uid,
+                                            );
                                       } catch (e) {
                                         if (!context.mounted) return;
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text(
                                               'Error updating progress: $e',
@@ -313,20 +298,21 @@ class HomeScreen extends StatelessWidget {
                               const SizedBox(height: 16),
                               const Text(
                                 'Participants',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 10),
-                              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                              StreamBuilder<
+                                QuerySnapshot<Map<String, dynamic>>
+                              >(
                                 stream: firestoreService
                                     .getCompetitionParticipants(competitionId),
                                 builder: (context, participantsSnapshot) {
                                   if (participantsSnapshot.connectionState ==
                                       ConnectionState.waiting) {
                                     return const Padding(
-                                      padding:
-                                          EdgeInsets.symmetric(vertical: 8),
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: 8,
+                                      ),
                                       child: Center(
                                         child: CircularProgressIndicator(),
                                       ),
@@ -364,30 +350,37 @@ class HomeScreen extends StatelessWidget {
                                       final progress =
                                           participant['progress'] ?? 0;
 
-                                      final name = username.toString().isNotEmpty
+                                      final name =
+                                          username.toString().isNotEmpty
                                           ? username
                                           : uid;
 
                                       final isMe = uid == user.uid;
 
                                       final value = targetNumber > 0
-                                          ? (progress / targetNumber)
-                                                .clamp(0.0, 1.0)
+                                          ? (progress / targetNumber).clamp(
+                                              0.0,
+                                              1.0,
+                                            )
                                           : 0.0;
 
                                       return Container(
-                                        margin:
-                                            const EdgeInsets.only(bottom: 10),
+                                        margin: const EdgeInsets.only(
+                                          bottom: 10,
+                                        ),
                                         padding: const EdgeInsets.all(12),
                                         decoration: BoxDecoration(
                                           color: isMe
                                               ? Theme.of(context)
-                                                  .colorScheme
-                                                  .primary
-                                                  .withValues(alpha: 0.08)
-                                              : Colors.grey.shade100,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
+                                                    .colorScheme
+                                                    .primary
+                                                    .withValues(alpha: 0.08)
+                                              : Theme.of(context)
+                                                    .colorScheme
+                                                    .surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: Column(
                                           children: [

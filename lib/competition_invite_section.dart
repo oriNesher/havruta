@@ -40,9 +40,9 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
 
       if (userDoc == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('User not found')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('User not found')));
         return;
       }
 
@@ -65,9 +65,9 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
 
       if (exists) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invite already sent')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Invite already sent')));
         return;
       }
 
@@ -82,14 +82,14 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
       usernameController.clear();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invite sent')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Invite sent')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error sending invite: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error sending invite: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -114,46 +114,37 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
           alignment: Alignment.centerLeft,
           child: Text(
             'Invite users',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: usernameController,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: isLoading ? null : inviteUser,
-              child: isLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Invite'),
-            ),
-          ],
+        TextField(
+          controller: usernameController,
+          decoration: const InputDecoration(
+            labelText: 'Username',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: isLoading ? null : inviteUser,
+            child: isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Invite'),
+          ),
         ),
         const SizedBox(height: 16),
         const Align(
           alignment: Alignment.centerLeft,
           child: Text(
             'Pending invites',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ),
         const SizedBox(height: 8),
@@ -183,6 +174,7 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
             }
 
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: docs.map((doc) {
                 final data = doc.data();
                 final username = data['toUsername'] ?? '';

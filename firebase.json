@@ -1,1 +1,40 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"havruta-app","appId":"1:943688238219:android:3bf03ae83406e54b43c08e","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"havruta-app","configurations":{"android":"1:943688238219:android:3bf03ae83406e54b43c08e","ios":"1:943688238219:ios:eb5bde2a3894ebdb43c08e","web":"1:943688238219:web:64ffe33b31f0850043c08e"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "havruta-app",
+          "appId": "1:943688238219:android:3bf03ae83406e54b43c08e",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "havruta-app",
+          "configurations": {
+            "android": "1:943688238219:android:3bf03ae83406e54b43c08e",
+            "ios": "1:943688238219:ios:eb5bde2a3894ebdb43c08e",
+            "web": "1:943688238219:web:64ffe33b31f0850043c08e"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint",
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ]
+}
