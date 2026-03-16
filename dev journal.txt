@@ -9,7 +9,60 @@
 
 O---------------------------------------------------------------------------------------------------
 
-ווו
+|||
+
+O---------------------------------------------------------------------------------------------------
+
+16/3/2026
+
+הוספת מנגנון Push Notifications להתקדמות בתחרויות באמצעות Firebase Cloud Functions
+
+בקצרה:
+היום הוספתי מנגנון backend שמזהה כאשר משתתף בתחרות מעדכן את ההתקדמות שלו ושולח התראה לשאר המשתתפים. המימוש נעשה באמצעות Firebase Cloud Functions שמאזינות לשינויים במסמכי המשתתפים ב-Firestore. כאשר שדה progress עולה, הפונקציה מאתרת את שאר המשתתפים בתחרות, שולפת את טוקני ה-FCM שלהם מאוסף users, ושולחת להם Push Notification. בנוסף הוגדרה סביבת Firebase Functions מלאה לפרויקט ובוצע deploy ראשון לענן.
+
+הרחבה:
+
+מבנה הקבצים המרכזי כרגע
+
+קבצים שהיו קיימים כבר:
+create_competition_screen.dart
+competition_details_screen.dart
+competition_invite_section.dart
+firestore_service.dart
+app_theme.dart
+
+קבצים שנוספו היום:
+
+functions/src/index.ts – קובץ הפונקציות הראשי שמכיל את onParticipantProgressUpdate, פונקציה שמאזינה לשינויים ב-Firestore ושולחת התראות.
+functions/package.json – קובץ שמנהל את תלויות ה-backend ואת סקריפטי ה-build וה-lint.
+functions/tsconfig.json – קונפיגורציית TypeScript עבור סביבת הפונקציות.
+firebase.json – קובץ קונפיגורציה של Firebase CLI שמגדיר את שירותי Firebase ואת תהליך ה-deploy.
+.firebaserc – קובץ שמקשר את הפרויקט המקומי לפרויקט Firebase בענן (havruta-app).
+
+פירוט השינויים שבוצעו היום ב-Firebase
+
+נוסף שימוש ב-Firebase Cloud Functions (דור 2).
+נוצר Trigger שמאזין לשינויים במסמכים במסלול:
+
+competitions/{competitionId}/participants/{participantId}
+
+כאשר progress מתעדכן עולה הפונקציה:
+מזהה את המשתמש שביצע את העדכון
+שולפת את שאר המשתתפים בתחרות
+מאתרת את fcmTokens שלהם מתוך users
+שולחת להם Push Notification
+
+בנוסף הוגדר Blaze Plan, Runtime של Node.js 22 ו-cleanup policy ל-container images.
+
+חבילות שהתווספו לפרויקט
+firebase-functions – מאפשרת יצירת Cloud Functions שמגיבות לאירועים כמו שינוי ב-Firestore.
+firebase-admin – מאפשרת לפונקציות לגשת ל-Firestore ולשלוח הודעות דרך FCM.
+typescript – משמש לכתיבת קוד הפונקציות ולתרגום שלו לפני deploy.
+eslint – כלי בדיקת קוד שמוודא תקינות וסגנון לפני deploy.
+
+מבנה הנתונים ב-Firestore לא השתנה היום – הפיתוח התמקד בצד השרת בלבד.
+
+הצעד הבא הוא להוציא גרסת בטא לשתי החנויות (google pkay & apple store)
 
 O---------------------------------------------------------------------------------------------------
 
