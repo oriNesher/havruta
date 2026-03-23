@@ -1,4 +1,4 @@
-package com.example.havruta
+package com.orinesher.havruta
 
 import io.flutter.embedding.android.FlutterActivity
 

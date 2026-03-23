@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:943688238219:android:3bf03ae83406e54b43c08e",
+        "mobilesdk_app_id": "1:943688238219:android:a436e63155008cb743c08e",
         "android_client_info": {
-          "package_name": "com.example.havruta"
+          "package_name": "com.orinesher.havruta"
         }
       },
       "oauth_client": [],
