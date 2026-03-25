@@ -235,4 +235,38 @@ class FirestoreService {
       'fcmTokens': FieldValue.arrayUnion([token]),
     }, SetOptions(merge: true));
   }
+
+  /// Delete competition (only creator should be allowed from UI / rules)
+  Future<void> deleteCompetition(String competitionId) async {
+    final competitionRef = _db.collection('competitions').doc(competitionId);
+
+    // Delete participants subcollection
+    final participantsSnapshot = await competitionRef
+        .collection('participants')
+        .get();
+
+    for (final doc in participantsSnapshot.docs) {
+      await doc.reference.delete();
+    }
+
+    // Delete pending / related invites
+    final invitesSnapshot = await _db
+        .collection('competition_invites')
+        .where('competitionId', isEqualTo: competitionId)
+        .get();
+
+    for (final doc in invitesSnapshot.docs) {
+      await doc.reference.delete();
+    }
+
+    // Delete competition document itself
+    await competitionRef.delete();
+  }
+
+  /// Get username by uid
+  Future<String?> getUsernameByUid(String uid) async {
+    final doc = await _db.collection('users').doc(uid).get();
+    final data = doc.data();
+    return data?['username'] as String?;
+  }
 }

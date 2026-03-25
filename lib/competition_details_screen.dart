@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firestore_service.dart';
 import 'competition_invite_section.dart';
 
-class CompetitionDetailsScreen extends StatelessWidget {
+class CompetitionDetailsScreen extends StatefulWidget {
   final String competitionId;
   final String title;
   final String description;
@@ -26,13 +26,88 @@ class CompetitionDetailsScreen extends StatelessWidget {
   });
 
   @override
+  State<CompetitionDetailsScreen> createState() =>
+      _CompetitionDetailsScreenState();
+}
+
+class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
+  final FirestoreService firestoreService = FirestoreService();
+  bool _isDeleting = false;
+
+  Future<void> _confirmAndDeleteCompetition() async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Delete Competition'),
+          content: const Text(
+            'Are you sure you want to delete this competition? This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true) return;
+
+    setState(() {
+      _isDeleting = true;
+    });
+
+    try {
+      await firestoreService.deleteCompetition(widget.competitionId);
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Competition deleted successfully')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isDeleting = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete competition: $e')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final firestoreService = FirestoreService();
+    final isCreator = user != null && user.uid == widget.createdBy;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Competition Details'),
+        actions: [
+          if (isCreator)
+            IconButton(
+              onPressed: _isDeleting ? null : _confirmAndDeleteCompetition,
+              icon: _isDeleting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline),
+              tooltip: 'Delete Competition',
+            ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -41,35 +116,29 @@ class CompetitionDetailsScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                title,
+                widget.title,
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
               const SizedBox(height: 16),
 
-              if (description.isNotEmpty) ...[
+              if (widget.description.isNotEmpty) ...[
                 Text(
                   'Description',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
-                Text(description),
+                Text(widget.description),
                 const SizedBox(height: 20),
               ],
 
-              Text(
-                'Target',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('Target', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
-              Text('$targetNumber $unit'),
+              Text('${widget.targetNumber} ${widget.unit}'),
               const SizedBox(height: 20),
 
-              Text(
-                'Status',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('Status', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
-              Text(status),
+              Text(widget.status),
               const SizedBox(height: 20),
 
               Text(
@@ -77,7 +146,26 @@ class CompetitionDetailsScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 6),
-              Text(createdBy),
+              FutureBuilder<String?>(
+                future: firestoreService.getUsernameByUid(widget.createdBy),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Text('Loading...');
+                  }
+
+                  if (snapshot.hasError) {
+                    return Text(widget.createdBy);
+                  }
+
+                  final username = snapshot.data;
+
+                  return Text(
+                    username != null && username.isNotEmpty
+                        ? username
+                        : widget.createdBy,
+                  );
+                },
+              ),
               const SizedBox(height: 20),
 
               Text(
@@ -85,13 +173,35 @@ class CompetitionDetailsScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 6),
-              Text(competitionId),
+              Text(widget.competitionId),
               const SizedBox(height: 32),
+
+              if (isCreator) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _isDeleting
+                        ? null
+                        : _confirmAndDeleteCompetition,
+                    icon: _isDeleting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.delete_outline),
+                    label: Text(
+                      _isDeleting ? 'Deleting...' : 'Delete Competition',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
 
               if (user != null) ...[
                 CompetitionInviteSection(
-                  competitionId: competitionId,
-                  competitionTitle: title,
+                  competitionId: widget.competitionId,
+                  competitionTitle: widget.title,
                   currentUserUid: user.uid,
                 ),
                 const SizedBox(height: 32),
@@ -105,15 +215,13 @@ class CompetitionDetailsScreen extends StatelessWidget {
 
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: firestoreService.getCompetitionParticipants(
-                  competitionId,
+                  widget.competitionId,
                 ),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Padding(
                       padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Center(
-                        child: CircularProgressIndicator(),
-                      ),
+                      child: Center(child: CircularProgressIndicator()),
                     );
                   }
 
@@ -141,12 +249,13 @@ class CompetitionDetailsScreen extends StatelessWidget {
                       final uid = participant['uid'] ?? '';
                       final progress = participant['progress'] ?? 0;
 
-                      final displayName =
-                          username.toString().isNotEmpty ? username : uid;
+                      final displayName = username.toString().isNotEmpty
+                          ? username
+                          : uid;
                       final isMe = user != null && uid == user.uid;
 
-                      final value = targetNumber > 0
-                          ? (progress / targetNumber).clamp(0.0, 1.0)
+                      final value = widget.targetNumber > 0
+                          ? (progress / widget.targetNumber).clamp(0.0, 1.0)
                           : 0.0;
 
                       return Container(
@@ -154,13 +263,12 @@ class CompetitionDetailsScreen extends StatelessWidget {
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: isMe
-                              ? Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withOpacity(0.08)
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest,
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.08)
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -178,7 +286,7 @@ class CompetitionDetailsScreen extends StatelessWidget {
                                   ),
                                 ),
                                 Text(
-                                  '$progress / $targetNumber',
+                                  '$progress / ${widget.targetNumber}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                   ),
