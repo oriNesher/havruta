@@ -34,7 +34,7 @@ class _UsernameScreenState extends State<UsernameScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => const HomeScreen(),
+        builder: (context) => HomeScreen(),
       ),
     );
   }

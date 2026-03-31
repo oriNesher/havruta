@@ -15,7 +15,8 @@ class CreateCompetitionScreen extends StatefulWidget {
 class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   final titleController = TextEditingController();
   final descriptionController = TextEditingController();
-  final targetNumberController = TextEditingController();
+  final goalTitleController = TextEditingController();
+  final targetValueController = TextEditingController();
   final unitController = TextEditingController();
 
   final firestoreService = FirestoreService();
@@ -28,12 +29,14 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   Future<void> createCompetition() async {
     final title = titleController.text.trim();
     final description = descriptionController.text.trim();
-    final targetNumberText = targetNumberController.text.trim();
+    final goalTitle = goalTitleController.text.trim();
+    final targetValueText = targetValueController.text.trim();
     final unit = unitController.text.trim();
 
     if (title.isEmpty ||
         description.isEmpty ||
-        targetNumberText.isEmpty ||
+        goalTitle.isEmpty ||
+        targetValueText.isEmpty ||
         unit.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all fields')),
@@ -41,11 +44,11 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
       return;
     }
 
-    final targetNumber = int.tryParse(targetNumberText);
+    final targetValue = int.tryParse(targetValueText);
 
-    if (targetNumber == null || targetNumber <= 0) {
+    if (targetValue == null || targetValue <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Target number must be a positive number')),
+        const SnackBar(content: Text('Target value must be a positive number')),
       );
       return;
     }
@@ -75,10 +78,11 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
       final competitionId = await firestoreService.createCompetition(
         title: title,
         description: description,
-        targetNumber: targetNumber,
-        unit: unit,
         createdBy: user!.uid,
         creatorUsername: creatorUsername,
+        goalTitle: goalTitle,
+        targetValue: targetValue,
+        unit: unit,
       );
 
       if (!mounted) return;
@@ -110,7 +114,8 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   void dispose() {
     titleController.dispose();
     descriptionController.dispose();
-    targetNumberController.dispose();
+    goalTitleController.dispose();
+    targetValueController.dispose();
     unitController.dispose();
     super.dispose();
   }
@@ -147,11 +152,21 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
             ),
             const SizedBox(height: 16),
             TextField(
-              controller: targetNumberController,
+              controller: goalTitleController,
+              enabled: !alreadyCreated,
+              decoration: const InputDecoration(
+                labelText: 'My goal',
+                hintText: 'Get fitter / Study more / Read more',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: targetValueController,
               enabled: !alreadyCreated,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Target number',
+                labelText: 'My target value',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -160,8 +175,8 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               controller: unitController,
               enabled: !alreadyCreated,
               decoration: const InputDecoration(
-                labelText: 'Unit',
-                hintText: 'pushups / km / pages',
+                labelText: 'My unit',
+                hintText: 'pushups / minutes / pages / km',
                 border: OutlineInputBorder(),
               ),
             ),

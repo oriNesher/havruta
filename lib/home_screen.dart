@@ -7,12 +7,181 @@ import 'competition_details_screen.dart';
 import 'services/firestore_service.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  HomeScreen({super.key});
+
+  final FirestoreService firestoreService = FirestoreService();
+
+  Future<void> _showAcceptInviteDialog({
+    required BuildContext outerContext,
+    required String inviteId,
+    required String competitionId,
+    required String competitionTitle,
+    required String uid,
+  }) async {
+    final goalTitleController = TextEditingController();
+    final targetValueController = TextEditingController();
+    final unitController = TextEditingController();
+
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: outerContext,
+      barrierDismissible: !isSubmitting,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogInnerContext, setDialogState) {
+            Future<void> submit() async {
+              final goalTitle = goalTitleController.text.trim();
+              final targetValueText = targetValueController.text.trim();
+              final unit = unitController.text.trim();
+
+              if (goalTitle.isEmpty ||
+                  targetValueText.isEmpty ||
+                  unit.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('Please fill all fields')),
+                );
+                return;
+              }
+
+              final targetValue = int.tryParse(targetValueText);
+              if (targetValue == null || targetValue <= 0) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(
+                    content: Text('Target value must be a positive number'),
+                  ),
+                );
+                return;
+              }
+
+              bool acceptedSuccessfully = false;
+
+              setDialogState(() {
+                isSubmitting = true;
+              });
+
+              try {
+                final username = await firestoreService.getMyUsername(uid);
+
+                if (username == null || username.trim().isEmpty) {
+                  if (!dialogContext.mounted) return;
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Could not find your username'),
+                    ),
+                  );
+                  return;
+                }
+
+                await firestoreService.acceptCompetitionInvite(
+                  inviteId: inviteId,
+                  competitionId: competitionId,
+                  uid: uid,
+                  username: username,
+                  goalTitle: goalTitle,
+                  targetValue: targetValue,
+                  unit: unit,
+                );
+
+                acceptedSuccessfully = true;
+
+                if (!dialogContext.mounted) return;
+                Navigator.of(dialogContext).pop();
+
+                ScaffoldMessenger.of(outerContext).showSnackBar(
+                  const SnackBar(content: Text('Invite accepted')),
+                );
+              } catch (e) {
+                if (!dialogContext.mounted) return;
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text('Error accepting invite: $e')),
+                );
+              } finally {
+                if (!acceptedSuccessfully && dialogContext.mounted) {
+                  setDialogState(() {
+                    isSubmitting = false;
+                  });
+                }
+              }
+            }
+
+            return AlertDialog(
+              title: Text('Join "$competitionTitle"'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Define your personal goal for this competition',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: goalTitleController,
+                      enabled: !isSubmitting,
+                      decoration: const InputDecoration(
+                        labelText: 'My goal',
+                        hintText: 'Get fitter / Study more / Read more',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: targetValueController,
+                      enabled: !isSubmitting,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'My target value',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: unitController,
+                      enabled: !isSubmitting,
+                      decoration: const InputDecoration(
+                        labelText: 'My unit',
+                        hintText: 'pushups / minutes / pages / km',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSubmitting ? null : submit,
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Accept'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    goalTitleController.dispose();
+    targetValueController.dispose();
+    unitController.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final firestoreService = FirestoreService();
 
     if (user == null) {
       return const Scaffold(body: Center(child: Text('No logged in user')));
@@ -71,6 +240,7 @@ class HomeScreen extends StatelessWidget {
                 }
 
                 if (snapshot.hasError) {
+                  debugPrint('Pending invites error: ${snapshot.error}');
                   return Text('Error: ${snapshot.error}');
                 }
 
@@ -111,44 +281,13 @@ class HomeScreen extends StatelessWidget {
                                 Expanded(
                                   child: ElevatedButton(
                                     onPressed: () async {
-                                      try {
-                                        final username = await firestoreService
-                                            .getMyUsername(user.uid);
-
-                                        if (username == null ||
-                                            username.trim().isEmpty) {
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'Could not find your username',
-                                              ),
-                                            ),
-                                          );
-                                          return;
-                                        }
-
-                                        await firestoreService
-                                            .acceptCompetitionInvite(
-                                              inviteId: inviteId,
-                                              competitionId: competitionId,
-                                              uid: user.uid,
-                                              username: username,
-                                            );
-                                      } catch (e) {
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Error accepting invite: $e',
-                                            ),
-                                          ),
-                                        );
-                                      }
+                                      await _showAcceptInviteDialog(
+                                        outerContext: context,
+                                        inviteId: inviteId,
+                                        competitionId: competitionId,
+                                        competitionTitle: competitionTitle,
+                                        uid: user.uid,
+                                      );
                                     },
                                     child: const Text('Accept'),
                                   ),
@@ -205,6 +344,7 @@ class HomeScreen extends StatelessWidget {
                 }
 
                 if (snapshot.hasError) {
+                  debugPrint('My competitions error: ${snapshot.error}');
                   return Text('Error: ${snapshot.error}');
                 }
 
@@ -221,8 +361,6 @@ class HomeScreen extends StatelessWidget {
                     final competitionId = doc.id;
                     final title = competition['title'] ?? '';
                     final description = competition['description'] ?? '';
-                    final targetNumber = competition['targetNumber'] ?? 0;
-                    final unit = competition['unit'] ?? '';
                     final status = competition['status'] ?? '';
                     final createdBy = competition['createdBy'] ?? '';
 
@@ -236,8 +374,6 @@ class HomeScreen extends StatelessWidget {
                               competitionId: competitionId,
                               title: title,
                               description: description,
-                              targetNumber: targetNumber,
-                              unit: unit,
                               status: status,
                               createdBy: createdBy,
                             ),
@@ -263,36 +399,7 @@ class HomeScreen extends StatelessWidget {
                                 Text(description),
                               ],
                               const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text('Target: $targetNumber $unit'),
-                                  ),
-                                  IconButton(
-                                    onPressed: () async {
-                                      try {
-                                        await firestoreService
-                                            .incrementMyProgress(
-                                              competitionId: competitionId,
-                                              uid: user.uid,
-                                            );
-                                      } catch (e) {
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Error updating progress: $e',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    icon: const Icon(Icons.add_circle),
-                                  ),
-                                ],
-                              ),
+                              Text('Type: asymmetric'),
                               const SizedBox(height: 4),
                               Text('Status: $status'),
                               const SizedBox(height: 16),
@@ -320,6 +427,7 @@ class HomeScreen extends StatelessWidget {
                                   }
 
                                   if (participantsSnapshot.hasError) {
+                                    debugPrint('Participants stream error: ${participantsSnapshot.error}');
                                     return Text(
                                       'Error: ${participantsSnapshot.error}',
                                     );
@@ -339,7 +447,17 @@ class HomeScreen extends StatelessWidget {
                                   participants.sort((a, b) {
                                     final progressA = a['progress'] ?? 0;
                                     final progressB = b['progress'] ?? 0;
-                                    return progressB.compareTo(progressA);
+                                    final targetA = a['targetValue'] ?? 0;
+                                    final targetB = b['targetValue'] ?? 0;
+
+                                    final percentA = targetA > 0
+                                        ? progressA / targetA
+                                        : 0.0;
+                                    final percentB = targetB > 0
+                                        ? progressB / targetB
+                                        : 0.0;
+
+                                    return percentB.compareTo(percentA);
                                   });
 
                                   return Column(
@@ -349,6 +467,11 @@ class HomeScreen extends StatelessWidget {
                                       final uid = participant['uid'] ?? '';
                                       final progress =
                                           participant['progress'] ?? 0;
+                                      final targetValue =
+                                          participant['targetValue'] ?? 0;
+                                      final goalTitle =
+                                          participant['goalTitle'] ?? '';
+                                      final unit = participant['unit'] ?? '';
 
                                       final name =
                                           username.toString().isNotEmpty
@@ -357,12 +480,16 @@ class HomeScreen extends StatelessWidget {
 
                                       final isMe = uid == user.uid;
 
-                                      final value = targetNumber > 0
-                                          ? (progress / targetNumber).clamp(
-                                              0.0,
-                                              1.0,
-                                            )
+                                      final progressValue = targetValue > 0
+                                          ? (progress / targetValue)
                                           : 0.0;
+
+                                      final progressBarValue = progressValue
+                                          .clamp(0.0, 1.0);
+
+                                      final percentText = targetValue > 0
+                                          ? '${(progressValue * 100).toStringAsFixed(0)}%'
+                                          : '0%';
 
                                       return Container(
                                         margin: const EdgeInsets.only(
@@ -383,6 +510,8 @@ class HomeScreen extends StatelessWidget {
                                           ),
                                         ),
                                         child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Row(
                                               children: [
@@ -397,16 +526,64 @@ class HomeScreen extends StatelessWidget {
                                                   ),
                                                 ),
                                                 Text(
-                                                  '$progress / $targetNumber',
+                                                  percentText,
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                            const SizedBox(height: 8),
+                                            if (goalTitle
+                                                .toString()
+                                                .isNotEmpty) ...[
+                                              const SizedBox(height: 6),
+                                              Text(goalTitle),
+                                            ],
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              '$progress / $targetValue ${unit.toString()}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            if (isMe) ...[
+                                              const SizedBox(height: 8),
+                                              Align(
+                                                alignment:
+                                                    Alignment.centerRight,
+                                                child: IconButton(
+                                                  onPressed: () async {
+                                                    try {
+                                                      await firestoreService
+                                                          .incrementMyProgress(
+                                                            competitionId:
+                                                                competitionId,
+                                                            uid: user.uid,
+                                                          );
+                                                    } catch (e) {
+                                                      if (!context.mounted) {
+                                                        return;
+                                                      }
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(
+                                                            'Error updating progress: $e',
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }
+                                                  },
+                                                  icon: const Icon(
+                                                    Icons.add_circle,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                            const SizedBox(height: 4),
                                             LinearProgressIndicator(
-                                              value: value,
+                                              value: progressBarValue,
                                             ),
                                           ],
                                         ),

@@ -26,33 +26,37 @@ class FirestoreService {
     return data?['username'];
   }
 
-  /// Create a new competition
+  /// Create a new asymmetric competition
   /// Returns the new competition ID
   Future<String> createCompetition({
     required String title,
     required String description,
-    required int targetNumber,
-    required String unit,
     required String createdBy,
     required String creatorUsername,
+    required String goalTitle,
+    required int targetValue,
+    required String unit,
   }) async {
     final competitionRef = await _db.collection('competitions').add({
       'title': title,
       'description': description,
-      'targetNumber': targetNumber,
-      'unit': unit,
       'createdBy': createdBy,
       'participantUids': [createdBy],
       'status': 'active',
       'winnerUid': null,
+      'type': 'asymmetric',
       'createdAt': FieldValue.serverTimestamp(),
     });
 
     await competitionRef.collection('participants').doc(createdBy).set({
       'uid': createdBy,
       'username': creatorUsername,
+      'goalTitle': goalTitle,
+      'targetValue': targetValue,
+      'unit': unit,
       'progress': 0,
       'joinedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
 
     return competitionRef.id;
@@ -87,6 +91,9 @@ class FirestoreService {
     required String competitionId,
     required String uid,
     required String username,
+    required String goalTitle,
+    required int targetValue,
+    required String unit,
   }) async {
     final competitionRef = _db.collection('competitions').doc(competitionId);
 
@@ -97,8 +104,12 @@ class FirestoreService {
     await competitionRef.collection('participants').doc(uid).set({
       'uid': uid,
       'username': username,
+      'goalTitle': goalTitle,
+      'targetValue': targetValue,
+      'unit': unit,
       'progress': 0,
       'joinedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -113,7 +124,10 @@ class FirestoreService {
         .doc(competitionId)
         .collection('participants')
         .doc(uid)
-        .update({'progress': progress});
+        .update({
+          'progress': progress,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
   }
 
   /// Update progress of participant by one
@@ -126,7 +140,31 @@ class FirestoreService {
         .doc(competitionId)
         .collection('participants')
         .doc(uid)
-        .update({'progress': FieldValue.increment(1)});
+        .update({
+          'progress': FieldValue.increment(1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+  }
+
+  /// Update participant personal goal inside a competition
+  Future<void> updateParticipantGoal({
+    required String competitionId,
+    required String uid,
+    required String goalTitle,
+    required int targetValue,
+    required String unit,
+  }) async {
+    await _db
+        .collection('competitions')
+        .doc(competitionId)
+        .collection('participants')
+        .doc(uid)
+        .update({
+          'goalTitle': goalTitle,
+          'targetValue': targetValue,
+          'unit': unit,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
   }
 
   /// Search users by usernameLower
@@ -198,28 +236,62 @@ class FirestoreService {
         .snapshots();
   }
 
-  /// Accept an invite
+  /// Accept an invite and define personal goal for this competition
   Future<void> acceptCompetitionInvite({
     required String inviteId,
     required String competitionId,
     required String uid,
     required String username,
+    required String goalTitle,
+    required int targetValue,
+    required String unit,
   }) async {
     final competitionRef = _db.collection('competitions').doc(competitionId);
+    final participantRef = competitionRef.collection('participants').doc(uid);
     final inviteRef = _db.collection('competition_invites').doc(inviteId);
 
-    await competitionRef.update({
-      'participantUids': FieldValue.arrayUnion([uid]),
-    });
+    print('ACCEPT_INVITE_SERVICE: start');
+    print('ACCEPT_INVITE_SERVICE: inviteId=$inviteId');
+    print('ACCEPT_INVITE_SERVICE: competitionId=$competitionId');
+    print('ACCEPT_INVITE_SERVICE: uid=$uid');
+    print('ACCEPT_INVITE_SERVICE: username=$username');
+    print('ACCEPT_INVITE_SERVICE: goalTitle=$goalTitle');
+    print('ACCEPT_INVITE_SERVICE: targetValue=$targetValue');
+    print('ACCEPT_INVITE_SERVICE: unit=$unit');
 
-    await competitionRef.collection('participants').doc(uid).set({
-      'uid': uid,
-      'username': username,
-      'progress': 0,
-      'joinedAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      print('ACCEPT_INVITE_SERVICE: creating batch');
+      final batch = _db.batch();
 
-    await inviteRef.update({'status': 'accepted'});
+      print('ACCEPT_INVITE_SERVICE: adding competition update to batch');
+      batch.update(competitionRef, {
+        'participantUids': FieldValue.arrayUnion([uid]),
+      });
+
+      print('ACCEPT_INVITE_SERVICE: adding participant set to batch');
+      batch.set(participantRef, {
+        'uid': uid,
+        'username': username,
+        'goalTitle': goalTitle,
+        'targetValue': targetValue,
+        'unit': unit,
+        'progress': 0,
+        'joinedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('ACCEPT_INVITE_SERVICE: adding invite update to batch');
+      batch.update(inviteRef, {'status': 'accepted'});
+
+      print('ACCEPT_INVITE_SERVICE: before batch.commit()');
+      await batch.commit();
+      print('ACCEPT_INVITE_SERVICE: after batch.commit()');
+      print('ACCEPT_INVITE_SERVICE: success');
+    } catch (e, st) {
+      print('ACCEPT_INVITE_SERVICE: ERROR -> $e');
+      print('ACCEPT_INVITE_SERVICE: STACK TRACE: $st');
+      rethrow;
+    }
   }
 
   /// Decline an invite
@@ -240,7 +312,6 @@ class FirestoreService {
   Future<void> deleteCompetition(String competitionId) async {
     final competitionRef = _db.collection('competitions').doc(competitionId);
 
-    // Delete participants subcollection
     final participantsSnapshot = await competitionRef
         .collection('participants')
         .get();
@@ -249,7 +320,6 @@ class FirestoreService {
       await doc.reference.delete();
     }
 
-    // Delete pending / related invites
     final invitesSnapshot = await _db
         .collection('competition_invites')
         .where('competitionId', isEqualTo: competitionId)
@@ -259,7 +329,6 @@ class FirestoreService {
       await doc.reference.delete();
     }
 
-    // Delete competition document itself
     await competitionRef.delete();
   }
 
@@ -268,5 +337,19 @@ class FirestoreService {
     final doc = await _db.collection('users').doc(uid).get();
     final data = doc.data();
     return data?['username'] as String?;
+  }
+
+  Future<bool> isAlreadyParticipant({
+    required String competitionId,
+    required String uid,
+  }) async {
+    final doc = await _db
+        .collection('competitions')
+        .doc(competitionId)
+        .collection('participants')
+        .doc(uid)
+        .get();
+
+    return doc.exists;
   }
 }

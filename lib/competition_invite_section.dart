@@ -58,6 +58,19 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
         return;
       }
 
+      final alreadyParticipant = await firestoreService.isAlreadyParticipant(
+        competitionId: widget.competitionId,
+        uid: toUid,
+      );
+
+      if (alreadyParticipant) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User is already participating')),
+        );
+        return;
+      }
+
       final exists = await firestoreService.inviteAlreadyExists(
         competitionId: widget.competitionId,
         toUid: toUid,
@@ -161,6 +174,7 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
             }
 
             if (snapshot.hasError) {
+              debugPrint('Pending invites error: ${snapshot.error}');
               return Text('Error: ${snapshot.error}');
             }
 

@@ -9,8 +9,6 @@ class CompetitionDetailsScreen extends StatefulWidget {
   final String competitionId;
   final String title;
   final String description;
-  final int targetNumber;
-  final String unit;
   final String status;
   final String createdBy;
 
@@ -19,8 +17,6 @@ class CompetitionDetailsScreen extends StatefulWidget {
     required this.competitionId,
     required this.title,
     required this.description,
-    required this.targetNumber,
-    required this.unit,
     required this.status,
     required this.createdBy,
   });
@@ -131,9 +127,9 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 const SizedBox(height: 20),
               ],
 
-              Text('Target', style: Theme.of(context).textTheme.titleMedium),
+              Text('Type', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
-              Text('${widget.targetNumber} ${widget.unit}'),
+              const Text('Asymmetric competition'),
               const SizedBox(height: 20),
 
               Text('Status', style: Theme.of(context).textTheme.titleMedium),
@@ -240,7 +236,13 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                   participants.sort((a, b) {
                     final progressA = a['progress'] ?? 0;
                     final progressB = b['progress'] ?? 0;
-                    return progressB.compareTo(progressA);
+                    final targetA = a['targetValue'] ?? 0;
+                    final targetB = b['targetValue'] ?? 0;
+
+                    final percentA = targetA > 0 ? progressA / targetA : 0.0;
+                    final percentB = targetB > 0 ? progressB / targetB : 0.0;
+
+                    return percentB.compareTo(percentA);
                   });
 
                   return Column(
@@ -248,15 +250,24 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                       final username = participant['username'] ?? '';
                       final uid = participant['uid'] ?? '';
                       final progress = participant['progress'] ?? 0;
+                      final goalTitle = participant['goalTitle'] ?? '';
+                      final targetValue = participant['targetValue'] ?? 0;
+                      final unit = participant['unit'] ?? '';
 
                       final displayName = username.toString().isNotEmpty
                           ? username
                           : uid;
                       final isMe = user != null && uid == user.uid;
 
-                      final value = widget.targetNumber > 0
-                          ? (progress / widget.targetNumber).clamp(0.0, 1.0)
+                      final progressRatio = targetValue > 0
+                          ? (progress / targetValue)
                           : 0.0;
+
+                      final progressBarValue = progressRatio.clamp(0.0, 1.0);
+
+                      final percentText = targetValue > 0
+                          ? '${(progressRatio * 100).toStringAsFixed(0)}%'
+                          : '0%';
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -265,13 +276,14 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                           color: isMe
                               ? Theme.of(
                                   context,
-                                ).colorScheme.primary.withOpacity(0.08)
+                                ).colorScheme.primary.withValues(alpha: 0.08)
                               : Theme.of(
                                   context,
                                 ).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
@@ -286,15 +298,28 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                                   ),
                                 ),
                                 Text(
-                                  '$progress / ${widget.targetNumber}',
+                                  percentText,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
                             ),
+                            if (goalTitle.toString().isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(goalTitle),
+                            ],
+                            const SizedBox(height: 6),
+                            Text(
+                              '$progress / $targetValue ${unit.toString()}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                             const SizedBox(height: 8),
-                            LinearProgressIndicator(value: value),
+                            LinearProgressIndicator(
+                              value: progressBarValue,
+                            ),
                           ],
                         ),
                       );

@@ -91,7 +91,7 @@ class _AuthGateState extends State<AuthGate> {
 
             _initNotificationsForUser(user.uid);
 
-            return const HomeScreen();
+            return HomeScreen();
           },
         );
       },
