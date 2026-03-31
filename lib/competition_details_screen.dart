@@ -127,11 +127,6 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 const SizedBox(height: 20),
               ],
 
-              Text('Type', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 6),
-              const Text('Asymmetric competition'),
-              const SizedBox(height: 20),
-
               Text('Status', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
               Text(widget.status),
@@ -162,14 +157,6 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                   );
                 },
               ),
-              const SizedBox(height: 20),
-
-              Text(
-                'Competition ID',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 6),
-              Text(widget.competitionId),
               const SizedBox(height: 32),
 
               if (isCreator) ...[

@@ -204,9 +204,26 @@ class HomeScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Hello ${user.email ?? ""}',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+            FutureBuilder<String?>(
+              future: firestoreService.getMyUsername(user.uid),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Text(
+                    'Hello...',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+                  );
+                }
+
+                final username = snapshot.data;
+
+                return Text(
+                  'Hello ${username ?? user.email ?? ""}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 20),
             SizedBox(
@@ -274,7 +291,23 @@ class HomeScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text('Invited by: $fromUid'),
+                            FutureBuilder<String?>(
+                              future: firestoreService.getUsernameByUid(
+                                fromUid,
+                              ),
+                              builder: (context, usernameSnapshot) {
+                                if (usernameSnapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return Text('Invited by: $fromUid');
+                                }
+
+                                final inviterUsername = usernameSnapshot.data;
+
+                                return Text(
+                                  'Invited by: ${inviterUsername != null && inviterUsername.isNotEmpty ? inviterUsername : fromUid}',
+                                );
+                              },
+                            ),
                             const SizedBox(height: 12),
                             Row(
                               children: [
@@ -427,7 +460,9 @@ class HomeScreen extends StatelessWidget {
                                   }
 
                                   if (participantsSnapshot.hasError) {
-                                    debugPrint('Participants stream error: ${participantsSnapshot.error}');
+                                    debugPrint(
+                                      'Participants stream error: ${participantsSnapshot.error}',
+                                    );
                                     return Text(
                                       'Error: ${participantsSnapshot.error}',
                                     );
