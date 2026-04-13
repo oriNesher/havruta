@@ -9,7 +9,69 @@
 
 O---------------------------------------------------------------------------------------------------
 
+|||
 
+O---------------------------------------------------------------------------------------------------
+
+31/03/2026
+
+ייצוב זרימת אישור הזמנה ושיפור תצוגת משתמשים
+
+בקצרה:
+
+בוצע דיבאג מקיף לבעיה שבה האפליקציה “קפאה” לאחר אישור הזמנה לתחרות, למרות שהנתונים נשמרו בהצלחה ב־Firestore. הבעיה אותרה בלוגיקת ה־UI של הדיאלוג ותוקנה. בנוסף בוצעו שיפורי UX בסיסיים כמו מעבר להצגת username במקום UID ושיפור מבנה ה־HomeScreen.
+
+הרחבה:
+מבנה הקבצים הנוכחי:
+
+auth_gate.dart
+login_screen.dart
+username_screen.dart
+create_competition_screen.dart
+competition_details_screen.dart
+competition_invite_section.dart
+firebase config / setup
+
+home_screen.dart
+
+תיקון flow של dialog לאישור הזמנה (מניעת setState לאחר pop)
+תיקון שימוש ב־BuildContext (הפרדה בין outerContext ל־dialogContext)
+מעבר מ־StatelessWidget ל־StatefulWidget כהכנה להמשך פיתוח
+הצגת username במקום email ב־header
+הצגת username של שולח ההזמנה במקום UID (באמצעות FutureBuilder)
+
+firestore_service.dart
+
+הוספת debug logs לפונקציית acceptCompetitionInvite לצורך איתור התקלה
+ללא שינוי לוגי במבנה הנתונים (רק לצורכי דיבאג)
+מבנה הנתונים ב־Firestore:
+
+השינויים שבוצעו:
+
+competition - נוסף שדה סוג, type: asymmetric
+
+participants (subcollection)
+
+uid
+username
+goalTitle - חדש
+targetValue - חדש
+unit
+progress
+joinedAt
+
+הבעיה נבעה מקריאה ל־setState לאחר סגירת dialog (Navigator.pop)
+תוקנה על ידי:
+הוספת flag (acceptedSuccessfully)
+מניעת setState לאחר הצלחה
+
+תוקנה בעיית שימוש שגוי ב־BuildContext בתוך StatefulBuilder
+נוסף שימוש ב־mounted checks למניעת קריסות UI
+
+נוסף שימוש ב־FutureBuilder להצגת username במקום UID (ל־invites ול־header)
+הערה חשובה (לפי היומן שלך)
+
+זה בדיוק שלב הלעשות דיבאג שכתבתי עליו
 
 O---------------------------------------------------------------------------------------------------
 

@@ -250,25 +250,13 @@ class FirestoreService {
     final participantRef = competitionRef.collection('participants').doc(uid);
     final inviteRef = _db.collection('competition_invites').doc(inviteId);
 
-    print('ACCEPT_INVITE_SERVICE: start');
-    print('ACCEPT_INVITE_SERVICE: inviteId=$inviteId');
-    print('ACCEPT_INVITE_SERVICE: competitionId=$competitionId');
-    print('ACCEPT_INVITE_SERVICE: uid=$uid');
-    print('ACCEPT_INVITE_SERVICE: username=$username');
-    print('ACCEPT_INVITE_SERVICE: goalTitle=$goalTitle');
-    print('ACCEPT_INVITE_SERVICE: targetValue=$targetValue');
-    print('ACCEPT_INVITE_SERVICE: unit=$unit');
-
     try {
-      print('ACCEPT_INVITE_SERVICE: creating batch');
       final batch = _db.batch();
 
-      print('ACCEPT_INVITE_SERVICE: adding competition update to batch');
       batch.update(competitionRef, {
         'participantUids': FieldValue.arrayUnion([uid]),
       });
 
-      print('ACCEPT_INVITE_SERVICE: adding participant set to batch');
       batch.set(participantRef, {
         'uid': uid,
         'username': username,
@@ -280,13 +268,9 @@ class FirestoreService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('ACCEPT_INVITE_SERVICE: adding invite update to batch');
       batch.update(inviteRef, {'status': 'accepted'});
 
-      print('ACCEPT_INVITE_SERVICE: before batch.commit()');
       await batch.commit();
-      print('ACCEPT_INVITE_SERVICE: after batch.commit()');
-      print('ACCEPT_INVITE_SERVICE: success');
     } catch (e, st) {
       print('ACCEPT_INVITE_SERVICE: ERROR -> $e');
       print('ACCEPT_INVITE_SERVICE: STACK TRACE: $st');
@@ -351,5 +335,30 @@ class FirestoreService {
         .get();
 
     return doc.exists;
+  }
+
+  /// Get all events relevant to the user
+  Stream<QuerySnapshot<Map<String, dynamic>>> getHomeEvents(String uid) {
+    return _db
+        .collection('events')
+        .where('unseenByUserUids', arrayContains: uid)
+        .orderBy('lastUpdatedAt', descending: true)
+        .limit(15)
+        .snapshots();
+  }
+
+  /// After showing an event, we want to mark it as seen
+  Future<void> markEventsAsSeen(List<String> eventIds, String uid) async {
+    final batch = _db.batch();
+
+    for (final eventId in eventIds) {
+      final ref = _db.collection('events').doc(eventId);
+
+      batch.update(ref, {
+        'unseenByUserUids': FieldValue.arrayRemove([uid]),
+      });
+    }
+
+    await batch.commit();
   }
 }

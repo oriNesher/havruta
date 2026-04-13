@@ -6,6 +6,8 @@ import 'create_competition_screen.dart';
 import 'competition_details_screen.dart';
 import 'services/firestore_service.dart';
 
+import 'home_events_section.dart';
+
 class HomeScreen extends StatelessWidget {
   HomeScreen({super.key});
 
@@ -225,6 +227,10 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
+            const SizedBox(height: 20),
+
+            HomeEventsSection(uid: user.uid),
+            
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
