@@ -35,6 +35,22 @@ class HomeEventsSection extends StatelessWidget {
     return '${diff.inDays}d ago';
   }
 
+  QueryDocumentSnapshot<Map<String, dynamic>>? pickHeroEvent(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    if (docs.isEmpty) return null;
+
+    // Prefer overtook events
+    for (final doc in docs) {
+      final data = doc.data();
+      if (data['type'] == 'overtook') {
+        return doc;
+      }
+    }
+
+    return docs.first;
+  }
+
   EventUIModel mapEventToUI(Map<String, dynamic> data) {
     final type = data['type'];
     final actorUsername = data['actorUsername'] ?? 'Someone';
@@ -54,7 +70,7 @@ class HomeEventsSection extends StatelessWidget {
             : 'Moved forward in this competition',
         competitionTitle: competitionTitle,
         timeText: timeText,
-        ctaLabel: 'Open',
+        ctaLabel: 'Give a minute',
       );
     }
 
@@ -64,7 +80,7 @@ class HomeEventsSection extends StatelessWidget {
         subtitle: 'You are no longer ahead in this competition',
         competitionTitle: competitionTitle,
         timeText: timeText,
-        ctaLabel: 'Open',
+        ctaLabel: 'Give a minute',
       );
     }
 
@@ -73,7 +89,175 @@ class HomeEventsSection extends StatelessWidget {
       subtitle: 'Something changed in this competition',
       competitionTitle: competitionTitle,
       timeText: timeText,
-      ctaLabel: 'Open',
+      ctaLabel: 'Give a minute',
+    );
+  }
+
+  Widget buildHeroCard(EventUIModel ui) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEDE7FF),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ui.title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            ui.subtitle,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  ui.competitionTitle,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Colors.black45,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                ui.ctaLabel,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildEventCard(EventUIModel ui) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F3F3),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ui.title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            ui.subtitle,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  ui.competitionTitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black45,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                ui.timeText,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.black38,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildDismissibleHero({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required FirestoreService firestoreService,
+  }) {
+    final ui = mapEventToUI(doc.data());
+
+    return Dismissible(
+      key: ValueKey('hero_${doc.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: Colors.redAccent,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Icon(
+          Icons.close,
+          color: Colors.white,
+        ),
+      ),
+      onDismissed: (_) {
+        firestoreService.dismissEventsForUser([doc.id], uid);
+      },
+      child: buildHeroCard(ui),
+    );
+  }
+
+  Widget buildDismissibleEvent({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required FirestoreService firestoreService,
+  }) {
+    final ui = mapEventToUI(doc.data());
+
+    return Dismissible(
+      key: ValueKey(doc.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: Colors.redAccent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Icon(
+          Icons.close,
+          color: Colors.white,
+        ),
+      ),
+      onDismissed: (_) {
+        firestoreService.dismissEventsForUser([doc.id], uid);
+      },
+      child: buildEventCard(ui),
     );
   }
 
@@ -85,100 +269,44 @@ class HomeEventsSection extends StatelessWidget {
       stream: firestoreService.getHomeEvents(uid),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
         }
 
         if (snapshot.hasError) {
-          return Text('Error loading events: ${snapshot.error}');
+          return Text(
+            'Error loading events: ${snapshot.error}',
+          );
         }
 
         final docs = snapshot.data?.docs ?? [];
-
-        /* mark the loaded events as seen
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (docs.isEmpty) return;
-
-          final eventIds = docs.map((doc) => doc.id).toList();
-          firestoreService.markEventsAsSeen(eventIds, uid);
-        });
-        */
 
         if (docs.isEmpty) {
           return const Text('No new events');
         }
 
+        final heroDoc = pickHeroEvent(docs);
+        final feedDocs = docs
+            .where((doc) => doc.id != heroDoc?.id)
+            .toList();
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: docs.map((doc) {
-            final data = doc.data();
-            final ui = mapEventToUI(data);
+          children: [
+            if (heroDoc != null)
+              buildDismissibleHero(
+                doc: heroDoc,
+                firestoreService: firestoreService,
+              ),
 
-            return Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F3F3),
-                borderRadius: BorderRadius.circular(14),
+            ...feedDocs.map(
+              (doc) => buildDismissibleEvent(
+                doc: doc,
+                firestoreService: firestoreService,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    ui.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    ui.subtitle,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          ui.competitionTitle,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.black45,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Row(
-                        children: [
-                          Text(
-                            ui.timeText,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.black38,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            ui.ctaLabel,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
+            ),
+          ],
         );
       },
     );

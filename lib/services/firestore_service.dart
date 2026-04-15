@@ -348,7 +348,7 @@ class FirestoreService {
   }
 
   /// After showing an event, we want to mark it as seen
-  Future<void> markEventsAsSeen(List<String> eventIds, String uid) async {
+  Future<void> dismissEventsForUser(List<String> eventIds, String uid) async {
     final batch = _db.batch();
 
     for (final eventId in eventIds) {

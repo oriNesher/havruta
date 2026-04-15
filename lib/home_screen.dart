@@ -625,6 +625,8 @@ class HomeScreen extends StatelessWidget {
                                             const SizedBox(height: 4),
                                             LinearProgressIndicator(
                                               value: progressBarValue,
+                                              minHeight: 18,
+                                              borderRadius: BorderRadius.all(Radius.circular(7)),
                                             ),
                                           ],
                                         ),
