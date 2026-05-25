@@ -132,6 +132,25 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Progress adds up during the whole competition.\n'
+                'Each participant has their own goal!\n'
+                'The first person to reach their goal wins!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.4,
+                ),
+              ),
+            ),
             TextField(
               controller: titleController,
               enabled: !alreadyCreated,
