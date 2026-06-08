@@ -38,11 +38,11 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
     required String unit,
   }) async {
     final controller = TextEditingController(text: currentProgress.toString());
-    String? errorText;
 
-    await showDialog<void>(
+    final newValue = await showDialog<int>(
       context: context,
       builder: (dialogContext) {
+        String? errorText;
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -83,29 +83,15 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  onPressed: () => Navigator.of(dialogContext).pop(null),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
                   onPressed: errorText != null
                       ? null
-                      : () async {
-                          final newValue = int.tryParse(controller.text);
-                          if (newValue == null) return;
-                          final messenger = ScaffoldMessenger.of(context);
-                          Navigator.of(dialogContext).pop();
-                          try {
-                            await firestoreService.updateProgress(
-                              competitionId: competitionId,
-                              uid: uid,
-                              progress: newValue,
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            messenger.showSnackBar(
-                              SnackBar(content: Text('Failed to update progress: $e')),
-                            );
-                          }
+                      : () {
+                          final value = int.tryParse(controller.text);
+                          Navigator.of(dialogContext).pop(value);
                         },
                   child: const Text('Save'),
                 ),
@@ -116,7 +102,21 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
       },
     );
 
-    controller.dispose();
+    // not disposed: dialog exit animation keeps the TextField mounted past showDialog's return
+    if (newValue == null || !mounted) return;
+
+    try {
+      await firestoreService.updateProgress(
+        competitionId: competitionId,
+        uid: uid,
+        progress: newValue,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update progress: $e')),
+      );
+    }
   }
 
   Future<void> _confirmAndDeleteCompetition() async {
