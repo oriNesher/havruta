@@ -20,8 +20,9 @@ class EventUIModel {
 
 class HomeEventsSection extends StatelessWidget {
   final String uid;
+  final _firestoreService = FirestoreService();
 
-  const HomeEventsSection({super.key, required this.uid});
+  HomeEventsSection({super.key, required this.uid});
 
   String formatTimeAgo(dynamic timestamp) {
     if (timestamp == null) return '';
@@ -263,10 +264,8 @@ class HomeEventsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final firestoreService = FirestoreService();
-
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: firestoreService.getHomeEvents(uid),
+      stream: _firestoreService.getHomeEvents(uid),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -297,13 +296,13 @@ class HomeEventsSection extends StatelessWidget {
             if (heroDoc != null)
               buildDismissibleHero(
                 doc: heroDoc,
-                firestoreService: firestoreService,
+                firestoreService: _firestoreService,
               ),
 
             ...feedDocs.map(
               (doc) => buildDismissibleEvent(
                 doc: doc,
-                firestoreService: firestoreService,
+                firestoreService: _firestoreService,
               ),
             ),
           ],

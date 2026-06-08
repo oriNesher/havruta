@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -272,8 +273,8 @@ class FirestoreService {
 
       await batch.commit();
     } catch (e, st) {
-      print('ACCEPT_INVITE_SERVICE: ERROR -> $e');
-      print('ACCEPT_INVITE_SERVICE: STACK TRACE: $st');
+      debugPrint('ACCEPT_INVITE_SERVICE: ERROR -> $e');
+      debugPrint('ACCEPT_INVITE_SERVICE: STACK TRACE: $st');
       rethrow;
     }
   }
