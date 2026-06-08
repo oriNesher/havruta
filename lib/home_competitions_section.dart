@@ -103,7 +103,7 @@ class HomeCompetitionsSection extends StatelessWidget {
   }
 }
 
-class _ParticipantsList extends StatelessWidget {
+class _ParticipantsList extends StatefulWidget {
   final String competitionId;
   final String currentUid;
   final FirestoreService firestoreService;
@@ -115,9 +115,96 @@ class _ParticipantsList extends StatelessWidget {
   });
 
   @override
+  State<_ParticipantsList> createState() => _ParticipantsListState();
+}
+
+class _ParticipantsListState extends State<_ParticipantsList> {
+  Map<String, int>? _lastSeenProgress;
+  bool _snapshotSaved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSnapshot();
+  }
+
+  Future<void> _loadSnapshot() async {
+    final data = await widget.firestoreService.getCompetitionSnapshot(
+      widget.currentUid,
+      widget.competitionId,
+    );
+    if (mounted) setState(() => _lastSeenProgress = data);
+  }
+
+  void _saveSnapshotOnce(List<Map<String, dynamic>> participants) {
+    if (_snapshotSaved) return;
+    _snapshotSaved = true;
+    final progressMap = {
+      for (final p in participants)
+        (p['uid'] as String): (p['progress'] as num? ?? 0).toInt(),
+    };
+    widget.firestoreService.saveCompetitionSnapshot(
+      widget.currentUid,
+      widget.competitionId,
+      progressMap,
+    );
+  }
+
+  Widget _buildProgressBar(
+    BuildContext context, {
+    required double baseFraction,
+    required double deltaFraction,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final hasDelta = deltaFraction > 0.001;
+
+    return Container(
+      decoration: hasDelta
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(9),
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.secondary.withValues(alpha: 0.45),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                ),
+              ],
+            )
+          : null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: SizedBox(
+          height: 18,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              final baseW = (w * baseFraction).clamp(0.0, w);
+              final deltaW = (w * deltaFraction).clamp(0.0, w - baseW);
+
+              return Row(
+                children: [
+                  if (baseW > 0)
+                    Container(width: baseW, color: colorScheme.primary),
+                  if (deltaW > 0)
+                    Container(width: deltaW, color: colorScheme.secondary),
+                  Expanded(
+                    child: Container(color: colorScheme.surfaceContainerHighest),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: firestoreService.getCompetitionParticipants(competitionId),
+      stream: widget.firestoreService.getCompetitionParticipants(
+        widget.competitionId,
+      ),
       builder: (context, participantsSnapshot) {
         if (participantsSnapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
@@ -151,22 +238,36 @@ class _ParticipantsList extends StatelessWidget {
           return percentB.compareTo(percentA);
         });
 
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _saveSnapshotOnce(participants);
+        });
+
         return Column(
           children: participants.map((participant) {
             final username = participant['username'] ?? '';
             final uid = participant['uid'] ?? '';
-            final progress = participant['progress'] ?? 0;
-            final targetValue = participant['targetValue'] ?? 0;
+            final progress = (participant['progress'] as num? ?? 0).toInt();
+            final targetValue = (participant['targetValue'] as num? ?? 0).toInt();
             final goalTitle = participant['goalTitle'] ?? '';
             final unit = participant['unit'] ?? '';
 
             final name = username.toString().isNotEmpty ? username : uid;
-            final isMe = uid == currentUid;
+            final isMe = uid == widget.currentUid;
             final progressValue = targetValue > 0 ? (progress / targetValue) : 0.0;
-            final progressBarValue = progressValue.clamp(0.0, 1.0);
             final percentText = targetValue > 0
                 ? '${(progressValue * 100).toStringAsFixed(0)}%'
                 : '0%';
+
+            final lastSeen = _lastSeenProgress?[uid] ?? progress;
+            final baseFraction = targetValue > 0
+                ? (lastSeen / targetValue).clamp(0.0, 1.0)
+                : 0.0;
+            final deltaFraction = targetValue > 0
+                ? ((progress - lastSeen) / targetValue).clamp(
+                    0.0,
+                    1.0 - baseFraction,
+                  )
+                : 0.0;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
@@ -212,9 +313,9 @@ class _ParticipantsList extends StatelessWidget {
                       child: IconButton(
                         onPressed: () async {
                           try {
-                            await firestoreService.incrementMyProgress(
-                              competitionId: competitionId,
-                              uid: currentUid,
+                            await widget.firestoreService.incrementMyProgress(
+                              competitionId: widget.competitionId,
+                              uid: widget.currentUid,
                             );
                           } catch (e) {
                             if (!context.mounted) return;
@@ -228,10 +329,10 @@ class _ParticipantsList extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 4),
-                  LinearProgressIndicator(
-                    value: progressBarValue,
-                    minHeight: 18,
-                    borderRadius: const BorderRadius.all(Radius.circular(7)),
+                  _buildProgressBar(
+                    context,
+                    baseFraction: baseFraction,
+                    deltaFraction: deltaFraction,
                   ),
                 ],
               ),

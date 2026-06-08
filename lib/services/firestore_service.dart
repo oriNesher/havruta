@@ -362,4 +362,39 @@ class FirestoreService {
 
     await batch.commit();
   }
+
+  /// Get the progress snapshot from the user's last visit for a competition
+  Future<Map<String, int>?> getCompetitionSnapshot(
+    String uid,
+    String competitionId,
+  ) async {
+    final doc = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('competitionSnapshots')
+        .doc(competitionId)
+        .get();
+
+    if (!doc.exists) return null;
+    final participants = doc.data()?['participants'] as Map<String, dynamic>?;
+    if (participants == null) return null;
+    return participants.map((k, v) => MapEntry(k, (v as num).toInt()));
+  }
+
+  /// Save the current progress snapshot for a competition (called after rendering)
+  Future<void> saveCompetitionSnapshot(
+    String uid,
+    String competitionId,
+    Map<String, int> progressMap,
+  ) async {
+    await _db
+        .collection('users')
+        .doc(uid)
+        .collection('competitionSnapshots')
+        .doc(competitionId)
+        .set({
+          'snapshotAt': FieldValue.serverTimestamp(),
+          'participants': progressMap,
+        });
+  }
 }
