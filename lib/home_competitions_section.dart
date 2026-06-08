@@ -310,19 +310,24 @@ class _ParticipantsListState extends State<_ParticipantsList> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: IconButton(
-                        onPressed: () async {
-                          try {
-                            await widget.firestoreService.incrementMyProgress(
-                              competitionId: widget.competitionId,
-                              uid: widget.currentUid,
-                            );
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error updating progress: $e')),
-                            );
-                          }
-                        },
+                        onPressed: progress >= targetValue
+                            ? null
+                            : () async {
+                                try {
+                                  await widget.firestoreService
+                                      .incrementMyProgress(
+                                    competitionId: widget.competitionId,
+                                    uid: widget.currentUid,
+                                  );
+                                } catch (e) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error updating progress: $e'),
+                                    ),
+                                  );
+                                }
+                              },
                         icon: const Icon(Icons.add_circle),
                       ),
                     ),

@@ -30,6 +30,95 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   final FirestoreService firestoreService = FirestoreService();
   bool _isDeleting = false;
 
+  Future<void> _showEditProgressDialog({
+    required String competitionId,
+    required String uid,
+    required int currentProgress,
+    required int targetValue,
+    required String unit,
+  }) async {
+    final controller = TextEditingController(text: currentProgress.toString());
+    String? errorText;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit your progress'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'You can only reduce your progress (max: $currentProgress $unit)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'New progress',
+                      suffixText: unit,
+                      errorText: errorText,
+                    ),
+                    onChanged: (value) {
+                      final parsed = int.tryParse(value);
+                      setDialogState(() {
+                        if (parsed == null) {
+                          errorText = 'Enter a valid number';
+                        } else if (parsed < 0) {
+                          errorText = 'Cannot be negative';
+                        } else if (parsed > currentProgress) {
+                          errorText = 'Cannot exceed current progress ($currentProgress)';
+                        } else {
+                          errorText = null;
+                        }
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: errorText != null
+                      ? null
+                      : () async {
+                          final newValue = int.tryParse(controller.text);
+                          if (newValue == null) return;
+                          final messenger = ScaffoldMessenger.of(context);
+                          Navigator.of(dialogContext).pop();
+                          try {
+                            await firestoreService.updateProgress(
+                              competitionId: competitionId,
+                              uid: uid,
+                              progress: newValue,
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            messenger.showSnackBar(
+                              SnackBar(content: Text('Failed to update progress: $e')),
+                            );
+                          }
+                        },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+  }
+
   Future<void> _confirmAndDeleteCompetition() async {
     final shouldDelete = await showDialog<bool>(
       context: context,
@@ -290,6 +379,21 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                                if (isMe)
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined),
+                                    iconSize: 18,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    tooltip: 'Edit progress',
+                                    onPressed: () => _showEditProgressDialog(
+                                      competitionId: widget.competitionId,
+                                      uid: user.uid,
+                                      currentProgress: progress,
+                                      targetValue: targetValue,
+                                      unit: unit.toString(),
+                                    ),
+                                  ),
                               ],
                             ),
                             if (goalTitle.toString().isNotEmpty) ...[
