@@ -3,14 +3,44 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'create_competition_screen.dart';
 import 'services/firestore_service.dart';
+import 'services/progress_snapshot_cache.dart';
 import 'home_events_section.dart';
 import 'home_pending_invites_section.dart';
 import 'home_competitions_section.dart';
 
-class HomeScreen extends StatelessWidget {
-  HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final FirestoreService _firestoreService = FirestoreService();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      ProgressSnapshotCache.instance.persist(_firestoreService);
+    }
+  }
+
+  Future<void> _signOut() async {
+    await ProgressSnapshotCache.instance.persistAndClear(_firestoreService);
+    await FirebaseAuth.instance.signOut();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,9 +56,7 @@ class HomeScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await FirebaseAuth.instance.signOut();
-            },
+            onPressed: _signOut,
           ),
         ],
       ),

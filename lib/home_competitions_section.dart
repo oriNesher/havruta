@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firestore_service.dart';
+import 'services/progress_snapshot_cache.dart';
 import 'competition_details_screen.dart';
 
 class HomeCompetitionsSection extends StatelessWidget {
@@ -120,34 +121,26 @@ class _ParticipantsList extends StatefulWidget {
 
 class _ParticipantsListState extends State<_ParticipantsList> {
   Map<String, int>? _lastSeenProgress;
-  bool _snapshotSaved = false;
 
   @override
   void initState() {
     super.initState();
-    _loadSnapshot();
+    _loadFromCache();
   }
 
-  Future<void> _loadSnapshot() async {
-    final data = await widget.firestoreService.getCompetitionSnapshot(
+  Future<void> _loadFromCache() async {
+    await ProgressSnapshotCache.instance.ensureLoaded(
       widget.currentUid,
       widget.competitionId,
+      widget.firestoreService,
     );
-    if (mounted) setState(() => _lastSeenProgress = data);
-  }
-
-  void _saveSnapshotOnce(List<Map<String, dynamic>> participants) {
-    if (_snapshotSaved) return;
-    _snapshotSaved = true;
-    final progressMap = {
-      for (final p in participants)
-        (p['uid'] as String): (p['progress'] as num? ?? 0).toInt(),
-    };
-    widget.firestoreService.saveCompetitionSnapshot(
-      widget.currentUid,
-      widget.competitionId,
-      progressMap,
-    );
+    if (mounted) {
+      setState(() {
+        _lastSeenProgress = ProgressSnapshotCache.instance.getPrevious(
+          widget.competitionId,
+        );
+      });
+    }
   }
 
   Widget _buildProgressBar(
@@ -239,7 +232,13 @@ class _ParticipantsListState extends State<_ParticipantsList> {
         });
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _saveSnapshotOnce(participants);
+          ProgressSnapshotCache.instance.updateCurrent(
+            widget.competitionId,
+            {
+              for (final p in participants)
+                (p['uid'] as String): (p['progress'] as num? ?? 0).toInt(),
+            },
+          );
         });
 
         return Column(
