@@ -397,4 +397,61 @@ class FirestoreService {
           'participants': progressMap,
         });
   }
+
+  /// Get user's bucket goals as a live stream of titles
+  Stream<List<String>> getUserGoals(String uid) {
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('goals')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map((doc) => doc.data()['title'] as String)
+                  .toList(),
+        );
+  }
+
+  /// Save multiple goals at once (used during onboarding)
+  Future<void> addGoalsBatch(String uid, List<String> goals) async {
+    final batch = _db.batch();
+    final goalsRef = _db.collection('users').doc(uid).collection('goals');
+
+    for (final goal in goals) {
+      batch.set(goalsRef.doc(), {
+        'title': goal,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+  }
+
+  /// Save a single goal to the bucket
+  Future<void> addGoal(String uid, String goalTitle) async {
+    await _db.collection('users').doc(uid).collection('goals').add({
+      'title': goalTitle,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Mark the goals bucket onboarding step as complete
+  Future<void> markGoalsBucketCompleted(String uid) async {
+    await _db.collection('users').doc(uid).update({
+      'hasCompletedGoalsBucket': true,
+    });
+  }
+
+  /// Check if a goal already exists in the bucket (case-insensitive exact match)
+  Future<bool> goalExistsInBucket(String uid, String goalTitle) async {
+    final snapshot =
+        await _db.collection('users').doc(uid).collection('goals').get();
+
+    final normalized = goalTitle.trim().toLowerCase();
+    return snapshot.docs.any(
+      (doc) => (doc.data()['title'] as String).toLowerCase() == normalized,
+    );
+  }
 }

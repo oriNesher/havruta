@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'create_competition_screen.dart';
+import 'pending_invites_screen.dart';
 import 'services/firestore_service.dart';
 import 'services/progress_snapshot_cache.dart';
 import 'home_events_section.dart';
-import 'home_pending_invites_section.dart';
 import 'home_competitions_section.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -54,6 +55,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('Havruta'),
         actions: [
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: _firestoreService.getPendingInvites(user.uid),
+            builder: (context, snapshot) {
+              final count = snapshot.data?.docs.length ?? 0;
+              return IconButton(
+                icon: Badge(
+                  isLabelVisible: count > 0,
+                  label: Text('$count'),
+                  child: const Icon(Icons.mail_outline),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const PendingInvitesScreen(),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _signOut,
@@ -103,13 +125,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: const Text('Create Competition'),
               ),
             ),
-            const SizedBox(height: 24),
-            const Text(
-              'Pending Invites',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            HomePendingInvitesSection(uid: user.uid),
             const SizedBox(height: 24),
             const Text(
               'My Competitions',

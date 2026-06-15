@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'services/firestore_service.dart';
 import 'competition_invite_section.dart';
+import 'goals_bucket_bottom_sheet.dart';
 
 class CreateCompetitionScreen extends StatefulWidget {
   const CreateCompetitionScreen({super.key});
@@ -18,6 +19,7 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   final goalTitleController = TextEditingController();
   final targetValueController = TextEditingController();
   final unitController = TextEditingController();
+  final _goalFocusNode = FocusNode();
 
   final firestoreService = FirestoreService();
   final user = FirebaseAuth.instance.currentUser;
@@ -25,6 +27,29 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   bool isLoading = false;
   String? createdCompetitionId;
   String? createdCompetitionTitle;
+
+  Future<void> _showGoalsBucketSheet() async {
+    // Only open the sheet when the field is empty — otherwise let the user edit directly
+    if (goalTitleController.text.isNotEmpty) return;
+
+    FocusScope.of(context).unfocus();
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => GoalsBucketBottomSheet(uid: user!.uid),
+    );
+
+    if (selected != null) {
+      goalTitleController.text = selected;
+    } else {
+      // User dismissed without picking — let them type manually
+      _goalFocusNode.requestFocus();
+    }
+  }
 
   Future<void> createCompetition() async {
     final title = titleController.text.trim();
@@ -85,6 +110,14 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
         unit: unit,
       );
 
+      final goalExists = await firestoreService.goalExistsInBucket(
+        user!.uid,
+        goalTitle,
+      );
+      if (!goalExists) {
+        await firestoreService.addGoal(user!.uid, goalTitle);
+      }
+
       if (!mounted) return;
 
       setState(() {
@@ -117,6 +150,7 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
     goalTitleController.dispose();
     targetValueController.dispose();
     unitController.dispose();
+    _goalFocusNode.dispose();
     super.dispose();
   }
 
@@ -153,7 +187,9 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: goalTitleController,
+              focusNode: _goalFocusNode,
               enabled: !alreadyCreated,
+              onTap: _showGoalsBucketSheet,
               decoration: const InputDecoration(
                 labelText: 'My goal',
                 hintText: 'Get fitter / Study more / Read more',
