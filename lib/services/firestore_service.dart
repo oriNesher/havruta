@@ -27,7 +27,7 @@ class FirestoreService {
     return data?['username'];
   }
 
-  /// Create a new asymmetric competition
+  /// Create a new personal goal challenge competition
   /// Returns the new competition ID
   Future<String> createCompetition({
     required String title,
@@ -37,6 +37,8 @@ class FirestoreService {
     required String goalTitle,
     required int targetValue,
     required String unit,
+    String? deadline,
+    String? linkedGoalTitle,
   }) async {
     final competitionRef = await _db.collection('competitions').add({
       'title': title,
@@ -45,8 +47,9 @@ class FirestoreService {
       'participantUids': [createdBy],
       'status': 'active',
       'winnerUid': null,
-      'type': 'asymmetric',
+      'type': 'personalGoalChallenge',
       'createdAt': FieldValue.serverTimestamp(),
+      if (deadline != null && deadline.isNotEmpty) 'deadline': deadline,
     });
 
     await competitionRef.collection('participants').doc(createdBy).set({
@@ -58,6 +61,7 @@ class FirestoreService {
       'progress': 0,
       'joinedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      if (linkedGoalTitle != null) 'linkedGoalTitle': linkedGoalTitle,
     });
 
     return competitionRef.id;
@@ -435,6 +439,39 @@ class FirestoreService {
       'title': goalTitle,
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Check today's date against lastOpenedDate and update the streak.
+  /// Returns the current streak count after the update.
+  Future<int> checkAndUpdateStreak(String uid) async {
+    final now = DateTime.now();
+    final todayStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    final doc = await _db.collection('users').doc(uid).get();
+    final data = doc.data();
+
+    final lastOpened = data?['lastOpenedDate'] as String?;
+    final currentStreak = (data?['streakCount'] as num?)?.toInt() ?? 0;
+
+    if (lastOpened == todayStr) return currentStreak;
+
+    int newStreak;
+    if (lastOpened != null) {
+      final todayMidnight = DateTime(now.year, now.month, now.day);
+      final lastDate = DateTime.parse(lastOpened);
+      final diff = todayMidnight.difference(lastDate).inDays;
+      newStreak = diff == 1 ? currentStreak + 1 : 1;
+    } else {
+      newStreak = 1;
+    }
+
+    await _db.collection('users').doc(uid).update({
+      'streakCount': newStreak,
+      'lastOpenedDate': todayStr,
+    });
+
+    return newStreak;
   }
 
   /// Mark the goals bucket onboarding step as complete

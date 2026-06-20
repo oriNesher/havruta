@@ -18,11 +18,20 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final FirestoreService _firestoreService = FirestoreService();
+  int _streak = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _updateStreak();
+  }
+
+  Future<void> _updateStreak() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final streak = await _firestoreService.checkAndUpdateStreak(user.uid);
+    if (mounted) setState(() => _streak = streak);
   }
 
   @override
@@ -87,24 +96,58 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            FutureBuilder<String?>(
-              future: _firestoreService.getMyUsername(user.uid),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Text(
-                    'Hello...',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-                  );
-                }
-                final username = snapshot.data;
-                return Text(
-                  'Hello ${username ?? user.email ?? ""}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                FutureBuilder<String?>(
+                  future: _firestoreService.getMyUsername(user.uid),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Text(
+                        'Hello...',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      );
+                    }
+                    final username = snapshot.data;
+                    return Text(
+                      'Hello ${username ?? user.email ?? ""}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    );
+                  },
+                ),
+                if (_streak > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🔥', style: TextStyle(fontSize: 16)),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$_streak day${_streak == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepOrange,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                );
-              },
+              ],
             ),
             const SizedBox(height: 20),
 
@@ -122,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                   );
                 },
-                child: const Text('Create Competition'),
+                child: const Text('Create Challenge'),
               ),
             ),
             const SizedBox(height: 24),

@@ -11,6 +11,7 @@ class CompetitionDetailsScreen extends StatefulWidget {
   final String description;
   final String status;
   final String createdBy;
+  final String? deadline;
 
   const CompetitionDetailsScreen({
     super.key,
@@ -19,6 +20,7 @@ class CompetitionDetailsScreen extends StatefulWidget {
     required this.description,
     required this.status,
     required this.createdBy,
+    this.deadline,
   });
 
   @override
@@ -52,7 +54,9 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'You can only reduce your progress (max: $currentProgress $unit)',
+                    unit.isNotEmpty
+                        ? 'You can only reduce your progress (max: $currentProgress $unit)'
+                        : 'You can only reduce your progress (max: $currentProgress)',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
@@ -61,7 +65,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       labelText: 'New progress',
-                      suffixText: unit,
+                      suffixText: unit.isNotEmpty ? unit : null,
                       errorText: errorText,
                     ),
                     onChanged: (value) {
@@ -72,7 +76,8 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                         } else if (parsed < 0) {
                           errorText = 'Cannot be negative';
                         } else if (parsed > currentProgress) {
-                          errorText = 'Cannot exceed current progress ($currentProgress)';
+                          errorText =
+                              'Cannot exceed current progress ($currentProgress)';
                         } else {
                           errorText = null;
                         }
@@ -124,9 +129,9 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Delete Competition'),
+          title: const Text('Delete Challenge'),
           content: const Text(
-            'Are you sure you want to delete this competition? This action cannot be undone.',
+            'Are you sure you want to delete this challenge? This action cannot be undone.',
           ),
           actions: [
             TextButton(
@@ -156,7 +161,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
       Navigator.of(context).pop();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Competition deleted successfully')),
+        const SnackBar(content: Text('Challenge deleted')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -166,7 +171,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete competition: $e')),
+        SnackBar(content: Text('Failed to delete: $e')),
       );
     }
   }
@@ -175,10 +180,11 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final isCreator = user != null && user.uid == widget.createdBy;
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Competition Details'),
+        title: const Text('Challenge Details'),
         actions: [
           if (isCreator)
             IconButton(
@@ -190,7 +196,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.delete_outline),
-              tooltip: 'Delete Competition',
+              tooltip: 'Delete Challenge',
             ),
         ],
       ),
@@ -202,28 +208,62 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
             children: [
               Text(
                 widget.title,
-                style: Theme.of(context).textTheme.headlineMedium,
+                style: theme.textTheme.headlineMedium,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
 
+              // Format badge
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Personal Goal Challenge',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Deadline (if set)
+              if (widget.deadline != null &&
+                  widget.deadline!.isNotEmpty) ...[
+                Text(
+                  'Deadline',
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 6),
+                Text(widget.deadline!),
+                const SizedBox(height: 20),
+              ],
+
+              // Rules & Notes (was Description)
               if (widget.description.isNotEmpty) ...[
                 Text(
-                  'Description',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  'Rules & Notes',
+                  style: theme.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
                 Text(widget.description),
                 const SizedBox(height: 20),
               ],
 
-              Text('Status', style: Theme.of(context).textTheme.titleMedium),
+              Text('Status', style: theme.textTheme.titleMedium),
               const SizedBox(height: 6),
-              Text(widget.status),
+              Text(widget.status.isNotEmpty
+                  ? '${widget.status[0].toUpperCase()}${widget.status.substring(1)}'
+                  : widget.status),
               const SizedBox(height: 20),
 
               Text(
-                'Created By',
-                style: Theme.of(context).textTheme.titleMedium,
+                'Started by',
+                style: theme.textTheme.titleMedium,
               ),
               const SizedBox(height: 6),
               FutureBuilder<String?>(
@@ -232,13 +272,10 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Text('Loading...');
                   }
-
                   if (snapshot.hasError) {
                     return Text(widget.createdBy);
                   }
-
                   final username = snapshot.data;
-
                   return Text(
                     username != null && username.isNotEmpty
                         ? username
@@ -252,9 +289,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _isDeleting
-                        ? null
-                        : _confirmAndDeleteCompetition,
+                    onPressed: _isDeleting ? null : _confirmAndDeleteCompetition,
                     icon: _isDeleting
                         ? const SizedBox(
                             width: 18,
@@ -263,7 +298,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                           )
                         : const Icon(Icons.delete_outline),
                     label: Text(
-                      _isDeleting ? 'Deleting...' : 'Delete Competition',
+                      _isDeleting ? 'Deleting...' : 'Delete Challenge',
                     ),
                   ),
                 ),
@@ -281,7 +316,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
 
               Text(
                 'Participants',
-                style: Theme.of(context).textTheme.titleLarge,
+                style: theme.textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
 
@@ -315,8 +350,10 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                     final targetA = a['targetValue'] ?? 0;
                     final targetB = b['targetValue'] ?? 0;
 
-                    final percentA = targetA > 0 ? progressA / targetA : 0.0;
-                    final percentB = targetB > 0 ? progressB / targetB : 0.0;
+                    final percentA =
+                        targetA > 0 ? progressA / targetA : 0.0;
+                    final percentB =
+                        targetB > 0 ? progressB / targetB : 0.0;
 
                     return percentB.compareTo(percentA);
                   });
@@ -329,6 +366,8 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                       final goalTitle = participant['goalTitle'] ?? '';
                       final targetValue = participant['targetValue'] ?? 0;
                       final unit = participant['unit'] ?? '';
+                      final linkedGoalTitle =
+                          participant['linkedGoalTitle'] as String?;
 
                       final displayName = username.toString().isNotEmpty
                           ? username
@@ -338,24 +377,24 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                       final progressRatio = targetValue > 0
                           ? (progress / targetValue)
                           : 0.0;
-
-                      final progressBarValue = progressRatio.clamp(0.0, 1.0);
-
+                      final progressBarValue =
+                          progressRatio.clamp(0.0, 1.0);
                       final percentText = targetValue > 0
                           ? '${(progressRatio * 100).toStringAsFixed(0)}%'
                           : '0%';
+
+                      final progressText = unit.toString().isNotEmpty
+                          ? '$progress / $targetValue $unit'
+                          : '$progress / $targetValue completed';
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: isMe
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: 0.08)
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
+                              ? theme.colorScheme.primary
+                                  .withValues(alpha: 0.08)
+                              : theme.colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -365,7 +404,9 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    isMe ? '$displayName (You)' : displayName,
+                                    isMe
+                                        ? '$displayName (You)'
+                                        : displayName,
                                     style: TextStyle(
                                       fontWeight: isMe
                                           ? FontWeight.bold
@@ -386,7 +427,8 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
                                     tooltip: 'Edit progress',
-                                    onPressed: () => _showEditProgressDialog(
+                                    onPressed: () =>
+                                        _showEditProgressDialog(
                                       competitionId: widget.competitionId,
                                       uid: user.uid,
                                       currentProgress: progress,
@@ -400,9 +442,33 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                               const SizedBox(height: 6),
                               Text(goalTitle),
                             ],
+                            if (linkedGoalTitle != null &&
+                                linkedGoalTitle.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.arrow_outward,
+                                    size: 12,
+                                    color: theme.colorScheme.onSurface
+                                        .withValues(alpha: 0.45),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Connected to: $linkedGoalTitle',
+                                    style:
+                                        theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.45),
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                             const SizedBox(height: 6),
                             Text(
-                              '$progress / $targetValue ${unit.toString()}',
+                              progressText,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w500,
                               ),

@@ -40,8 +40,8 @@ class HomeCompetitionsSection extends StatelessWidget {
             final title = competition['title'] ?? '';
             final description = competition['description'] ?? '';
             final status = competition['status'] ?? '';
-            final type = competition['type'] ?? '';
             final createdBy = competition['createdBy'] ?? '';
+            final deadline = competition['deadline'] as String?;
 
             return InkWell(
               borderRadius: BorderRadius.circular(12),
@@ -55,6 +55,7 @@ class HomeCompetitionsSection extends StatelessWidget {
                       description: description,
                       status: status,
                       createdBy: createdBy,
+                      deadline: deadline,
                     ),
                   ),
                 );
@@ -66,21 +67,58 @@ class HomeCompetitionsSection extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (status.isNotEmpty)
+                            Text(
+                              '${status[0].toUpperCase()}${status.substring(1)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: status == 'active'
+                                    ? Colors.green
+                                    : Colors.grey,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Personal Goal Challenge',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSecondaryContainer,
+                          ),
                         ),
                       ),
                       if (description.toString().isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        Text(description),
+                        Text(
+                          description,
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ],
-                      const SizedBox(height: 12),
-                      Text('Type: $type'),
-                      const SizedBox(height: 4),
-                      Text('Status: $status'),
                       const SizedBox(height: 16),
                       const Text(
                         'Participants',
@@ -302,7 +340,9 @@ class _ParticipantsListState extends State<_ParticipantsList> {
                   ],
                   const SizedBox(height: 6),
                   Text(
-                    '$progress / $targetValue ${unit.toString()}',
+                    unit.toString().isNotEmpty
+                        ? '$progress / $targetValue $unit'
+                        : '$progress / $targetValue completed',
                     style: const TextStyle(fontWeight: FontWeight.w500),
                   ),
                   if (isMe) ...[
