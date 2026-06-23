@@ -42,6 +42,15 @@ class HomeCompetitionsSection extends StatelessWidget {
             final status = competition['status'] ?? '';
             final createdBy = competition['createdBy'] ?? '';
             final deadline = competition['deadline'] as String?;
+            final type = competition['type'] as String? ?? 'personalGoalChallenge';
+            final sharedGoalTitle = competition['sharedGoalTitle'] as String?;
+            final sharedTargetValue =
+                (competition['sharedTargetValue'] as num?)?.toInt();
+            final sharedUnit = competition['sharedUnit'] as String?;
+
+            final badgeLabel = type == 'sharedGoalChallenge'
+                ? 'Shared Goal Challenge'
+                : 'Personal Goal Challenge';
 
             return InkWell(
               borderRadius: BorderRadius.circular(12),
@@ -56,6 +65,10 @@ class HomeCompetitionsSection extends StatelessWidget {
                       status: status,
                       createdBy: createdBy,
                       deadline: deadline,
+                      type: type,
+                      sharedGoalTitle: sharedGoalTitle,
+                      sharedTargetValue: sharedTargetValue,
+                      sharedUnit: sharedUnit,
                     ),
                   ),
                 );
@@ -103,7 +116,7 @@ class HomeCompetitionsSection extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          'Personal Goal Challenge',
+                          badgeLabel,
                           style: TextStyle(
                             fontSize: 11,
                             color: Theme.of(

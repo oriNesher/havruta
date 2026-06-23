@@ -12,6 +12,10 @@ class CompetitionDetailsScreen extends StatefulWidget {
   final String status;
   final String createdBy;
   final String? deadline;
+  final String type;
+  final String? sharedGoalTitle;
+  final int? sharedTargetValue;
+  final String? sharedUnit;
 
   const CompetitionDetailsScreen({
     super.key,
@@ -21,6 +25,10 @@ class CompetitionDetailsScreen extends StatefulWidget {
     required this.status,
     required this.createdBy,
     this.deadline,
+    this.type = 'personalGoalChallenge',
+    this.sharedGoalTitle,
+    this.sharedTargetValue,
+    this.sharedUnit,
   });
 
   @override
@@ -31,6 +39,8 @@ class CompetitionDetailsScreen extends StatefulWidget {
 class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   final FirestoreService firestoreService = FirestoreService();
   bool _isDeleting = false;
+
+  bool get _isShared => widget.type == 'sharedGoalChallenge';
 
   Future<void> _showEditProgressDialog({
     required String competitionId,
@@ -182,6 +192,8 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
     final isCreator = user != null && user.uid == widget.createdBy;
     final theme = Theme.of(context);
 
+    final badgeLabel = _isShared ? 'Shared Goal Challenge' : 'Personal Goal Challenge';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Challenge Details'),
@@ -223,13 +235,27 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  'Personal Goal Challenge',
+                  badgeLabel,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.onSecondaryContainer,
                   ),
                 ),
               ),
               const SizedBox(height: 20),
+
+              // Shared goal section
+              if (_isShared &&
+                  widget.sharedGoalTitle != null &&
+                  widget.sharedGoalTitle!.isNotEmpty) ...[
+                Text('Shared Goal', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(
+                  widget.sharedUnit != null && widget.sharedUnit!.isNotEmpty
+                      ? '${widget.sharedGoalTitle} — ${widget.sharedTargetValue} ${widget.sharedUnit}'
+                      : '${widget.sharedGoalTitle} — ${widget.sharedTargetValue}',
+                ),
+                const SizedBox(height: 20),
+              ],
 
               // Deadline (if set)
               if (widget.deadline != null &&
@@ -243,7 +269,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 const SizedBox(height: 20),
               ],
 
-              // Rules & Notes (was Description)
+              // Rules & Notes
               if (widget.description.isNotEmpty) ...[
                 Text(
                   'Rules & Notes',
@@ -310,6 +336,10 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                   competitionId: widget.competitionId,
                   competitionTitle: widget.title,
                   currentUserUid: user.uid,
+                  competitionType: widget.type,
+                  sharedGoalTitle: widget.sharedGoalTitle,
+                  sharedTargetValue: widget.sharedTargetValue,
+                  sharedUnit: widget.sharedUnit,
                 ),
                 const SizedBox(height: 32),
               ],
@@ -438,7 +468,10 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                                   ),
                               ],
                             ),
-                            if (goalTitle.toString().isNotEmpty) ...[
+                            // For personal goal challenges, show each participant's individual goal.
+                            // For shared challenges, the goal is shown once above — skip it here.
+                            if (!_isShared &&
+                                goalTitle.toString().isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(goalTitle),
                             ],

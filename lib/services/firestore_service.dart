@@ -67,6 +67,48 @@ class FirestoreService {
     return competitionRef.id;
   }
 
+  /// Create a new shared goal challenge competition.
+  /// All participants work toward the same goal, target, and unit.
+  /// Returns the new competition ID.
+  Future<String> createSharedGoalCompetition({
+    required String title,
+    required String description,
+    required String createdBy,
+    required String creatorUsername,
+    required String sharedGoalTitle,
+    required int sharedTargetValue,
+    required String sharedUnit,
+    String? deadline,
+  }) async {
+    final competitionRef = await _db.collection('competitions').add({
+      'title': title,
+      'description': description,
+      'createdBy': createdBy,
+      'participantUids': [createdBy],
+      'status': 'active',
+      'winnerUid': null,
+      'type': 'sharedGoalChallenge',
+      'sharedGoalTitle': sharedGoalTitle,
+      'sharedTargetValue': sharedTargetValue,
+      'sharedUnit': sharedUnit,
+      'createdAt': FieldValue.serverTimestamp(),
+      if (deadline != null && deadline.isNotEmpty) 'deadline': deadline,
+    });
+
+    await competitionRef.collection('participants').doc(createdBy).set({
+      'uid': createdBy,
+      'username': creatorUsername,
+      'goalTitle': sharedGoalTitle,
+      'targetValue': sharedTargetValue,
+      'unit': sharedUnit,
+      'progress': 0,
+      'joinedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    return competitionRef.id;
+  }
+
   /// Get competitions that the user participates in
   Stream<QuerySnapshot<Map<String, dynamic>>> getUserCompetitions(String uid) {
     return _db
@@ -209,15 +251,23 @@ class FirestoreService {
     required String fromUid,
     required String toUid,
     required String toUsername,
+    String competitionType = 'personalGoalChallenge',
+    String? sharedGoalTitle,
+    int? sharedTargetValue,
+    String? sharedUnit,
   }) async {
     await _db.collection('competition_invites').add({
       'competitionId': competitionId,
       'competitionTitle': competitionTitle,
+      'competitionType': competitionType,
       'fromUid': fromUid,
       'toUid': toUid,
       'toUsername': toUsername,
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
+      if (sharedGoalTitle != null) 'sharedGoalTitle': sharedGoalTitle,
+      if (sharedTargetValue != null) 'sharedTargetValue': sharedTargetValue,
+      if (sharedUnit != null) 'sharedUnit': sharedUnit,
     });
   }
 
@@ -281,6 +331,43 @@ class FirestoreService {
       debugPrint('ACCEPT_INVITE_SERVICE: STACK TRACE: $st');
       rethrow;
     }
+  }
+
+  /// Accept a shared goal challenge invite.
+  /// The participant is added with the shared goal values from the invite.
+  Future<void> acceptSharedGoalCompetitionInvite({
+    required String inviteId,
+    required String competitionId,
+    required String uid,
+    required String username,
+    required String sharedGoalTitle,
+    required int sharedTargetValue,
+    required String sharedUnit,
+  }) async {
+    final competitionRef = _db.collection('competitions').doc(competitionId);
+    final participantRef = competitionRef.collection('participants').doc(uid);
+    final inviteRef = _db.collection('competition_invites').doc(inviteId);
+
+    final batch = _db.batch();
+
+    batch.update(competitionRef, {
+      'participantUids': FieldValue.arrayUnion([uid]),
+    });
+
+    batch.set(participantRef, {
+      'uid': uid,
+      'username': username,
+      'goalTitle': sharedGoalTitle,
+      'targetValue': sharedTargetValue,
+      'unit': sharedUnit,
+      'progress': 0,
+      'joinedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    batch.update(inviteRef, {'status': 'accepted'});
+
+    await batch.commit();
   }
 
   /// Decline an invite

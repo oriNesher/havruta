@@ -8,7 +8,9 @@ class HomePendingInvitesSection extends StatelessWidget {
 
   HomePendingInvitesSection({super.key, required this.uid});
 
-  Future<void> _showAcceptInviteDialog({
+  // ── Personal Goal accept dialog ────────────────────────────────────────────
+
+  Future<void> _showPersonalGoalAcceptDialog({
     required BuildContext outerContext,
     required String inviteId,
     required String competitionId,
@@ -59,7 +61,9 @@ class HomePendingInvitesSection extends StatelessWidget {
                 if (username == null || username.trim().isEmpty) {
                   if (!dialogContext.mounted) return;
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('Could not find your username')),
+                    const SnackBar(
+                      content: Text('Could not find your username'),
+                    ),
                   );
                   return;
                 }
@@ -104,7 +108,9 @@ class HomePendingInvitesSection extends StatelessWidget {
                   children: [
                     const Align(
                       alignment: Alignment.centerLeft,
-                      child: Text('Define your personal goal for this competition'),
+                      child: Text(
+                        'Define your personal goal for this competition',
+                      ),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -168,6 +174,141 @@ class HomePendingInvitesSection extends StatelessWidget {
     unitController.dispose();
   }
 
+  // ── Shared Goal accept dialog ──────────────────────────────────────────────
+
+  Future<void> _showSharedGoalAcceptDialog({
+    required BuildContext outerContext,
+    required String inviteId,
+    required String competitionId,
+    required String competitionTitle,
+    required String sharedGoalTitle,
+    required int sharedTargetValue,
+    required String sharedUnit,
+  }) async {
+    bool isSubmitting = false;
+
+    await showDialog(
+      context: outerContext,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (_, setDialogState) {
+            Future<void> submit() async {
+              bool acceptedSuccessfully = false;
+
+              setDialogState(() {
+                isSubmitting = true;
+              });
+
+              try {
+                final username = await _firestoreService.getMyUsername(uid);
+
+                if (username == null || username.trim().isEmpty) {
+                  if (!dialogContext.mounted) return;
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Could not find your username'),
+                    ),
+                  );
+                  return;
+                }
+
+                await _firestoreService.acceptSharedGoalCompetitionInvite(
+                  inviteId: inviteId,
+                  competitionId: competitionId,
+                  uid: uid,
+                  username: username,
+                  sharedGoalTitle: sharedGoalTitle,
+                  sharedTargetValue: sharedTargetValue,
+                  sharedUnit: sharedUnit,
+                );
+
+                acceptedSuccessfully = true;
+
+                if (!dialogContext.mounted) return;
+                Navigator.of(dialogContext).pop();
+
+                ScaffoldMessenger.of(outerContext).showSnackBar(
+                  const SnackBar(content: Text('Invite accepted')),
+                );
+              } catch (e) {
+                if (!dialogContext.mounted) return;
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text('Error accepting invite: $e')),
+                );
+              } finally {
+                if (!acceptedSuccessfully && dialogContext.mounted) {
+                  setDialogState(() {
+                    isSubmitting = false;
+                  });
+                }
+              }
+            }
+
+            final goalDisplay = sharedUnit.isNotEmpty
+                ? '$sharedGoalTitle — $sharedTargetValue $sharedUnit'
+                : '$sharedGoalTitle — $sharedTargetValue';
+
+            return AlertDialog(
+              title: Text('Join "$competitionTitle"'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('This is a Shared Goal Challenge.'),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Everyone works toward the same goal:',
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        dialogContext,
+                      ).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      goalDisplay,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "You'll each log your own progress toward this shared target.",
+                    style: Theme.of(dialogContext).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSubmitting ? null : submit,
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Join'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -198,6 +339,15 @@ class HomePendingInvitesSection extends StatelessWidget {
             final competitionId = invite['competitionId'] ?? '';
             final competitionTitle = invite['competitionTitle'] ?? '';
             final fromUid = invite['fromUid'] ?? '';
+            final competitionType =
+                invite['competitionType'] as String? ?? 'personalGoalChallenge';
+            final isShared = competitionType == 'sharedGoalChallenge';
+
+            final sharedGoalTitle =
+                invite['sharedGoalTitle'] as String? ?? '';
+            final sharedTargetValue =
+                (invite['sharedTargetValue'] as num?)?.toInt() ?? 0;
+            final sharedUnit = invite['sharedUnit'] as String? ?? '';
 
             return Card(
               margin: const EdgeInsets.only(bottom: 10),
@@ -213,6 +363,45 @@ class HomePendingInvitesSection extends StatelessWidget {
                         fontSize: 16,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    // Challenge type badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        isShared
+                            ? 'Shared Goal Challenge'
+                            : 'Personal Goal Challenge',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                    // Shared goal preview
+                    if (isShared && sharedGoalTitle.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        sharedUnit.isNotEmpty
+                            ? 'Goal: $sharedGoalTitle — $sharedTargetValue $sharedUnit'
+                            : 'Goal: $sharedGoalTitle — $sharedTargetValue',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.65),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     FutureBuilder<String?>(
                       future: _firestoreService.getUsernameByUid(fromUid),
@@ -233,12 +422,24 @@ class HomePendingInvitesSection extends StatelessWidget {
                         Expanded(
                           child: ElevatedButton(
                             onPressed: () async {
-                              await _showAcceptInviteDialog(
-                                outerContext: context,
-                                inviteId: inviteId,
-                                competitionId: competitionId,
-                                competitionTitle: competitionTitle,
-                              );
+                              if (isShared) {
+                                await _showSharedGoalAcceptDialog(
+                                  outerContext: context,
+                                  inviteId: inviteId,
+                                  competitionId: competitionId,
+                                  competitionTitle: competitionTitle,
+                                  sharedGoalTitle: sharedGoalTitle,
+                                  sharedTargetValue: sharedTargetValue,
+                                  sharedUnit: sharedUnit,
+                                );
+                              } else {
+                                await _showPersonalGoalAcceptDialog(
+                                  outerContext: context,
+                                  inviteId: inviteId,
+                                  competitionId: competitionId,
+                                  competitionTitle: competitionTitle,
+                                );
+                              }
                             },
                             child: const Text('Accept'),
                           ),
