@@ -1,21 +1,26 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  static ThemeData get lightTheme {
-    const primaryColor = Color(0xFF5B3DF5);
-    const secondaryColor = Color(0xFF8B7CFF);
-    const backgroundColor = Color(0xFFF7F7FB);
-    const surfaceColor = Colors.white;
-    const textColor = Color(0xFF1F1F29);
-    const mutedTextColor = Color(0xFF6E6E7A);
-    const borderColor = Color(0xFFE3E4EA);
+  static ThemeData get darkTheme {
+    const primaryColor = Color(0xFF8B5CF6);
+    const secondaryColor = Color(0xFFFF5C7A);
+    const successColor = Color(0xFF2DD4BF);
+    const backgroundColor = Color(0xFF1A1A22);
+    const deepBackgroundColor = Color(0xFF101014);
+    const surfaceColor = Color(0xFF1E1E28);
+    const textColor = Color(0xFFEEEEF5);
+    const mutedTextColor = Color(0xFF8888A0);
+    const borderColor = Color(0xFF2A2A3A);
 
     final colorScheme = ColorScheme.fromSeed(
       seedColor: primaryColor,
-      brightness: Brightness.light,
+      brightness: Brightness.dark,
       primary: primaryColor,
       secondary: secondaryColor,
+      tertiary: successColor,
       surface: surfaceColor,
+      onSurface: textColor,
+      onPrimary: Colors.white,
     );
 
     return ThemeData(
@@ -112,15 +117,24 @@ class AppTheme {
       ),
 
       progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: successColor,
         borderRadius: BorderRadius.all(Radius.circular(999)),
         linearMinHeight: 8,
       ),
 
+      navigationBarTheme: const NavigationBarThemeData(
+        backgroundColor: deepBackgroundColor,
+        indicatorColor: primaryColor,
+        labelTextStyle: WidgetStatePropertyAll(
+          TextStyle(color: textColor, fontSize: 12),
+        ),
+      ),
+
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: textColor,
+        backgroundColor: surfaceColor,
         contentTextStyle: const TextStyle(
-          color: Colors.white,
+          color: textColor,
           fontSize: 14,
         ),
         shape: RoundedRectangleBorder(

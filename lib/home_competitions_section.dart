@@ -97,8 +97,8 @@ class HomeCompetitionsSection extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 12,
                                 color: status == 'active'
-                                    ? Colors.green
-                                    : Colors.grey,
+                                    ? Theme.of(context).colorScheme.tertiary
+                                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
                               ),
                             ),
                         ],

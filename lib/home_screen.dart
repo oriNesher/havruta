@@ -128,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.orange.shade100,
+                      color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -138,10 +138,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         const SizedBox(width: 4),
                         Text(
                           '$_streak day${_streak == 1 ? '' : 's'}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: Colors.deepOrange,
+                            color: Theme.of(context).colorScheme.secondary,
                           ),
                         ),
                       ],

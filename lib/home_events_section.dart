@@ -94,13 +94,15 @@ class HomeEventsSection extends StatelessWidget {
     );
   }
 
-  Widget buildHeroCard(EventUIModel ui) {
+  Widget buildHeroCard(BuildContext context, EventUIModel ui) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE7FF),
+        color: colorScheme.primary.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -108,17 +110,18 @@ class HomeEventsSection extends StatelessWidget {
         children: [
           Text(
             ui.title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             ui.subtitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
-              color: Colors.black54,
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
           const SizedBox(height: 14),
@@ -128,9 +131,9 @@ class HomeEventsSection extends StatelessWidget {
               Expanded(
                 child: Text(
                   ui.competitionTitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: Colors.black45,
+                    color: colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -138,9 +141,10 @@ class HomeEventsSection extends StatelessWidget {
               const SizedBox(width: 12),
               Text(
                 ui.ctaLabel,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
+                  color: colorScheme.primary,
                 ),
               ),
             ],
@@ -150,13 +154,15 @@ class HomeEventsSection extends StatelessWidget {
     );
   }
 
-  Widget buildEventCard(EventUIModel ui) {
+  Widget buildEventCard(BuildContext context, EventUIModel ui) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F3F3),
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -164,17 +170,18 @@ class HomeEventsSection extends StatelessWidget {
         children: [
           Text(
             ui.title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             ui.subtitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: Colors.black54,
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
           const SizedBox(height: 10),
@@ -184,9 +191,9 @@ class HomeEventsSection extends StatelessWidget {
               Expanded(
                 child: Text(
                   ui.competitionTitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: Colors.black45,
+                    color: colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -194,9 +201,9 @@ class HomeEventsSection extends StatelessWidget {
               const SizedBox(width: 12),
               Text(
                 ui.timeText,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Colors.black38,
+                  color: colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
               ),
             ],
@@ -207,9 +214,11 @@ class HomeEventsSection extends StatelessWidget {
   }
 
   Widget buildDismissibleHero({
+    required BuildContext context,
     required QueryDocumentSnapshot<Map<String, dynamic>> doc,
     required FirestoreService firestoreService,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     final ui = mapEventToUI(doc.data());
 
     return Dismissible(
@@ -219,7 +228,7 @@ class HomeEventsSection extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
-          color: Colors.redAccent,
+          color: colorScheme.secondary,
           borderRadius: BorderRadius.circular(18),
         ),
         child: const Icon(
@@ -230,14 +239,16 @@ class HomeEventsSection extends StatelessWidget {
       onDismissed: (_) {
         firestoreService.dismissEventsForUser([doc.id], uid);
       },
-      child: buildHeroCard(ui),
+      child: buildHeroCard(context, ui),
     );
   }
 
   Widget buildDismissibleEvent({
+    required BuildContext context,
     required QueryDocumentSnapshot<Map<String, dynamic>> doc,
     required FirestoreService firestoreService,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     final ui = mapEventToUI(doc.data());
 
     return Dismissible(
@@ -247,7 +258,7 @@ class HomeEventsSection extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
-          color: Colors.redAccent,
+          color: colorScheme.secondary,
           borderRadius: BorderRadius.circular(14),
         ),
         child: const Icon(
@@ -258,7 +269,7 @@ class HomeEventsSection extends StatelessWidget {
       onDismissed: (_) {
         firestoreService.dismissEventsForUser([doc.id], uid);
       },
-      child: buildEventCard(ui),
+      child: buildEventCard(context, ui),
     );
   }
 
@@ -295,12 +306,14 @@ class HomeEventsSection extends StatelessWidget {
           children: [
             if (heroDoc != null)
               buildDismissibleHero(
+                context: context,
                 doc: heroDoc,
                 firestoreService: _firestoreService,
               ),
 
             ...feedDocs.map(
               (doc) => buildDismissibleEvent(
+                context: context,
                 doc: doc,
                 firestoreService: _firestoreService,
               ),
