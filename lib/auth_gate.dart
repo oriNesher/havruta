@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -20,12 +22,73 @@ class _AuthGateState extends State<AuthGate> {
   bool _notificationsInitialized = false;
   String? _initializedForUserId;
 
+  late final StreamSubscription<User?> _authSubscription;
+
+  // Routing state — only changed when the user *actually* changes (uid differs).
+  // Re-emissions of the same user (token refresh, back-nav focus events) do not
+  // call setState, so HomeScreen is never unmounted unnecessarily.
+  bool _loading = true;
+  User? _user;
+  Map<String, dynamic>? _userDocData;
+  String? _userDocLoadedForUid;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription =
+        FirebaseAuth.instance.authStateChanges().listen(_onAuthChanged);
+  }
+
+  void _onAuthChanged(User? user) {
+    if (user?.uid == _user?.uid) {
+      // Same user — could be a token refresh or a spurious re-emission from
+      // Firebase Auth when the app regains focus after back navigation.
+      // Just update the User object in place; do NOT call setState so the
+      // widget tree (including HomeScreen) is never rebuilt.
+      _user = user;
+      if (_loading) setState(() => _loading = false);
+      return;
+    }
+
+    // User actually changed (sign-in, sign-out, or account switch).
+    setState(() {
+      _user = user;
+      if (user == null) {
+        _loading = false;
+        _userDocData = null;
+        _userDocLoadedForUid = null;
+        _resetNotificationInit();
+      } else {
+        _loading = true; // show spinner while fetching user doc
+      }
+    });
+
+    if (user != null) _fetchUserDoc(user.uid);
+  }
+
+  Future<void> _fetchUserDoc(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      // Guard: user may have changed or widget may have been disposed.
+      if (!mounted || _user?.uid != uid) return;
+      setState(() {
+        _userDocData = doc.data();
+        _userDocLoadedForUid = uid;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('User doc fetch error: $e');
+      if (mounted && _user?.uid == uid) setState(() => _loading = false);
+    }
+  }
+
   Future<void> _initNotificationsForUser(String uid) async {
     if (_notificationsInitialized && _initializedForUserId == uid) return;
-
     _notificationsInitialized = true;
     _initializedForUserId = uid;
-
     try {
       await _notificationService.initNotifications();
     } catch (e) {
@@ -39,67 +102,43 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   @override
+  void dispose() {
+    _authSubscription.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, authSnapshot) {
-        if (authSnapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
-        if (authSnapshot.hasError) {
-          return const Scaffold(
-            body: Center(child: Text('Auth error')),
-          );
-        }
+    if (_user == null) {
+      return const LoginScreen();
+    }
 
-        if (!authSnapshot.hasData) {
-          _resetNotificationInit();
-          return const LoginScreen();
-        }
+    // Covers the narrow gap between sign-in and user doc arriving.
+    if (_userDocLoadedForUid != _user!.uid) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
-        final user = authSnapshot.data!;
+    final data = _userDocData;
 
-        return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          future: FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .get(),
-          builder: (context, userSnapshot) {
-            if (userSnapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
-            }
+    if (data == null || data['username'] == null) {
+      return const UsernameScreen();
+    }
 
-            if (userSnapshot.hasError) {
-              return const Scaffold(
-                body: Center(child: Text('User data error')),
-              );
-            }
+    if (data['hasCompletedGoalsBucket'] != true) {
+      return const GoalsBucketOnboardingScreen();
+    }
 
-            if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
-              return const UsernameScreen();
-            }
+    // Fire-and-forget; the guard inside makes it a no-op after the first call.
+    _initNotificationsForUser(_user!.uid);
 
-            final data = userSnapshot.data!.data();
-
-            if (data == null || data['username'] == null) {
-              return const UsernameScreen();
-            }
-
-            if (data['hasCompletedGoalsBucket'] != true) {
-              return const GoalsBucketOnboardingScreen();
-            }
-
-            _initNotificationsForUser(user.uid);
-
-            return HomeScreen();
-          },
-        );
-      },
-    );
+    return const HomeScreen();
   }
 }

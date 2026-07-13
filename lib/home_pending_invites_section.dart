@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'app_theme.dart';
 import 'services/firestore_service.dart';
 
 class HomePendingInvitesSection extends StatelessWidget {
@@ -358,9 +359,9 @@ class HomePendingInvitesSection extends StatelessWidget {
                   children: [
                     Text(
                       competitionTitle,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                      style: AppTheme.display(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
                       ),
                     ),
                     const SizedBox(height: 4),

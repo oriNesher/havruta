@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'app_theme.dart';
 import 'services/firestore_service.dart';
 import 'competition_invite_section.dart';
 
@@ -446,9 +447,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                                 ),
                                 Text(
                                   percentText,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  style: AppTheme.mono(fontWeight: FontWeight.w600),
                                 ),
                                 if (isMe)
                                   IconButton(
@@ -502,9 +501,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                             const SizedBox(height: 6),
                             Text(
                               progressText,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
+                              style: AppTheme.mono(fontWeight: FontWeight.w500),
                             ),
                             const SizedBox(height: 8),
                             LinearProgressIndicator(

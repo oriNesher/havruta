@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'app_theme.dart';
 import 'services/firestore_service.dart';
 
 class EventUIModel {
@@ -18,52 +19,55 @@ class EventUIModel {
   });
 }
 
-class HomeEventsSection extends StatelessWidget {
+class HomeEventsSection extends StatefulWidget {
   final String uid;
-  final _firestoreService = FirestoreService();
+  const HomeEventsSection({super.key, required this.uid});
 
-  HomeEventsSection({super.key, required this.uid});
+  @override
+  State<HomeEventsSection> createState() => _HomeEventsSectionState();
+}
 
-  String formatTimeAgo(dynamic timestamp) {
+class _HomeEventsSectionState extends State<HomeEventsSection> {
+  late final FirestoreService _firestoreService;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _firestoreService = FirestoreService();
+    _stream = _firestoreService.getHomeEvents(widget.uid);
+  }
+
+  String _formatTimeAgo(dynamic timestamp) {
     if (timestamp == null) return '';
-
     final date = (timestamp as Timestamp).toDate();
     final diff = DateTime.now().difference(date);
-
     if (diff.inSeconds < 60) return 'Now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     return '${diff.inDays}d ago';
   }
 
-  QueryDocumentSnapshot<Map<String, dynamic>>? pickHeroEvent(
+  QueryDocumentSnapshot<Map<String, dynamic>>? _pickHeroEvent(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
     if (docs.isEmpty) return null;
-
-    // Prefer overtook events
     for (final doc in docs) {
-      final data = doc.data();
-      if (data['type'] == 'overtook') {
-        return doc;
-      }
+      if (doc.data()['type'] == 'overtook') return doc;
     }
-
     return docs.first;
   }
 
-  EventUIModel mapEventToUI(Map<String, dynamic> data) {
+  EventUIModel _mapEventToUI(Map<String, dynamic> data) {
     final type = data['type'];
     final actorUsername = data['actorUsername'] ?? 'Someone';
     final competitionTitle = data['competitionTitle'] ?? 'Competition';
-
     final timestamp = data['lastUpdatedAt'] ?? data['createdAt'];
-    final timeText = formatTimeAgo(timestamp);
+    final timeText = _formatTimeAgo(timestamp);
 
     if (type == 'progress') {
       final metadata = data['metadata'] as Map<String, dynamic>?;
       final delta = metadata?['progressDelta'];
-
       return EventUIModel(
         title: '$actorUsername made progress',
         subtitle: delta != null
@@ -94,9 +98,8 @@ class HomeEventsSection extends StatelessWidget {
     );
   }
 
-  Widget buildHeroCard(BuildContext context, EventUIModel ui) {
+  Widget _buildHeroCard(BuildContext context, EventUIModel ui) {
     final colorScheme = Theme.of(context).colorScheme;
-
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
@@ -110,8 +113,8 @@ class HomeEventsSection extends StatelessWidget {
         children: [
           Text(
             ui.title,
-            style: TextStyle(
-              fontSize: 20,
+            style: AppTheme.display(
+              fontSize: 23,
               fontWeight: FontWeight.w700,
               color: colorScheme.onSurface,
             ),
@@ -131,8 +134,8 @@ class HomeEventsSection extends StatelessWidget {
               Expanded(
                 child: Text(
                   ui.competitionTitle,
-                  style: TextStyle(
-                    fontSize: 13,
+                  style: AppTheme.display(
+                    fontSize: 15,
                     color: colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -141,10 +144,11 @@ class HomeEventsSection extends StatelessWidget {
               const SizedBox(width: 12),
               Text(
                 ui.ctaLabel,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                style: AppTheme.display(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
                   color: colorScheme.primary,
+                  letterSpacing: 0.5,
                 ),
               ),
             ],
@@ -154,9 +158,8 @@ class HomeEventsSection extends StatelessWidget {
     );
   }
 
-  Widget buildEventCard(BuildContext context, EventUIModel ui) {
+  Widget _buildEventCard(BuildContext context, EventUIModel ui) {
     final colorScheme = Theme.of(context).colorScheme;
-
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
@@ -170,9 +173,9 @@ class HomeEventsSection extends StatelessWidget {
         children: [
           Text(
             ui.title,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+            style: AppTheme.display(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
               color: colorScheme.onSurface,
             ),
           ),
@@ -191,8 +194,8 @@ class HomeEventsSection extends StatelessWidget {
               Expanded(
                 child: Text(
                   ui.competitionTitle,
-                  style: TextStyle(
-                    fontSize: 12,
+                  style: AppTheme.display(
+                    fontSize: 14,
                     color: colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -201,7 +204,7 @@ class HomeEventsSection extends StatelessWidget {
               const SizedBox(width: 12),
               Text(
                 ui.timeText,
-                style: TextStyle(
+                style: AppTheme.mono(
                   fontSize: 11,
                   color: colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
@@ -213,14 +216,12 @@ class HomeEventsSection extends StatelessWidget {
     );
   }
 
-  Widget buildDismissibleHero({
-    required BuildContext context,
-    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
-    required FirestoreService firestoreService,
-  }) {
+  Widget _buildDismissibleHero(
+    BuildContext context,
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final ui = mapEventToUI(doc.data());
-
+    final ui = _mapEventToUI(doc.data());
     return Dismissible(
       key: ValueKey('hero_${doc.id}'),
       direction: DismissDirection.endToStart,
@@ -231,26 +232,21 @@ class HomeEventsSection extends StatelessWidget {
           color: colorScheme.secondary,
           borderRadius: BorderRadius.circular(18),
         ),
-        child: const Icon(
-          Icons.close,
-          color: Colors.white,
-        ),
+        child: const Icon(Icons.close, color: Colors.white),
       ),
       onDismissed: (_) {
-        firestoreService.dismissEventsForUser([doc.id], uid);
+        _firestoreService.dismissEventsForUser([doc.id], widget.uid);
       },
-      child: buildHeroCard(context, ui),
+      child: _buildHeroCard(context, ui),
     );
   }
 
-  Widget buildDismissibleEvent({
-    required BuildContext context,
-    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
-    required FirestoreService firestoreService,
-  }) {
+  Widget _buildDismissibleEvent(
+    BuildContext context,
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final ui = mapEventToUI(doc.data());
-
+    final ui = _mapEventToUI(doc.data());
     return Dismissible(
       key: ValueKey(doc.id),
       direction: DismissDirection.endToStart,
@@ -261,33 +257,56 @@ class HomeEventsSection extends StatelessWidget {
           color: colorScheme.secondary,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: const Icon(
-          Icons.close,
-          color: Colors.white,
-        ),
+        child: const Icon(Icons.close, color: Colors.white),
       ),
       onDismissed: (_) {
-        firestoreService.dismissEventsForUser([doc.id], uid);
+        _firestoreService.dismissEventsForUser([doc.id], widget.uid);
       },
-      child: buildEventCard(context, ui),
+      child: _buildEventCard(context, ui),
+    );
+  }
+
+  Widget _buildSkeleton(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // Matches hero card shape exactly so no layout shift when real data arrives
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: colorScheme.primary.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SkeletonBlock(width: 180, height: 20, radius: 10),
+          const SizedBox(height: 10),
+          _SkeletonBlock(width: double.infinity, height: 12, radius: 6),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _SkeletonBlock(width: 120, height: 12, radius: 6),
+              _SkeletonBlock(width: 80, height: 14, radius: 7),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _firestoreService.getHomeEvents(uid),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
+          return _buildSkeleton(context);
         }
 
         if (snapshot.hasError) {
-          return Text(
-            'Error loading events: ${snapshot.error}',
-          );
+          return Text('Error loading events: ${snapshot.error}');
         }
 
         final docs = snapshot.data?.docs ?? [];
@@ -296,31 +315,45 @@ class HomeEventsSection extends StatelessWidget {
           return const Text('No new events');
         }
 
-        final heroDoc = pickHeroEvent(docs);
-        final feedDocs = docs
-            .where((doc) => doc.id != heroDoc?.id)
-            .toList();
+        final heroDoc = _pickHeroEvent(docs);
+        final feedDocs = docs.where((doc) => doc.id != heroDoc?.id).toList();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (heroDoc != null)
-              buildDismissibleHero(
-                context: context,
-                doc: heroDoc,
-                firestoreService: _firestoreService,
-              ),
-
-            ...feedDocs.map(
-              (doc) => buildDismissibleEvent(
-                context: context,
-                doc: doc,
-                firestoreService: _firestoreService,
-              ),
-            ),
+            if (heroDoc != null) _buildDismissibleHero(context, heroDoc),
+            ...feedDocs.map((doc) => _buildDismissibleEvent(context, doc)),
           ],
         );
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Shared skeleton primitive
+// ─────────────────────────────────────────────
+
+class _SkeletonBlock extends StatelessWidget {
+  final double width;
+  final double height;
+  final double radius;
+
+  const _SkeletonBlock({
+    required this.width,
+    required this.height,
+    required this.radius,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width == double.infinity ? null : width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFF282840),
+        borderRadius: BorderRadius.circular(radius),
+      ),
     );
   }
 }
