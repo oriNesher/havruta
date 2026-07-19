@@ -14,7 +14,7 @@ class CreateCompetitionScreen extends StatefulWidget {
 }
 
 class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
-  String _selectedType = 'personalGoalChallenge';
+  String _selectedType = 'sharedGoalChallenge';
 
   final _challengeNameController = TextEditingController();
   final _goalController = TextEditingController();
@@ -35,6 +35,9 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   String? _createdSharedGoalTitle;
   int? _createdSharedTargetValue;
   String? _createdSharedUnit;
+  String? _createdGoalTitle;
+  int? _createdTargetValue;
+  String? _createdUnit;
 
   bool get _isPersonal => _selectedType == 'personalGoalChallenge';
   bool get _alreadyCreated => _createdCompetitionId != null;
@@ -155,7 +158,11 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
         _createdCompetitionId = competitionId;
         _createdCompetitionTitle = challengeName;
         _createdCompetitionType = _selectedType;
-        if (!_isPersonal) {
+        if (_isPersonal) {
+          _createdGoalTitle = goalText;
+          _createdTargetValue = targetValue;
+          _createdUnit = unit;
+        } else {
           _createdSharedGoalTitle = goalText;
           _createdSharedTargetValue = targetValue;
           _createdSharedUnit = unit;
@@ -499,6 +506,9 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
                 sharedGoalTitle: _createdSharedGoalTitle,
                 sharedTargetValue: _createdSharedTargetValue,
                 sharedUnit: _createdSharedUnit,
+                creatorGoalTitle: _createdGoalTitle,
+                creatorTargetValue: _createdTargetValue,
+                creatorUnit: _createdUnit,
               ),
               const SizedBox(height: 24),
               SizedBox(

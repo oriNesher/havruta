@@ -16,6 +16,9 @@ class HomePendingInvitesSection extends StatelessWidget {
     required String inviteId,
     required String competitionId,
     required String competitionTitle,
+    String? creatorGoalTitle,
+    int? creatorTargetValue,
+    String? creatorUnit,
   }) async {
     final goalTitleController = TextEditingController();
     final targetValueController = TextEditingController();
@@ -101,12 +104,46 @@ class HomePendingInvitesSection extends StatelessWidget {
               }
             }
 
+            final hasCreatorGoal = creatorGoalTitle != null &&
+                creatorGoalTitle.isNotEmpty &&
+                creatorTargetValue != null;
+            final creatorGoalDisplay = hasCreatorGoal
+                ? (creatorUnit != null && creatorUnit.isNotEmpty
+                    ? '$creatorGoalTitle — $creatorTargetValue $creatorUnit'
+                    : '$creatorGoalTitle — $creatorTargetValue')
+                : null;
+
             return AlertDialog(
               title: Text('Join "$competitionTitle"'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (creatorGoalDisplay != null) ...[
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          "Creator's goal, for reference:",
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            dialogContext,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          creatorGoalDisplay,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -350,6 +387,11 @@ class HomePendingInvitesSection extends StatelessWidget {
                 (invite['sharedTargetValue'] as num?)?.toInt() ?? 0;
             final sharedUnit = invite['sharedUnit'] as String? ?? '';
 
+            final creatorGoalTitle = invite['creatorGoalTitle'] as String?;
+            final creatorTargetValue =
+                (invite['creatorTargetValue'] as num?)?.toInt();
+            final creatorUnit = invite['creatorUnit'] as String?;
+
             return Card(
               margin: const EdgeInsets.only(bottom: 10),
               child: Padding(
@@ -439,6 +481,9 @@ class HomePendingInvitesSection extends StatelessWidget {
                                   inviteId: inviteId,
                                   competitionId: competitionId,
                                   competitionTitle: competitionTitle,
+                                  creatorGoalTitle: creatorGoalTitle,
+                                  creatorTargetValue: creatorTargetValue,
+                                  creatorUnit: creatorUnit,
                                 );
                               }
                             },

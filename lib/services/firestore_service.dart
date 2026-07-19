@@ -255,6 +255,9 @@ class FirestoreService {
     String? sharedGoalTitle,
     int? sharedTargetValue,
     String? sharedUnit,
+    String? creatorGoalTitle,
+    int? creatorTargetValue,
+    String? creatorUnit,
   }) async {
     await _db.collection('competition_invites').add({
       'competitionId': competitionId,
@@ -268,6 +271,9 @@ class FirestoreService {
       if (sharedGoalTitle != null) 'sharedGoalTitle': sharedGoalTitle,
       if (sharedTargetValue != null) 'sharedTargetValue': sharedTargetValue,
       if (sharedUnit != null) 'sharedUnit': sharedUnit,
+      if (creatorGoalTitle != null) 'creatorGoalTitle': creatorGoalTitle,
+      if (creatorTargetValue != null) 'creatorTargetValue': creatorTargetValue,
+      if (creatorUnit != null) 'creatorUnit': creatorUnit,
     });
   }
 

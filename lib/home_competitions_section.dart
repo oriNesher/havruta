@@ -575,52 +575,11 @@ class _ParticipantsListState extends State<_ParticipantsList> {
                 isMe: isMe,
                 baseFraction: baseFraction,
                 deltaFraction: deltaFraction,
+                showLogButton: isMe && canLog,
+                isLoggingProgress: _loggingProgress,
+                onLogProgress: _logProgress,
               );
             }),
-            if (canLog) ...[
-              const SizedBox(height: 12),
-              Divider(
-                height: 1,
-                thickness: 1,
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.12),
-              ),
-              const SizedBox(height: 12),
-              GestureDetector(
-                onTap: _loggingProgress ? null : _logProgress,
-                child: Center(
-                  child: _loggingProgress
-                      ? const SizedBox(
-                          width: 30,
-                          height: 30,
-                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                        )
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.add, size: 18, color: Colors.white),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              'LOG PROGRESS',
-                              style: AppTheme.display(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.8,
-                              ),
-                            ),
-                          ],
-                        ),
-                ),
-              ),
-            ],
           ],
         );
       },
@@ -723,6 +682,9 @@ class _ParticipantRow extends StatelessWidget {
   final bool isMe;
   final double baseFraction;
   final double deltaFraction;
+  final bool showLogButton;
+  final bool isLoggingProgress;
+  final VoidCallback? onLogProgress;
 
   const _ParticipantRow({
     required this.rank,
@@ -733,6 +695,9 @@ class _ParticipantRow extends StatelessWidget {
     required this.isMe,
     required this.baseFraction,
     required this.deltaFraction,
+    this.showLogButton = false,
+    this.isLoggingProgress = false,
+    this.onLogProgress,
   });
 
   @override
@@ -831,6 +796,50 @@ class _ParticipantRow extends StatelessWidget {
             percentText: percentText,
             isMe: isMe,
           ),
+          if (showLogButton) ...[
+            const SizedBox(height: 12),
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: colorScheme.outline.withValues(alpha: 0.12),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: isLoggingProgress ? null : onLogProgress,
+              child: Center(
+                child: isLoggingProgress
+                    ? const SizedBox(
+                        width: 30,
+                        height: 30,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.add, size: 18, color: Colors.white),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'LOG PROGRESS',
+                            style: AppTheme.display(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.8,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ],
         ],
       ),
     );

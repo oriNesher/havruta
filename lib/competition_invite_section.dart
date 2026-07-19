@@ -11,6 +11,9 @@ class CompetitionInviteSection extends StatefulWidget {
   final String? sharedGoalTitle;
   final int? sharedTargetValue;
   final String? sharedUnit;
+  final String? creatorGoalTitle;
+  final int? creatorTargetValue;
+  final String? creatorUnit;
 
   const CompetitionInviteSection({
     super.key,
@@ -21,6 +24,9 @@ class CompetitionInviteSection extends StatefulWidget {
     this.sharedGoalTitle,
     this.sharedTargetValue,
     this.sharedUnit,
+    this.creatorGoalTitle,
+    this.creatorTargetValue,
+    this.creatorUnit,
   });
 
   @override
@@ -102,6 +108,9 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
         sharedGoalTitle: widget.sharedGoalTitle,
         sharedTargetValue: widget.sharedTargetValue,
         sharedUnit: widget.sharedUnit,
+        creatorGoalTitle: widget.creatorGoalTitle,
+        creatorTargetValue: widget.creatorTargetValue,
+        creatorUnit: widget.creatorUnit,
       );
 
       usernameController.clear();
