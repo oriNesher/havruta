@@ -50,6 +50,15 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
     }
+
+    bundle {
+        language {
+            enableSplit = false
+        }
+        density {
+            enableSplit = false
+        }
+    }
 }
 
 flutter {

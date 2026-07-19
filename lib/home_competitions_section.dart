@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
 import 'app_theme.dart';
+import 'models/competition_event.dart';
 import 'services/firestore_service.dart';
 import 'services/progress_snapshot_cache.dart';
 import 'competition_details_screen.dart';
@@ -21,21 +22,25 @@ class HomeCompetitionsSection extends StatefulWidget {
 
 class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
   late final FirestoreService _firestoreService;
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _competitionsStream;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _eventsStream;
 
   @override
   void initState() {
     super.initState();
     _firestoreService = FirestoreService();
-    _stream = _firestoreService.getUserCompetitions(widget.uid);
+    _competitionsStream = _firestoreService.getUserCompetitions(widget.uid);
+    _eventsStream = _firestoreService.getHomeEvents(widget.uid);
   }
 
   @override
   Widget build(BuildContext context) {
+    // Events are gated alongside competitions so a card's first real paint
+    // already includes its event row (if any) — no pop-in / size jump later.
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _stream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      stream: _eventsStream,
+      builder: (context, eventsSnapshot) {
+        if (eventsSnapshot.connectionState == ConnectionState.waiting) {
           return const Column(
             children: [
               _SkeletonCompetitionCard(),
@@ -44,27 +49,50 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
           );
         }
 
-        if (snapshot.hasError) {
-          debugPrint('My competitions error: ${snapshot.error}');
-          return Text('Error: ${snapshot.error}');
+        if (eventsSnapshot.hasError) {
+          debugPrint('Home events error: ${eventsSnapshot.error}');
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final eventsByCompetitionId = groupEventsByCompetition(
+          eventsSnapshot.data?.docs ?? [],
+        );
 
-        if (docs.isEmpty) {
-          return const Text('No competitions yet');
-        }
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _competitionsStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Column(
+                children: [
+                  _SkeletonCompetitionCard(),
+                  _SkeletonCompetitionCard(),
+                ],
+              );
+            }
 
-        return Column(
-          children: docs.map((doc) {
-            return _CompetitionCard(
-              key: ValueKey(doc.id),
-              competitionId: doc.id,
-              competition: doc.data(),
-              currentUid: widget.uid,
-              firestoreService: _firestoreService,
+            if (snapshot.hasError) {
+              debugPrint('My competitions error: ${snapshot.error}');
+              return Text('Error: ${snapshot.error}');
+            }
+
+            final docs = snapshot.data?.docs ?? [];
+
+            if (docs.isEmpty) {
+              return const Text('No competitions yet');
+            }
+
+            return Column(
+              children: docs.map((doc) {
+                return _CompetitionCard(
+                  key: ValueKey(doc.id),
+                  competitionId: doc.id,
+                  competition: doc.data(),
+                  currentUid: widget.uid,
+                  firestoreService: _firestoreService,
+                  event: eventsByCompetitionId[doc.id],
+                );
+              }).toList(),
             );
-          }).toList(),
+          },
         );
       },
     );
@@ -192,6 +220,7 @@ class _CompetitionCard extends StatelessWidget {
   final Map<String, dynamic> competition;
   final String currentUid;
   final FirestoreService firestoreService;
+  final CompetitionEvent? event;
 
   const _CompetitionCard({
     super.key,
@@ -199,6 +228,7 @@ class _CompetitionCard extends StatelessWidget {
     required this.competition,
     required this.currentUid,
     required this.firestoreService,
+    this.event,
   });
 
   String? _daysLeft(String? deadline) {
@@ -341,6 +371,11 @@ class _CompetitionCard extends StatelessWidget {
                 color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.12),
               ),
               const SizedBox(height: 14),
+              // ── Event ─────────────────────────────────
+              if (event != null) ...[
+                _CompetitionEventRow(event: event!),
+                const SizedBox(height: 14),
+              ],
               // ── Participants ─────────────────────────
               _ParticipantsList(
                 competitionId: competitionId,
@@ -589,6 +624,88 @@ class _ParticipantsListState extends State<_ParticipantsList> {
           ],
         );
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Compact per-competition event row — icon + message | RESPOND
+// ─────────────────────────────────────────────
+
+class _CompetitionEventRow extends StatelessWidget {
+  final CompetitionEvent event;
+
+  const _CompetitionEventRow({required this.event});
+
+  IconData get _icon {
+    switch (event.type) {
+      case 'overtook':
+        return Icons.local_fire_department;
+      case 'progress':
+        return Icons.trending_up;
+      default:
+        return Icons.notifications_none;
+    }
+  }
+
+  String get _message {
+    final actor = event.actorUsername ?? 'Someone';
+    switch (event.type) {
+      case 'overtook':
+        return '$actor overtook you';
+      case 'progress':
+        return '$actor made progress';
+      default:
+        return 'New activity';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final red = colorScheme.secondary;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: red.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: red.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(_icon, size: 18, color: red),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _message,
+              style: AppTheme.display(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: colorScheme.onSurface,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: red,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              'RESPOND',
+              style: AppTheme.display(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 0.6,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

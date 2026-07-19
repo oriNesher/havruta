@@ -8,7 +8,6 @@ import 'create_competition_screen.dart';
 import 'pending_invites_screen.dart';
 import 'services/firestore_service.dart';
 import 'services/progress_snapshot_cache.dart';
-import 'home_events_section.dart';
 import 'home_competitions_section.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -214,10 +213,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 );
               },
             ),
-            const SizedBox(height: 20),
-
-            HomeEventsSection(uid: user.uid),
-
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
