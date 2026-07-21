@@ -435,10 +435,10 @@ class FirestoreService {
     return doc.exists;
   }
 
-  /// Get all events relevant to the user
+  /// Get all events relevant to the user, across all of their competitions
   Stream<QuerySnapshot<Map<String, dynamic>>> getHomeEvents(String uid) {
     return _db
-        .collection('events')
+        .collectionGroup('events')
         .where('unseenByUserUids', arrayContains: uid)
         .orderBy('lastUpdatedAt', descending: true)
         .limit(15)
@@ -446,12 +446,13 @@ class FirestoreService {
   }
 
   /// After showing an event, we want to mark it as seen
-  Future<void> dismissEventsForUser(List<String> eventIds, String uid) async {
+  Future<void> dismissEventsForUser(
+    List<DocumentReference<Map<String, dynamic>>> eventRefs,
+    String uid,
+  ) async {
     final batch = _db.batch();
 
-    for (final eventId in eventIds) {
-      final ref = _db.collection('events').doc(eventId);
-
+    for (final ref in eventRefs) {
       batch.update(ref, {
         'unseenByUserUids': FieldValue.arrayRemove([uid]),
       });
