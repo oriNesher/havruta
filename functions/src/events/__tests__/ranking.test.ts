@@ -23,6 +23,8 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
     ],
     participantUids: ["alice", "bob"],
     existingOpenProgressEvent: null,
+    previousUpdatedAt: null,
+    currentUpdatedAt: null,
     ...overrides,
   };
 }

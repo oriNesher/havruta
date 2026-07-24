@@ -21,6 +21,8 @@ export interface EventsContext {
   participants: ParticipantData[];
   participantUids: string[];
   existingOpenProgressEvent: ExistingOpenEvent | null;
+  previousUpdatedAt: FirebaseFirestore.Timestamp | null;
+  currentUpdatedAt: FirebaseFirestore.Timestamp | null;
 }
 
 export type EventDraftTarget =

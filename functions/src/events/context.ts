@@ -42,6 +42,10 @@ export async function buildEventsContext(
   const actorUid = after.uid;
   const actorUsername = after.username ?? "Someone";
   const actorTargetValue = after.targetValue ?? 0;
+  const previousUpdatedAt: FirebaseFirestore.Timestamp | null =
+    before.updatedAt ?? null;
+  const currentUpdatedAt: FirebaseFirestore.Timestamp | null =
+    after.updatedAt ?? null;
 
   if (!actorUid) {
     logger.info("Missing updater uid for event creation");
@@ -116,5 +120,7 @@ export async function buildEventsContext(
     participants,
     participantUids,
     existingOpenProgressEvent,
+    previousUpdatedAt,
+    currentUpdatedAt,
   };
 }
