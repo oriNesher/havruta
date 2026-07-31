@@ -4,7 +4,10 @@ import * as admin from "firebase-admin";
 import {buildEventsContext} from "./events/context";
 import {detectProgressEvents} from "./events/rules/progress";
 import {detectRankingEvents} from "./events/rules/ranking";
-import {persistEventDrafts} from "./events/persist";
+import {detectGapEvents} from "./events/rules/gap";
+import {detectProgressionEvents} from "./events/rules/progression";
+import {detectStreakEvents} from "./events/rules/streak";
+import {persistEventDrafts, persistParticipantStreak} from "./events/persist";
 
 admin.initializeApp();
 
@@ -204,9 +207,17 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
     const drafts = [
       ...detectProgressEvents(context),
       ...detectRankingEvents(context),
+      ...detectGapEvents(context),
+      ...detectProgressionEvents(context),
+      ...detectStreakEvents(context),
     ];
 
     await persistEventDrafts(context.competitionId, drafts);
+    await persistParticipantStreak(
+      context.competitionId,
+      event.params.participantId,
+      context
+    );
 
     logger.info("Events processed", {
       competitionId: context.competitionId,

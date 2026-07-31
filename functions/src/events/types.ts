@@ -23,6 +23,11 @@ export interface EventsContext {
   existingOpenProgressEvent: ExistingOpenEvent | null;
   previousUpdatedAt: FirebaseFirestore.Timestamp | null;
   currentUpdatedAt: FirebaseFirestore.Timestamp | null;
+  firedCloseRaceCheckpoints: number[];
+  completionsCount: number;
+  todayDateStr: string;
+  isNewActiveDay: boolean;
+  newStreakCount: number;
 }
 
 export type EventDraftTarget =

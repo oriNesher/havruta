@@ -1,6 +1,8 @@
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import {EventsContext, ParticipantData} from "./types";
+import {countEvents, fetchFiredValues} from "./guards";
+import {isNextCalendarDay, toDateString} from "./streakDate";
 
 export interface BuildContextParams {
   competitionId: string;
@@ -109,6 +111,31 @@ export async function buildEventsContext(
       data: existingEventSnap.docs[0].data(),
     };
 
+  const firedCloseRaceCheckpoints = await fetchFiredValues(
+    eventsRef,
+    "closeRace",
+    "checkpoint"
+  );
+
+  const completionsCount = await countEvents(eventsRef, [
+    "won",
+    "finishedInPosition",
+  ]);
+
+  const todayTimestamp = currentUpdatedAt ?? admin.firestore.Timestamp.now();
+  const todayDateStr = toDateString(todayTimestamp);
+  const previousActiveDate: string | null = before.lastActiveDate ?? null;
+  const previousStreakCount: number = before.currentStreak ?? 0;
+
+  const isNewActiveDay = previousActiveDate !== todayDateStr;
+  const isConsecutiveDay = previousActiveDate !== null &&
+    isNextCalendarDay(previousActiveDate, todayDateStr);
+
+  let newStreakCount = previousStreakCount;
+  if (isNewActiveDay) {
+    newStreakCount = isConsecutiveDay ? previousStreakCount + 1 : 1;
+  }
+
   return {
     competitionId,
     competitionTitle,
@@ -122,5 +149,10 @@ export async function buildEventsContext(
     existingOpenProgressEvent,
     previousUpdatedAt,
     currentUpdatedAt,
+    firedCloseRaceCheckpoints,
+    completionsCount,
+    todayDateStr,
+    isNewActiveDay,
+    newStreakCount,
   };
 }

@@ -25,6 +25,11 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
     existingOpenProgressEvent: null,
     previousUpdatedAt: null,
     currentUpdatedAt: null,
+    firedCloseRaceCheckpoints: [],
+    completionsCount: 0,
+    todayDateStr: "2026-01-01",
+    isNewActiveDay: false,
+    newStreakCount: 0,
     ...overrides,
   };
 }
@@ -38,13 +43,40 @@ test("creates an overtook event for a participant just passed", () => {
   assert.equal(drafts[0].payload.targetUid, "bob");
 });
 
-test("does not create an overtook event for a tie", () => {
-  const drafts = detectRankingEvents(
-    baseContext({afterProgress: 50})
-  );
+test("creates a tied event instead of overtook when progress becomes equal",
+  () => {
+    const drafts = detectRankingEvents(baseContext({afterProgress: 50}));
 
-  assert.equal(drafts.length, 0);
-});
+    assert.equal(drafts.length, 1);
+    assert.equal(drafts[0].type, "tied");
+    assert.deepEqual(drafts[0].recipients, ["bob"]);
+  });
+
+test("does not create a tied event when already tied before this update",
+  () => {
+    const drafts = detectRankingEvents(
+      baseContext({beforeProgress: 50, afterProgress: 55})
+    );
+
+    assert.equal(drafts.filter((d) => d.type === "tied").length, 0);
+  });
+
+test("creates a tied event for whole-percent ties across different targets",
+  () => {
+    // 99/300 and 33/100 are both 33% but never divide to equal floats.
+    const drafts = detectRankingEvents(baseContext({
+      actorTargetValue: 300,
+      beforeProgress: 90,
+      afterProgress: 99,
+      participants: [
+        {uid: "alice", username: "Alice", progress: 99, targetValue: 300},
+        {uid: "bob", username: "Bob", progress: 33, targetValue: 100},
+      ],
+    }));
+
+    assert.equal(drafts.length, 1);
+    assert.equal(drafts[0].type, "tied");
+  });
 
 test("does not create an overtook event when actor was already ahead", () => {
   const drafts = detectRankingEvents(
@@ -58,4 +90,66 @@ test("skips ranking detection when actor target value is invalid", () => {
   const drafts = detectRankingEvents(baseContext({actorTargetValue: 0}));
 
   assert.equal(drafts.length, 0);
+});
+
+test("creates tookTheLead when actor becomes sole leader with 3+ participants",
+  () => {
+    const context = baseContext({
+      beforeProgress: 20,
+      afterProgress: 60,
+      participants: [
+        {uid: "alice", username: "Alice", progress: 60, targetValue: 100},
+        {uid: "bob", username: "Bob", progress: 50, targetValue: 100},
+        {uid: "carol", username: "Carol", progress: 30, targetValue: 100},
+      ],
+      participantUids: ["alice", "bob", "carol"],
+    });
+
+    const drafts = detectRankingEvents(context);
+    const tookTheLead = drafts.find((d) => d.type === "tookTheLead");
+
+    assert.ok(tookTheLead);
+    assert.deepEqual(tookTheLead?.recipients, ["bob", "carol"]);
+  });
+
+test("does not create tookTheLead with only 2 participants", () => {
+  const drafts = detectRankingEvents(baseContext());
+
+  assert.equal(drafts.filter((d) => d.type === "tookTheLead").length, 0);
+});
+
+test("does not create tookTheLead when actor was already the sole leader",
+  () => {
+    const context = baseContext({
+      beforeProgress: 55,
+      afterProgress: 90,
+      participants: [
+        {uid: "alice", username: "Alice", progress: 90, targetValue: 100},
+        {uid: "bob", username: "Bob", progress: 50, targetValue: 100},
+        {uid: "carol", username: "Carol", progress: 30, targetValue: 100},
+      ],
+      participantUids: ["alice", "bob", "carol"],
+    });
+
+    const drafts = detectRankingEvents(context);
+
+    assert.equal(drafts.filter((d) => d.type === "tookTheLead").length, 0);
+  });
+
+test("creates tookTheLead when breaking a tie for first place", () => {
+  const context = baseContext({
+    beforeProgress: 50,
+    afterProgress: 60,
+    participants: [
+      {uid: "alice", username: "Alice", progress: 60, targetValue: 100},
+      {uid: "bob", username: "Bob", progress: 50, targetValue: 100},
+      {uid: "carol", username: "Carol", progress: 30, targetValue: 100},
+    ],
+    participantUids: ["alice", "bob", "carol"],
+  });
+
+  const drafts = detectRankingEvents(context);
+  const tookTheLead = drafts.find((d) => d.type === "tookTheLead");
+
+  assert.ok(tookTheLead);
 });

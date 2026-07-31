@@ -43,6 +43,25 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
 
   bool get _isShared => widget.type == 'sharedGoalChallenge';
 
+  static const List<String> _monthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _formatLastUpdate(Timestamp? updatedAt) {
+    if (updatedAt == null) return '';
+
+    final date = updatedAt.toDate();
+    final diff = DateTime.now().difference(date);
+
+    if (diff.inSeconds < 60) return 'Updated just now';
+    if (diff.inMinutes < 60) return 'Updated ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return 'Updated ${diff.inHours}h ago';
+    if (diff.inDays < 7) return 'Updated ${diff.inDays}d ago';
+
+    return 'Updated ${_monthNames[date.month - 1]} ${date.day}';
+  }
+
   Future<void> _showEditProgressDialog({
     required String competitionId,
     required String uid,
@@ -399,6 +418,8 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                       final unit = participant['unit'] ?? '';
                       final linkedGoalTitle =
                           participant['linkedGoalTitle'] as String?;
+                      final updatedAt =
+                          participant['updatedAt'] as Timestamp?;
 
                       final displayName = username.toString().isNotEmpty
                           ? username
@@ -507,6 +528,16 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                             LinearProgressIndicator(
                               value: progressBarValue,
                             ),
+                            if (updatedAt != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                _formatLastUpdate(updatedAt),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurface
+                                      .withValues(alpha: 0.45),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       );

@@ -1,5 +1,5 @@
 import * as admin from "firebase-admin";
-import {EventDraft} from "./types";
+import {EventDraft, EventsContext} from "./types";
 
 /**
  * Writes decided event drafts to competitions/{competitionId}/events.
@@ -43,4 +43,32 @@ export async function persistEventDrafts(
       });
     })
   );
+}
+
+/**
+ * Writes the participant's updated streak state, computed in context.ts,
+ * back onto their participant doc — only when today is a new active day.
+ * @param {string} competitionId Competition the participant belongs to.
+ * @param {string} participantId The participant doc's id.
+ * @param {EventsContext} context Shared context for this participant update.
+ * @return {Promise<void>} Resolves once the write completes.
+ */
+export async function persistParticipantStreak(
+  competitionId: string,
+  participantId: string,
+  context: EventsContext
+): Promise<void> {
+  if (!context.isNewActiveDay) return;
+
+  const db = admin.firestore();
+
+  await db
+    .collection("competitions")
+    .doc(competitionId)
+    .collection("participants")
+    .doc(participantId)
+    .update({
+      currentStreak: context.newStreakCount,
+      lastActiveDate: context.todayDateStr,
+    });
 }

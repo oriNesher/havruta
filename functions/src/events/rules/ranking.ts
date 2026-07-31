@@ -1,4 +1,5 @@
 import {EventDraft, EventsContext} from "../types";
+import {toWholePercent} from "../percent";
 
 const TOOK_THE_LEAD_MIN_PARTICIPANTS = 3;
 
@@ -6,6 +7,8 @@ const TOOK_THE_LEAD_MIN_PARTICIPANTS = 3;
  * Creates ranking events for one participant update: "overtook" for each
  * participant just passed, "tied" for each participant just matched, and
  * "tookTheLead" if the actor just became the competition's sole leader.
+ * All comparisons use whole-percent rounding so overtook/tied stay mutually
+ * exclusive for the same pair.
  * @param {EventsContext} context Shared context for this participant update.
  * @return {EventDraft[]} The ranking event drafts to persist.
  */
@@ -27,9 +30,11 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
 
   const actorPercentBefore = beforeProgress / actorTargetValue;
   const actorPercentAfter = afterProgress / actorTargetValue;
+  const actorWholeBefore = toWholePercent(actorPercentBefore);
+  const actorWholeAfter = toWholePercent(actorPercentAfter);
 
   const drafts: EventDraft[] = [];
-  let maxOtherPercent = -Infinity;
+  let maxOtherWhole = -Infinity;
 
   for (const participant of participants) {
     const otherUid = participant.uid;
@@ -47,11 +52,12 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
     }
 
     const otherPercent = otherProgress / otherTargetValue;
-    maxOtherPercent = Math.max(maxOtherPercent, otherPercent);
+    const otherWhole = toWholePercent(otherPercent);
+    maxOtherWhole = Math.max(maxOtherWhole, otherWhole);
 
     // Overtook only if the actor was not ahead before and is ahead now.
     const overtookThisParticipant =
-      actorPercentBefore <= otherPercent && actorPercentAfter > otherPercent;
+      actorWholeBefore <= otherWhole && actorWholeAfter > otherWhole;
 
     if (overtookThisParticipant) {
       drafts.push({
@@ -78,10 +84,10 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
       });
     }
 
-    // Tied only on the transition into equal percentages, not while already
-    // tied, so it can fire again after a later break.
+    // Tied only on the transition into equal whole percentages, not while
+    // already tied, so it can fire again after a later break.
     const justTiedWithParticipant =
-      actorPercentBefore !== otherPercent && actorPercentAfter === otherPercent;
+      actorWholeBefore !== otherWhole && actorWholeAfter === otherWhole;
 
     if (justTiedWithParticipant) {
       drafts.push({
@@ -104,11 +110,11 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
     }
   }
 
-  const hasValidOthers = maxOtherPercent > -Infinity;
+  const hasValidOthers = maxOtherWhole > -Infinity;
   const wasSoleLeaderBefore =
-    hasValidOthers && actorPercentBefore > maxOtherPercent;
+    hasValidOthers && actorWholeBefore > maxOtherWhole;
   const isSoleLeaderAfter =
-    hasValidOthers && actorPercentAfter > maxOtherPercent;
+    hasValidOthers && actorWholeAfter > maxOtherWhole;
 
   if (
     participantUids.length >= TOOK_THE_LEAD_MIN_PARTICIPANTS &&

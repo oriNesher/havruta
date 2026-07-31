@@ -26,6 +26,11 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
     existingOpenProgressEvent: null,
     previousUpdatedAt: Timestamp.fromMillis(0),
     currentUpdatedAt: Timestamp.fromMillis(ONE_DAY_MS),
+    firedCloseRaceCheckpoints: [],
+    completionsCount: 0,
+    todayDateStr: "2026-01-01",
+    isNewActiveDay: false,
+    newStreakCount: 0,
     ...overrides,
   };
 }
