@@ -111,6 +111,19 @@ export async function buildEventsContext(
       data: existingEventSnap.docs[0].data(),
     };
 
+  // Open "tied" events for the whole competition, so ranking can merge a
+  // repeat tie between the same two participants into the one still-open
+  // event instead of creating a duplicate.
+  const openTiedEventsSnap = await eventsRef
+    .where("type", "==", "tied")
+    .where("status", "==", "open")
+    .get();
+
+  const openTiedEvents = openTiedEventsSnap.docs.map((doc) => ({
+    id: doc.id,
+    data: doc.data(),
+  }));
+
   const firedCloseRaceCheckpoints = await fetchFiredValues(
     eventsRef,
     "closeRace",
@@ -147,6 +160,7 @@ export async function buildEventsContext(
     participants,
     participantUids,
     existingOpenProgressEvent,
+    openTiedEvents,
     previousUpdatedAt,
     currentUpdatedAt,
     firedCloseRaceCheckpoints,

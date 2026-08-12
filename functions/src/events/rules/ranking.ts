@@ -1,7 +1,31 @@
-import {EventDraft, EventsContext} from "../types";
+import {EventDraft, EventsContext, ExistingOpenEvent} from "../types";
 import {toWholePercent} from "../percent";
 
 const TOOK_THE_LEAD_MIN_PARTICIPANTS = 3;
+
+/**
+ * Finds an already-open "tied" event for this exact unordered pair, so a
+ * repeat tie between the same two participants updates it instead of
+ * creating a duplicate.
+ * @param {ExistingOpenEvent[]} openTiedEvents Open tied events for the
+ *   competition.
+ * @param {string} uidA One participant's uid.
+ * @param {string} uidB The other participant's uid.
+ * @return {ExistingOpenEvent | null} The matching event, if any.
+ */
+function findOpenTiedEvent(
+  openTiedEvents: ExistingOpenEvent[],
+  uidA: string,
+  uidB: string
+): ExistingOpenEvent | null {
+  return (
+    openTiedEvents.find((existing) => {
+      const a = existing.data.actorUid;
+      const b = existing.data.targetUid;
+      return (a === uidA && b === uidB) || (a === uidB && b === uidA);
+    }) ?? null
+  );
+}
 
 /**
  * Creates ranking events for one participant update: "overtook" for each
@@ -22,6 +46,7 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
     afterProgress,
     participants,
     participantUids,
+    openTiedEvents,
   } = context;
 
   if (typeof actorTargetValue !== "number" || actorTargetValue <= 0) {
@@ -90,10 +115,15 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
       actorWholeBefore !== otherWhole && actorWholeAfter === otherWhole;
 
     if (justTiedWithParticipant) {
+      const existingTied =
+        findOpenTiedEvent(openTiedEvents, actorUid, otherUid);
+
       drafts.push({
         type: "tied",
         recipients: [otherUid],
-        target: {kind: "create"},
+        target: existingTied ?
+          {kind: "update", docId: existingTied.id} :
+          {kind: "create"},
         payload: {
           competitionTitle,
           actorUid,

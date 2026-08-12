@@ -329,11 +329,22 @@ class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
                   ),
                 );
               },
-        child: Text(
-          isWaiting && remaining > Duration.zero
-              ? 'Next challenge in ${_formatRemaining(remaining)}'
-              : 'Create Challenge',
-        ),
+        child: remaining > Duration.zero
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Create Challenge'),
+                  const SizedBox(height: 2),
+                  Text(
+                    _formatRemaining(remaining),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              )
+            : const Text('Create Challenge'),
       ),
     );
   }

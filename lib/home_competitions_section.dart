@@ -346,6 +346,7 @@ class _CompetitionCard extends StatelessWidget {
               _CompetitionEventCarousel(
                 key: ValueKey(competitionId),
                 competitionId: competitionId,
+                currentUid: currentUid,
                 firestoreService: firestoreService,
               ),
               // ── Participants ─────────────────────────
@@ -567,11 +568,13 @@ const double _eventAreaHeight = 48.0;
 
 class _CompetitionEventCarousel extends StatefulWidget {
   final String competitionId;
+  final String currentUid;
   final FirestoreService firestoreService;
 
   const _CompetitionEventCarousel({
     super.key,
     required this.competitionId,
+    required this.currentUid,
     required this.firestoreService,
   });
 
@@ -691,7 +694,10 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
             itemCount: events.length,
             itemBuilder: (context, index) => Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: _CompetitionEventRow(event: events[index]),
+              child: _CompetitionEventRow(
+                event: events[index],
+                currentUid: widget.currentUid,
+              ),
             ),
           ),
         );
@@ -739,8 +745,9 @@ class _EventPlaceholderRow extends StatelessWidget {
 
 class _CompetitionEventRow extends StatelessWidget {
   final CompetitionEvent event;
+  final String currentUid;
 
-  const _CompetitionEventRow({required this.event});
+  const _CompetitionEventRow({required this.event, required this.currentUid});
 
   IconData get _icon {
     switch (event.type) {
@@ -779,49 +786,96 @@ class _CompetitionEventRow extends StatelessWidget {
     }
   }
 
-  String get _message {
-    final actor = event.actorUsername ?? 'Someone';
+  // "You" whenever the name in question is whoever's looking at the card —
+  // works for actor or target, since the carousel is shown to every
+  // participant, not just the event's original recipient.
+  String _labelFor(String? uid, String? username) {
+    if (uid != null && uid == currentUid) return 'You';
+    return username ?? 'Someone';
+  }
+
+  InlineSpan _name(String label, TextStyle base) {
+    return TextSpan(
+      text: label,
+      style: label == 'You' ? base.copyWith(fontWeight: FontWeight.w800) : base,
+    );
+  }
+
+  List<InlineSpan> _messageSpans(TextStyle base) {
+    final actor = _labelFor(event.actorUid, event.actorUsername);
+    final target = _labelFor(event.targetUid, event.targetUsername);
+    InlineSpan name(String label) => _name(label, base);
+    TextSpan text(String s) => TextSpan(text: s, style: base);
+
     switch (event.type) {
       case 'overtook':
-        return '$actor overtook you';
+        return [name(actor), text(' overtook '), name(target)];
       case 'tied':
-        return '$actor tied with you';
+        return [name(actor), text(' tied with '), name(target)];
       case 'closeBehindYou':
-        return '$actor is closing in on you';
+        return [name(actor), text(' is closing in on '), name(target)];
       case 'tookTheLead':
-        return '$actor took the lead';
+        return [name(actor), text(' took the lead')];
       case 'pullingAhead':
-        return '$actor is pulling ahead';
+        return [name(actor), text(' is pulling ahead')];
       case 'closeRace':
-        return 'Tight race for 1st place';
+        return [text('Tight race for 1st place')];
       case 'progress':
-        return '$actor made progress';
+        final delta = (event.metadata?['progressDelta'] as num?)?.toInt();
+        return [
+          name(actor),
+          text(delta != null ? ' made progress (+$delta)' : ' made progress'),
+        ];
       case 'backInRace':
-        return '$actor is back in the race';
+        return [name(actor), text(' is back in the race')];
       case 'nearCompletion':
-        return '$actor is almost done';
+        return [name(actor), text(' is almost done')];
       case 'milestone':
         final pct = (event.metadata?['milestone'] as num?)?.toInt();
-        return pct != null ? '$actor hit $pct%' : '$actor hit a milestone';
+        return [
+          name(actor),
+          text(pct != null ? ' hit $pct%' : ' hit a milestone'),
+        ];
       case 'won':
-        return '$actor won the competition';
+        return [name(actor), text(' won the competition')];
       case 'finishedInPosition':
         final position = (event.metadata?['position'] as num?)?.toInt();
-        return position != null
-            ? '$actor finished ${_ordinal(position)}'
-            : '$actor finished the competition';
+        return [
+          name(actor),
+          text(
+            position != null
+                ? ' finished ${_ordinal(position)}'
+                : ' finished the competition',
+          ),
+        ];
       case 'activityStreak':
         final streak = (event.metadata?['streak'] as num?)?.toInt();
-        return streak != null
-            ? '$actor is on a $streak-day streak'
-            : '$actor is on a streak';
+        return [
+          name(actor),
+          text(
+            streak != null
+                ? ' is on a $streak-day streak'
+                : ' is on a streak',
+          ),
+        ];
       case 'joined':
-        return '$actor joined the competition';
+        return [name(actor), text(' joined the competition')];
       case 'left':
-        return '$actor left the competition';
+        return [name(actor), text(' left the competition')];
       default:
-        return 'New activity';
+        return [text('New activity')];
     }
+  }
+
+  String get _relativeTime {
+    final dt = (event.lastUpdatedAt ?? event.createdAt)?.toDate();
+    if (dt == null) return '';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 60) return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    return '${dt.month}/${dt.day}';
   }
 
   static String _ordinal(int n) {
@@ -842,6 +896,11 @@ class _CompetitionEventRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final red = colorScheme.secondary;
+    final base = AppTheme.display(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: colorScheme.onSurface,
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -855,32 +914,19 @@ class _CompetitionEventRow extends StatelessWidget {
           Icon(_icon, size: 18, color: red),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              _message,
-              style: AppTheme.display(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: colorScheme.onSurface,
-              ),
+            child: Text.rich(
+              TextSpan(children: _messageSpans(base)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: red,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              'RESPOND',
-              style: AppTheme.display(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-                letterSpacing: 0.6,
-              ),
+          Text(
+            _relativeTime,
+            style: AppTheme.display(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurface.withValues(alpha: 0.45),
             ),
           ),
         ],

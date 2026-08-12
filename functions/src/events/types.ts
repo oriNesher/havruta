@@ -21,6 +21,7 @@ export interface EventsContext {
   participants: ParticipantData[];
   participantUids: string[];
   existingOpenProgressEvent: ExistingOpenEvent | null;
+  openTiedEvents: ExistingOpenEvent[];
   previousUpdatedAt: FirebaseFirestore.Timestamp | null;
   currentUpdatedAt: FirebaseFirestore.Timestamp | null;
   firedCloseRaceCheckpoints: number[];

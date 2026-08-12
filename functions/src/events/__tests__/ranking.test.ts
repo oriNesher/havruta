@@ -23,6 +23,7 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
     ],
     participantUids: ["alice", "bob"],
     existingOpenProgressEvent: null,
+    openTiedEvents: [],
     previousUpdatedAt: null,
     currentUpdatedAt: null,
     firedCloseRaceCheckpoints: [],
@@ -50,7 +51,29 @@ test("creates a tied event instead of overtook when progress becomes equal",
     assert.equal(drafts.length, 1);
     assert.equal(drafts[0].type, "tied");
     assert.deepEqual(drafts[0].recipients, ["bob"]);
+    assert.deepEqual(drafts[0].target, {kind: "create"});
   });
+
+test("updates the existing open tied event for this pair instead of " +
+  "creating a duplicate", () => {
+  const drafts = detectRankingEvents(baseContext({
+    afterProgress: 50,
+    openTiedEvents: [
+      {id: "existingTiedDoc", data: {actorUid: "bob", targetUid: "alice"}},
+    ],
+  }));
+
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0].type, "tied");
+  assert.deepEqual(drafts[0].target, {
+    kind: "update",
+    docId: "existingTiedDoc",
+  });
+  // Actor-first: whoever's update caused this tie leads the message, even
+  // though the open event was originally created from Bob's side.
+  assert.equal(drafts[0].payload.actorUid, "alice");
+  assert.equal(drafts[0].payload.targetUid, "bob");
+});
 
 test("does not create a tied event when already tied before this update",
   () => {
