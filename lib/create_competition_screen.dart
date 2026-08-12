@@ -16,7 +16,7 @@ class CreateCompetitionScreen extends StatefulWidget {
 class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   String _selectedType = 'sharedGoalChallenge';
 
-  final _challengeNameController = TextEditingController();
+  final _titleController = TextEditingController();
   final _goalController = TextEditingController();
   final _targetController = TextEditingController();
   final _unitController = TextEditingController();
@@ -41,6 +41,20 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
 
   bool get _isPersonal => _selectedType == 'personalGoalChallenge';
   bool get _alreadyCreated => _createdCompetitionId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _goalController.addListener(_syncTargetFromGoal);
+  }
+
+  // Detects the first number typed in the goal field (e.g. "Run 30km") and
+  // mirrors it into Target. Always resyncs on every goal edit — a manual
+  // edit to Target sticks only until the goal text changes again.
+  void _syncTargetFromGoal() {
+    final match = RegExp(r'\d+').firstMatch(_goalController.text);
+    if (match != null) _targetController.text = match.group(0)!;
+  }
 
   void _onTypeChanged(String newType) {
     if (_alreadyCreated) return;
@@ -68,25 +82,27 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   }
 
   Future<void> _createChallenge() async {
-    final challengeName = _challengeNameController.text.trim();
+    final titleText = _titleController.text.trim();
     final goalText = _goalController.text.trim();
     final targetText = _targetController.text.trim();
     final unit = _unitController.text.trim();
     final deadline = _deadlineController.text.trim();
     final rules = _rulesController.text.trim();
 
-    if (challengeName.isEmpty || goalText.isEmpty || targetText.isEmpty) {
+    if (goalText.isEmpty || targetText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             _isPersonal
-                ? 'Please fill in Challenge name, My personal goal, and Target'
-                : 'Please fill in Challenge name, Shared goal, and Target',
+                ? 'Please fill in My personal goal and Target'
+                : 'Please fill in Shared goal and Target',
           ),
         ),
       );
       return;
     }
+
+    final challengeName = titleText.isEmpty ? goalText : titleText;
 
     final targetValue = int.tryParse(targetText);
     if (targetValue == null || targetValue <= 0) {
@@ -184,7 +200,8 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
 
   @override
   void dispose() {
-    _challengeNameController.dispose();
+    _goalController.removeListener(_syncTargetFromGoal);
+    _titleController.dispose();
     _goalController.dispose();
     _targetController.dispose();
     _unitController.dispose();
@@ -289,21 +306,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
             ),
             const SizedBox(height: 28),
 
-            // Challenge name
-            _fieldSection(
-              'Challenge name',
-              'The name of this challenge. e.g. "Family Health Challenge" or "Reading Challenge".',
-              TextField(
-                controller: _challengeNameController,
-                enabled: !_alreadyCreated,
-                decoration: const InputDecoration(
-                  hintText: 'Family Health Challenge',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
             // Goal field — label changes based on type
             _fieldSection(
               _isPersonal ? 'My personal goal' : 'Shared goal',
@@ -376,6 +378,22 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               ),
               const SizedBox(height: 16),
             ],
+
+            // Title
+            _fieldSection(
+              'Title',
+              'A name for this challenge. Leave it blank and the goal text will be used instead. '
+              'e.g. "Family Health Challenge" or "Reading Challenge".',
+              TextField(
+                controller: _titleController,
+                enabled: !_alreadyCreated,
+                decoration: const InputDecoration(
+                  hintText: 'Family Health Challenge',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
 
             // Unit
             _fieldSection(

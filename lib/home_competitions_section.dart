@@ -23,24 +23,20 @@ class HomeCompetitionsSection extends StatefulWidget {
 class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
   late final FirestoreService _firestoreService;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _competitionsStream;
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _eventsStream;
 
   @override
   void initState() {
     super.initState();
     _firestoreService = FirestoreService();
     _competitionsStream = _firestoreService.getUserCompetitions(widget.uid);
-    _eventsStream = _firestoreService.getHomeEvents(widget.uid);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Events are gated alongside competitions so a card's first real paint
-    // already includes its event row (if any) — no pop-in / size jump later.
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _eventsStream,
-      builder: (context, eventsSnapshot) {
-        if (eventsSnapshot.connectionState == ConnectionState.waiting) {
+      stream: _competitionsStream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Column(
             children: [
               _SkeletonCompetitionCard(),
@@ -49,50 +45,27 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
           );
         }
 
-        if (eventsSnapshot.hasError) {
-          debugPrint('Home events error: ${eventsSnapshot.error}');
+        if (snapshot.hasError) {
+          debugPrint('My competitions error: ${snapshot.error}');
+          return Text('Error: ${snapshot.error}');
         }
 
-        final eventsByCompetitionId = groupEventsByCompetition(
-          eventsSnapshot.data?.docs ?? [],
-        );
+        final docs = snapshot.data?.docs ?? [];
 
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _competitionsStream,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Column(
-                children: [
-                  _SkeletonCompetitionCard(),
-                  _SkeletonCompetitionCard(),
-                ],
-              );
-            }
+        if (docs.isEmpty) {
+          return const Text('No competitions yet');
+        }
 
-            if (snapshot.hasError) {
-              debugPrint('My competitions error: ${snapshot.error}');
-              return Text('Error: ${snapshot.error}');
-            }
-
-            final docs = snapshot.data?.docs ?? [];
-
-            if (docs.isEmpty) {
-              return const Text('No competitions yet');
-            }
-
-            return Column(
-              children: docs.map((doc) {
-                return _CompetitionCard(
-                  key: ValueKey(doc.id),
-                  competitionId: doc.id,
-                  competition: doc.data(),
-                  currentUid: widget.uid,
-                  firestoreService: _firestoreService,
-                  event: eventsByCompetitionId[doc.id],
-                );
-              }).toList(),
+        return Column(
+          children: docs.map((doc) {
+            return _CompetitionCard(
+              key: ValueKey(doc.id),
+              competitionId: doc.id,
+              competition: doc.data(),
+              currentUid: widget.uid,
+              firestoreService: _firestoreService,
             );
-          },
+          }).toList(),
         );
       },
     );
@@ -220,7 +193,6 @@ class _CompetitionCard extends StatelessWidget {
   final Map<String, dynamic> competition;
   final String currentUid;
   final FirestoreService firestoreService;
-  final CompetitionEvent? event;
 
   const _CompetitionCard({
     super.key,
@@ -228,7 +200,6 @@ class _CompetitionCard extends StatelessWidget {
     required this.competition,
     required this.currentUid,
     required this.firestoreService,
-    this.event,
   });
 
   String? _daysLeft(String? deadline) {
@@ -371,11 +342,12 @@ class _CompetitionCard extends StatelessWidget {
                 color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.12),
               ),
               const SizedBox(height: 14),
-              // ── Event ─────────────────────────────────
-              if (event != null) ...[
-                _CompetitionEventRow(event: event!),
-                const SizedBox(height: 14),
-              ],
+              // ── Event carousel ───────────────────────
+              _CompetitionEventCarousel(
+                key: ValueKey(competitionId),
+                competitionId: competitionId,
+                firestoreService: firestoreService,
+              ),
               // ── Participants ─────────────────────────
               _ParticipantsList(
                 competitionId: competitionId,
@@ -588,6 +560,180 @@ class _ParticipantsListState extends State<_ParticipantsList> {
 }
 
 // ─────────────────────────────────────────────
+// Event carousel — swipeable history of the existing event row widget
+// ─────────────────────────────────────────────
+
+const double _eventAreaHeight = 48.0;
+
+class _CompetitionEventCarousel extends StatefulWidget {
+  final String competitionId;
+  final FirestoreService firestoreService;
+
+  const _CompetitionEventCarousel({
+    super.key,
+    required this.competitionId,
+    required this.firestoreService,
+  });
+
+  @override
+  State<_CompetitionEventCarousel> createState() =>
+      _CompetitionEventCarouselState();
+}
+
+class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
+  final PageController _pageController = PageController();
+
+  bool _hasReceivedFirstSnapshot = false;
+  String? _newestEventId;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = widget.firestoreService.getCompetitionEvents(widget.competitionId);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  List<CompetitionEvent> _sortedEvents(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final events = docs.map(CompetitionEvent.fromDoc).toList();
+    events.sort((a, b) {
+      final at = a.lastUpdatedAt;
+      final bt = b.lastUpdatedAt;
+      if (at == null && bt == null) return 0;
+      if (at == null) return 1;
+      if (bt == null) return -1;
+      return bt.compareTo(at);
+    });
+    return events;
+  }
+
+  // Jumps back to page 0 only when a genuinely new event becomes the
+  // newest one — not on unrelated rebuilds or in-place edits of existing
+  // events (same newest id), so the user's current page isn't disturbed.
+  void _syncNewestEvent(List<CompetitionEvent> events) {
+    final newestId = events.isNotEmpty ? events.first.id : null;
+
+    if (!_hasReceivedFirstSnapshot) {
+      _hasReceivedFirstSnapshot = true;
+      _newestEventId = newestId;
+      return;
+    }
+
+    final isGenuinelyNew = newestId != null && newestId != _newestEventId;
+    _newestEventId = newestId;
+    if (!isGenuinelyNew) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  // Defends against a deleted event leaving the controller parked past the
+  // new last page.
+  void _clampPageIfNeeded(int eventCount) {
+    if (!_pageController.hasClients) return;
+    final maxIndex = eventCount - 1;
+    if (maxIndex < 0) return;
+    final currentPage = _pageController.page?.round() ?? 0;
+    if (currentPage <= maxIndex) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      final page = _pageController.page?.round() ?? 0;
+      if (page > maxIndex) {
+        _pageController.jumpToPage(maxIndex);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _stream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const _EventAreaWithSpacing(child: _EventPlaceholderRow());
+        }
+
+        if (snapshot.hasError) {
+          debugPrint('Competition events error: ${snapshot.error}');
+          _hasReceivedFirstSnapshot = false;
+          _newestEventId = null;
+          return const SizedBox.shrink();
+        }
+
+        final events = _sortedEvents(snapshot.data?.docs ?? []);
+
+        if (events.isEmpty) {
+          _hasReceivedFirstSnapshot = false;
+          _newestEventId = null;
+          return const SizedBox.shrink();
+        }
+
+        _syncNewestEvent(events);
+        _clampPageIfNeeded(events.length);
+
+        return _EventAreaWithSpacing(
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: events.length,
+            itemBuilder: (context, index) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: _CompetitionEventRow(event: events[index]),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _EventAreaWithSpacing extends StatelessWidget {
+  final Widget child;
+  const _EventAreaWithSpacing({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: _eventAreaHeight, child: child),
+        const SizedBox(height: 14),
+      ],
+    );
+  }
+}
+
+class _EventPlaceholderRow extends StatelessWidget {
+  const _EventPlaceholderRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF282840),
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // Compact per-competition event row — icon + message | RESPOND
 // ─────────────────────────────────────────────
 
@@ -600,8 +746,34 @@ class _CompetitionEventRow extends StatelessWidget {
     switch (event.type) {
       case 'overtook':
         return Icons.local_fire_department;
+      case 'tied':
+        return Icons.balance;
+      case 'closeBehindYou':
+        return Icons.directions_run;
+      case 'tookTheLead':
+        return Icons.leaderboard;
+      case 'pullingAhead':
+        return Icons.rocket_launch;
+      case 'closeRace':
+        return Icons.bolt;
       case 'progress':
         return Icons.trending_up;
+      case 'backInRace':
+        return Icons.replay;
+      case 'nearCompletion':
+        return Icons.flag;
+      case 'milestone':
+        return Icons.military_tech;
+      case 'won':
+        return Icons.emoji_events;
+      case 'finishedInPosition':
+        return Icons.check_circle;
+      case 'activityStreak':
+        return Icons.whatshot;
+      case 'joined':
+        return Icons.person_add;
+      case 'left':
+        return Icons.person_remove;
       default:
         return Icons.notifications_none;
     }
@@ -612,10 +784,57 @@ class _CompetitionEventRow extends StatelessWidget {
     switch (event.type) {
       case 'overtook':
         return '$actor overtook you';
+      case 'tied':
+        return '$actor tied with you';
+      case 'closeBehindYou':
+        return '$actor is closing in on you';
+      case 'tookTheLead':
+        return '$actor took the lead';
+      case 'pullingAhead':
+        return '$actor is pulling ahead';
+      case 'closeRace':
+        return 'Tight race for 1st place';
       case 'progress':
         return '$actor made progress';
+      case 'backInRace':
+        return '$actor is back in the race';
+      case 'nearCompletion':
+        return '$actor is almost done';
+      case 'milestone':
+        final pct = (event.metadata?['milestone'] as num?)?.toInt();
+        return pct != null ? '$actor hit $pct%' : '$actor hit a milestone';
+      case 'won':
+        return '$actor won the competition';
+      case 'finishedInPosition':
+        final position = (event.metadata?['position'] as num?)?.toInt();
+        return position != null
+            ? '$actor finished ${_ordinal(position)}'
+            : '$actor finished the competition';
+      case 'activityStreak':
+        final streak = (event.metadata?['streak'] as num?)?.toInt();
+        return streak != null
+            ? '$actor is on a $streak-day streak'
+            : '$actor is on a streak';
+      case 'joined':
+        return '$actor joined the competition';
+      case 'left':
+        return '$actor left the competition';
       default:
         return 'New activity';
+    }
+  }
+
+  static String _ordinal(int n) {
+    if (n % 100 >= 11 && n % 100 <= 13) return '${n}th';
+    switch (n % 10) {
+      case 1:
+        return '${n}st';
+      case 2:
+        return '${n}nd';
+      case 3:
+        return '${n}rd';
+      default:
+        return '${n}th';
     }
   }
 
@@ -643,6 +862,7 @@ class _CompetitionEventRow extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 color: colorScheme.onSurface,
               ),
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),

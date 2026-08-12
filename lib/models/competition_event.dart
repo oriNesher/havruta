@@ -7,6 +7,7 @@ class CompetitionEvent {
   final String? actorUsername;
   final String? targetUsername;
   final Timestamp? lastUpdatedAt;
+  final Map<String, dynamic>? metadata;
 
   CompetitionEvent({
     required this.id,
@@ -15,6 +16,7 @@ class CompetitionEvent {
     this.actorUsername,
     this.targetUsername,
     this.lastUpdatedAt,
+    this.metadata,
   });
 
   factory CompetitionEvent.fromDoc(
@@ -28,24 +30,7 @@ class CompetitionEvent {
       actorUsername: data['actorUsername'] as String?,
       targetUsername: data['targetUsername'] as String?,
       lastUpdatedAt: (data['lastUpdatedAt'] ?? data['createdAt']) as Timestamp?,
+      metadata: data['metadata'] as Map<String, dynamic>?,
     );
   }
-}
-
-/// Groups events by competition, keeping at most one per competition:
-/// the most relevant (an 'overtook' event, if any) among the most recent.
-Map<String, CompetitionEvent> groupEventsByCompetition(
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-) {
-  final result = <String, CompetitionEvent>{};
-  for (final doc in docs) {
-    final event = CompetitionEvent.fromDoc(doc);
-    if (event.competitionId.isEmpty) continue;
-
-    final existing = result[event.competitionId];
-    if (existing == null || (event.type == 'overtook' && existing.type != 'overtook')) {
-      result[event.competitionId] = event;
-    }
-  }
-  return result;
 }

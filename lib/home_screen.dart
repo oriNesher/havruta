@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -214,20 +216,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               },
             ),
             const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateCompetitionScreen(),
-                    ),
-                  );
-                },
-                child: const Text('Create Challenge'),
-              ),
-            ),
+            _CreateChallengeButton(uid: user.uid),
             const SizedBox(height: 24),
             Text(
               'MY COMPETITIONS',
@@ -236,6 +225,114 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(height: 12),
             HomeCompetitionsSection(uid: user.uid),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Create-challenge button with scarcity cooldown:
+// 3 minutes after account creation before the first challenge, then 3 days
+// after each creation before the next one is allowed. Client-side gating
+// only — mirrors the rest of this screen's validation, no server enforcement.
+// ─────────────────────────────────────────────
+
+class _CreateChallengeButton extends StatefulWidget {
+  final String uid;
+  const _CreateChallengeButton({required this.uid});
+
+  @override
+  State<_CreateChallengeButton> createState() =>
+      _CreateChallengeButtonState();
+}
+
+class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
+  static const _firstWait = Duration(minutes: 3);
+  static const _cooldown = Duration(days: 3);
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
+  Timer? _ticker;
+  bool _hasLoaded = false;
+  DateTime? _createdAt;
+  DateTime? _lastCompetitionCreatedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    _userDocSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.uid)
+        .snapshots()
+        .listen((doc) {
+      final data = doc.data();
+      setState(() {
+        _hasLoaded = true;
+        _createdAt = (data?['createdAt'] as Timestamp?)?.toDate();
+        _lastCompetitionCreatedAt =
+            (data?['lastCompetitionCreatedAt'] as Timestamp?)?.toDate();
+      });
+    });
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _userDocSub?.cancel();
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  DateTime? get _eligibleAt {
+    if (_lastCompetitionCreatedAt != null) {
+      return _lastCompetitionCreatedAt!.add(_cooldown);
+    }
+    if (_createdAt != null) return _createdAt!.add(_firstWait);
+    return null;
+  }
+
+  String _formatRemaining(Duration d) {
+    if (d.inDays > 0) {
+      final hours = d.inHours % 24;
+      final minutes = d.inMinutes % 60;
+      final seconds = d.inSeconds % 60;
+      final hh = hours.toString().padLeft(2, '0');
+      final mm = minutes.toString().padLeft(2, '0');
+      final ss = seconds.toString().padLeft(2, '0');
+      return '${d.inDays}d $hh:$mm:$ss';
+    }
+    final minutes = d.inMinutes.toString().padLeft(2, '0');
+    final seconds = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eligibleAt = _eligibleAt;
+    final remaining = eligibleAt == null
+        ? Duration.zero
+        : eligibleAt.difference(DateTime.now());
+    final isWaiting = !_hasLoaded || remaining > Duration.zero;
+
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: isWaiting
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CreateCompetitionScreen(),
+                  ),
+                );
+              },
+        child: Text(
+          isWaiting && remaining > Duration.zero
+              ? 'Next challenge in ${_formatRemaining(remaining)}'
+              : 'Create Challenge',
         ),
       ),
     );

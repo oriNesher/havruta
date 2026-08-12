@@ -41,16 +41,18 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
   bool isLoading = false;
 
   Future<void> inviteUser() async {
-    final username = usernameController.text.trim();
+    final input = usernameController.text.trim();
 
-    if (username.isEmpty) return;
+    if (input.isEmpty) return;
 
     setState(() {
       isLoading = true;
     });
 
     try {
-      final userDoc = await firestoreService.findUserByUsername(username);
+      final userDoc = input.contains('@')
+          ? await firestoreService.findUserByEmail(input)
+          : await firestoreService.findUserByUsername(input);
 
       if (userDoc == null) {
         if (!mounted) return;
@@ -155,7 +157,7 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
         TextField(
           controller: usernameController,
           decoration: const InputDecoration(
-            labelText: 'Username',
+            labelText: 'Username or email',
             border: OutlineInputBorder(),
           ),
         ),

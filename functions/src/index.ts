@@ -1,4 +1,8 @@
-import {onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {
+  onDocumentCreated,
+  onDocumentDeleted,
+  onDocumentUpdated,
+} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import {buildEventsContext} from "./events/context";
@@ -7,6 +11,11 @@ import {detectRankingEvents} from "./events/rules/ranking";
 import {detectGapEvents} from "./events/rules/gap";
 import {detectProgressionEvents} from "./events/rules/progression";
 import {detectStreakEvents} from "./events/rules/streak";
+import {
+  shouldCreateJoinedEvent,
+  shouldCreateLeftEvent,
+} from "./events/rules/lifecycle";
+import {EventDraft} from "./events/types";
 import {persistEventDrafts, persistParticipantStreak} from "./events/persist";
 
 admin.initializeApp();
@@ -224,5 +233,139 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
       actorUid: context.actorUid,
       draftCount: drafts.length,
     });
+  },
+);
+
+export const onParticipantJoinCreateEvents = onDocumentCreated(
+  {
+    document: "competitions/{competitionId}/participants/{participantId}",
+    maxInstances: 5,
+    concurrency: 1,
+  },
+  async (event) => {
+    const participantData = event.data?.data();
+    const participantUid = participantData?.uid as string | undefined;
+
+    if (!participantUid) {
+      logger.info("Missing participant uid for join event creation");
+      return;
+    }
+
+    const competitionId = event.params.competitionId;
+    const db = admin.firestore();
+    const competitionRef = db.collection("competitions").doc(competitionId);
+    const competitionSnap = await competitionRef.get();
+
+    if (!competitionSnap.exists) {
+      logger.info("Competition not found for join event creation", {
+        competitionId,
+      });
+      return;
+    }
+
+    const competitionData = competitionSnap.data() || {};
+    const competitionCreatedBy = competitionData.createdBy as
+      | string
+      | undefined;
+
+    if (!shouldCreateJoinedEvent(participantUid, competitionCreatedBy)) {
+      logger.info("Participant seeded at creation, skipping join event", {
+        competitionId,
+        participantUid,
+      });
+      return;
+    }
+
+    const participantsSnap = await competitionRef
+      .collection("participants")
+      .get();
+
+    const recipients = [
+      ...new Set(
+        participantsSnap.docs
+          .map((doc) => doc.data().uid as string | undefined)
+          .filter((uid): uid is string => !!uid && uid !== participantUid)
+      ),
+    ];
+
+    const draft: EventDraft = {
+      type: "joined",
+      recipients,
+      target: {kind: "create"},
+      payload: {
+        competitionTitle: competitionData.title ?? "Competition",
+        actorUid: participantUid,
+        actorUsername: participantData?.username ?? "Someone",
+        targetUid: null,
+        targetUsername: null,
+        metadata: {},
+      },
+    };
+
+    await persistEventDrafts(competitionId, [draft]);
+
+    logger.info("Joined event processed", {competitionId, participantUid});
+  },
+);
+
+export const onParticipantLeaveCreateEvents = onDocumentDeleted(
+  {
+    document: "competitions/{competitionId}/participants/{participantId}",
+    maxInstances: 5,
+    concurrency: 1,
+  },
+  async (event) => {
+    const participantData = event.data?.data();
+    const participantUid = participantData?.uid as string | undefined;
+
+    if (!participantUid) {
+      logger.info("Missing participant uid for left event creation");
+      return;
+    }
+
+    const competitionId = event.params.competitionId;
+    const db = admin.firestore();
+    const competitionRef = db.collection("competitions").doc(competitionId);
+    const competitionSnap = await competitionRef.get();
+
+    if (!shouldCreateLeftEvent(competitionSnap.exists)) {
+      logger.info(
+        "Competition no longer exists, skipping left event",
+        {competitionId, participantUid}
+      );
+      return;
+    }
+
+    const competitionData = competitionSnap.data() || {};
+
+    const participantsSnap = await competitionRef
+      .collection("participants")
+      .get();
+
+    const recipients = [
+      ...new Set(
+        participantsSnap.docs
+          .map((doc) => doc.data().uid as string | undefined)
+          .filter((uid): uid is string => !!uid && uid !== participantUid)
+      ),
+    ];
+
+    const draft: EventDraft = {
+      type: "left",
+      recipients,
+      target: {kind: "create"},
+      payload: {
+        competitionTitle: competitionData.title ?? "Competition",
+        actorUid: participantUid,
+        actorUsername: participantData?.username ?? "Someone",
+        targetUid: null,
+        targetUsername: null,
+        metadata: {},
+      },
+    };
+
+    await persistEventDrafts(competitionId, [draft]);
+
+    logger.info("Left event processed", {competitionId, participantUid});
   },
 );

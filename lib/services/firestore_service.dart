@@ -64,6 +64,10 @@ class FirestoreService {
       if (linkedGoalTitle != null) 'linkedGoalTitle': linkedGoalTitle,
     });
 
+    await _db.collection('users').doc(createdBy).update({
+      'lastCompetitionCreatedAt': FieldValue.serverTimestamp(),
+    });
+
     return competitionRef.id;
   }
 
@@ -104,6 +108,10 @@ class FirestoreService {
       'progress': 0,
       'joinedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await _db.collection('users').doc(createdBy).update({
+      'lastCompetitionCreatedAt': FieldValue.serverTimestamp(),
     });
 
     return competitionRef.id;
@@ -221,6 +229,20 @@ class FirestoreService {
     final result = await _db
         .collection('users')
         .where('usernameLower', isEqualTo: username.toLowerCase())
+        .limit(1)
+        .get();
+
+    if (result.docs.isEmpty) return null;
+    return result.docs.first;
+  }
+
+  /// Search users by emailLower
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> findUserByEmail(
+    String email,
+  ) async {
+    final result = await _db
+        .collection('users')
+        .where('emailLower', isEqualTo: email.toLowerCase())
         .limit(1)
         .get();
 
@@ -391,8 +413,15 @@ class FirestoreService {
   }
 
   /// Delete competition (only creator should be allowed from UI / rules)
+  ///
+  /// The competition doc is deleted first, before its participants, so that
+  /// participant-deletion triggers can tell "competition ending" apart from
+  /// "participant leaving one that continues" by checking whether the
+  /// competition doc still exists.
   Future<void> deleteCompetition(String competitionId) async {
     final competitionRef = _db.collection('competitions').doc(competitionId);
+
+    await competitionRef.delete();
 
     final participantsSnapshot = await competitionRef
         .collection('participants')
@@ -410,8 +439,6 @@ class FirestoreService {
     for (final doc in invitesSnapshot.docs) {
       await doc.reference.delete();
     }
-
-    await competitionRef.delete();
   }
 
   /// Get username by uid
@@ -442,6 +469,20 @@ class FirestoreService {
         .where('unseenByUserUids', arrayContains: uid)
         .orderBy('lastUpdatedAt', descending: true)
         .limit(15)
+        .snapshots();
+  }
+
+  /// Get the most recent events for a single competition, newest first.
+  /// Backs the home card's event carousel.
+  Stream<QuerySnapshot<Map<String, dynamic>>> getCompetitionEvents(
+    String competitionId,
+  ) {
+    return _db
+        .collection('competitions')
+        .doc(competitionId)
+        .collection('events')
+        .orderBy('lastUpdatedAt', descending: true)
+        .limit(25)
         .snapshots();
   }
 
@@ -512,21 +553,6 @@ class FirestoreService {
         );
   }
 
-  /// Save multiple goals at once (used during onboarding)
-  Future<void> addGoalsBatch(String uid, List<String> goals) async {
-    final batch = _db.batch();
-    final goalsRef = _db.collection('users').doc(uid).collection('goals');
-
-    for (final goal in goals) {
-      batch.set(goalsRef.doc(), {
-        'title': goal,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-
-    await batch.commit();
-  }
-
   /// Save a single goal to the bucket
   Future<void> addGoal(String uid, String goalTitle) async {
     await _db.collection('users').doc(uid).collection('goals').add({
@@ -566,13 +592,6 @@ class FirestoreService {
     });
 
     return newStreak;
-  }
-
-  /// Mark the goals bucket onboarding step as complete
-  Future<void> markGoalsBucketCompleted(String uid) async {
-    await _db.collection('users').doc(uid).update({
-      'hasCompletedGoalsBucket': true,
-    });
   }
 
   /// Check if a goal already exists in the bucket (case-insensitive exact match)

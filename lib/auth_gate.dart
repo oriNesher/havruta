@@ -6,7 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'login_screen.dart';
 import 'username_screen.dart';
-import 'goals_bucket_onboarding_screen.dart';
 import 'home_screen.dart';
 import 'services/notification_service.dart';
 
@@ -130,10 +129,6 @@ class _AuthGateState extends State<AuthGate> {
 
     if (data == null || data['username'] == null) {
       return const UsernameScreen();
-    }
-
-    if (data['hasCompletedGoalsBucket'] != true) {
-      return const GoalsBucketOnboardingScreen();
     }
 
     // Fire-and-forget; the guard inside makes it a no-op after the first call.

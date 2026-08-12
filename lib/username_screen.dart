@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'goals_bucket_onboarding_screen.dart';
+import 'home_screen.dart';
 
 class UsernameScreen extends StatefulWidget {
   const UsernameScreen({super.key});
@@ -26,6 +26,7 @@ class _UsernameScreenState extends State<UsernameScreen> {
     await db.collection('users').doc(user.uid).set({
       "uid": user.uid,
       "email": user.email,
+      "emailLower": user.email?.toLowerCase(),
       "username": username,
       "usernameLower": username.toLowerCase(),
       "createdAt": FieldValue.serverTimestamp(),
@@ -34,7 +35,7 @@ class _UsernameScreenState extends State<UsernameScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => const GoalsBucketOnboardingScreen(),
+        builder: (context) => const HomeScreen(),
       ),
     );
   }
