@@ -5,11 +5,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import 'app_theme.dart';
-import 'create_competition_screen.dart';
-import 'pending_invites_screen.dart';
-import 'services/firestore_service.dart';
-import 'services/progress_snapshot_cache.dart';
+import '../app_theme.dart';
+import '../competitions/create_competition_screen.dart';
+import '../invites/pending_invites_screen.dart';
+import '../services/firestore_service.dart';
+import '../services/progress_snapshot_cache.dart';
 import 'home_competitions_section.dart';
 
 class HomeScreen extends StatefulWidget {

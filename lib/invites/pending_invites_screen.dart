@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'home_pending_invites_section.dart';
+import '../home/home_pending_invites_section.dart';
 
 class PendingInvitesScreen extends StatelessWidget {
   const PendingInvitesScreen({super.key});

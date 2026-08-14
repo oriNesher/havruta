@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
-import 'app_theme.dart';
-import 'models/competition_event.dart';
-import 'services/firestore_service.dart';
-import 'services/progress_snapshot_cache.dart';
-import 'competition_details_screen.dart';
+import '../app_theme.dart';
+import '../competitions/competition_event.dart';
+import '../services/firestore_service.dart';
+import '../services/progress_snapshot_cache.dart';
+import '../competitions/competition_details_screen.dart';
 
 // ─────────────────────────────────────────────
 // Section — owns the competitions stream

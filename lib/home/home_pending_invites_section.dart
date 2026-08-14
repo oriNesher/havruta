@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'app_theme.dart';
-import 'services/firestore_service.dart';
+import '../app_theme.dart';
+import '../services/firestore_service.dart';
 
 class HomePendingInvitesSection extends StatelessWidget {
   final String uid;

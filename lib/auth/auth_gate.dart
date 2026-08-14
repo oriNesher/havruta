@@ -6,8 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'login_screen.dart';
 import 'username_screen.dart';
-import 'home_screen.dart';
-import 'services/notification_service.dart';
+import '../home/home_screen.dart';
+import '../services/notification_service.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
