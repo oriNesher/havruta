@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
@@ -565,6 +567,8 @@ class _ParticipantsListState extends State<_ParticipantsList> {
 // ─────────────────────────────────────────────
 
 const double _eventAreaHeight = 48.0;
+const Duration _nudgeInterval = Duration(seconds: 30);
+const double _nudgeDistance = 22.0;
 
 class _CompetitionEventCarousel extends StatefulWidget {
   final String competitionId;
@@ -590,16 +594,130 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
   bool _hasReceivedFirstSnapshot = false;
   String? _newestEventId;
 
+  List<CompetitionEvent> _latestEvents = const [];
+  int _currentPage = 0;
+  bool _isUserDragging = false;
+  bool _isNudging = false;
+  Timer? _nudgeTimer;
+
   @override
   void initState() {
     super.initState();
     _stream = widget.firestoreService.getCompetitionEvents(widget.competitionId);
+    _nudgeTimer = Timer.periodic(_nudgeInterval, (_) => _performNudge());
   }
 
   @override
   void dispose() {
+    _nudgeTimer?.cancel();
     _pageController.dispose();
     super.dispose();
+  }
+
+  // ── Unread tracking ──────────────────────────
+
+  int get _unreadCount => _latestEvents
+      .where((e) => e.unseenByUserUids.contains(widget.currentUid))
+      .length;
+
+  // Index of the unread event closest to the current page, ignoring the
+  // current page itself (there's nothing to nudge/point *toward* if the
+  // only unread event is already centered). Used only to pick the nudge's
+  // direction — the badge itself always sits on the right.
+  int? _nearestUnreadIndex() {
+    int? nearest;
+    int bestDistance = 1 << 30;
+    for (var i = 0; i < _latestEvents.length; i++) {
+      if (i == _currentPage) continue;
+      if (!_latestEvents[i].unseenByUserUids.contains(widget.currentUid)) {
+        continue;
+      }
+      final distance = (i - _currentPage).abs();
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        nearest = i;
+      }
+    }
+    return nearest;
+  }
+
+  // true = unread events are ahead (higher index), false = behind (lower
+  // index), null = no direction to point (only the current page is unread).
+  bool? _unreadIsAhead() {
+    final nearest = _nearestUnreadIndex();
+    if (nearest == null) return null;
+    return nearest > _currentPage;
+  }
+
+  // ── Mark as seen ──────────────────────────────
+  // Swiping to a new page marks both the page left behind and the page
+  // landed on as seen. The very first event is shown without any swipe, so
+  // it only gets marked seen by a direct tap (below) or by swiping away
+  // from it.
+
+  void _onPageChanged(int page) {
+    final previousPage = _currentPage;
+    _currentPage = page;
+    if (_isUserDragging) {
+      _markSeenByIndices({previousPage, page});
+    }
+    setState(() {});
+  }
+
+  Future<void> _markSeenByIndices(Set<int> indices) async {
+    final refs = <DocumentReference<Map<String, dynamic>>>[];
+    for (final i in indices) {
+      if (i < 0 || i >= _latestEvents.length) continue;
+      final event = _latestEvents[i];
+      if (event.unseenByUserUids.contains(widget.currentUid)) {
+        refs.add(event.reference);
+      }
+    }
+    if (refs.isEmpty) return;
+    try {
+      await widget.firestoreService.dismissEventsForUser(refs, widget.currentUid);
+    } catch (e) {
+      debugPrint('Failed to mark event(s) as seen: $e');
+    }
+  }
+
+  // ── Nudge animation ──────────────────────────
+
+  Future<void> _performNudge() async {
+    if (_isNudging || _isUserDragging || !mounted) return;
+    if (_unreadCount == 0) return;
+    if (!_pageController.hasClients) return;
+
+    final ahead = _unreadIsAhead();
+    if (ahead == null) return;
+
+    final position = _pageController.position;
+    final start = position.pixels;
+    final delta = ahead ? _nudgeDistance : -_nudgeDistance;
+    final target = (start + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (target == start) return;
+
+    _isNudging = true;
+    try {
+      await _pageController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+      if (!mounted || !_pageController.hasClients) return;
+      await _pageController.animateTo(
+        start,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeIn,
+      );
+    } catch (_) {
+      // Controller may have been disposed mid-animation.
+    } finally {
+      _isNudging = false;
+    }
   }
 
   List<CompetitionEvent> _sortedEvents(
@@ -674,6 +792,7 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
           debugPrint('Competition events error: ${snapshot.error}');
           _hasReceivedFirstSnapshot = false;
           _newestEventId = null;
+          _latestEvents = const [];
           return const SizedBox.shrink();
         }
 
@@ -682,26 +801,91 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
         if (events.isEmpty) {
           _hasReceivedFirstSnapshot = false;
           _newestEventId = null;
+          _latestEvents = const [];
           return const SizedBox.shrink();
         }
 
         _syncNewestEvent(events);
         _clampPageIfNeeded(events.length);
+        _latestEvents = events;
+        if (_currentPage > events.length - 1) {
+          _currentPage = events.length - 1;
+        }
 
-        return _EventAreaWithSpacing(
+        final unreadCount = _unreadCount;
+
+        final carousel = NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification is ScrollStartNotification &&
+                notification.dragDetails != null) {
+              _isUserDragging = true;
+            } else if (notification is ScrollEndNotification) {
+              _isUserDragging = false;
+            }
+            return false;
+          },
           child: PageView.builder(
             controller: _pageController,
+            onPageChanged: _onPageChanged,
             itemCount: events.length,
-            itemBuilder: (context, index) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: _CompetitionEventRow(
-                event: events[index],
-                currentUid: widget.currentUid,
+            itemBuilder: (context, index) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _markSeenByIndices({index}),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: _CompetitionEventRow(
+                  event: events[index],
+                  currentUid: widget.currentUid,
+                ),
               ),
             ),
           ),
         );
+
+        return _EventAreaWithSpacing(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: carousel),
+              if (unreadCount > 0) ...[
+                const SizedBox(width: 6),
+                _UnreadBadge(count: unreadCount),
+              ],
+            ],
+          ),
+        );
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Unread events badge — small red circle with a count
+// ─────────────────────────────────────────────
+
+class _UnreadBadge extends StatelessWidget {
+  final int count;
+  const _UnreadBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: colorScheme.secondary,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        count > 9 ? '9+' : '$count',
+        style: AppTheme.display(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }

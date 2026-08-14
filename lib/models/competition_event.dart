@@ -11,6 +11,8 @@ class CompetitionEvent {
   final Timestamp? createdAt;
   final Timestamp? lastUpdatedAt;
   final Map<String, dynamic>? metadata;
+  final List<String> unseenByUserUids;
+  final DocumentReference<Map<String, dynamic>> reference;
 
   CompetitionEvent({
     required this.id,
@@ -23,6 +25,8 @@ class CompetitionEvent {
     this.createdAt,
     this.lastUpdatedAt,
     this.metadata,
+    this.unseenByUserUids = const [],
+    required this.reference,
   });
 
   factory CompetitionEvent.fromDoc(
@@ -40,6 +44,9 @@ class CompetitionEvent {
       createdAt: data['createdAt'] as Timestamp?,
       lastUpdatedAt: (data['lastUpdatedAt'] ?? data['createdAt']) as Timestamp?,
       metadata: data['metadata'] as Map<String, dynamic>?,
+      unseenByUserUids:
+          (data['unseenByUserUids'] as List?)?.cast<String>() ?? const [],
+      reference: doc.reference,
     );
   }
 }
