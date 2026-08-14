@@ -37,18 +37,28 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
 }
 
 test("creates a new progress event when none is open", () => {
-  const drafts = detectProgressEvents(baseContext());
+  const drafts = detectProgressEvents(baseContext(), false);
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "progress");
   assert.deepEqual(drafts[0].target, {kind: "create"});
   assert.deepEqual(drafts[0].recipients, ["bob"]);
+  assert.equal(drafts[0].payload.status, "open");
   assert.deepEqual(drafts[0].payload.metadata, {
     beforeProgress: 10,
     afterProgress: 20,
     progressDelta: 10,
     updatesCount: 1,
   });
+});
+
+test("closes a freshly created progress event when another event type " +
+  "also fired this update", () => {
+  const drafts = detectProgressEvents(baseContext(), true);
+
+  assert.equal(drafts.length, 1);
+  assert.deepEqual(drafts[0].target, {kind: "create"});
+  assert.equal(drafts[0].payload.status, "closed");
 });
 
 test("merges into an existing open progress event", () => {
@@ -68,13 +78,48 @@ test("merges into an existing open progress event", () => {
     },
   });
 
-  const drafts = detectProgressEvents(context);
+  const drafts = detectProgressEvents(context, false);
 
   assert.equal(drafts.length, 1);
   assert.deepEqual(drafts[0].target, {
     kind: "update",
     docId: "existing-event",
   });
+  assert.equal(drafts[0].payload.status, "open");
+  assert.deepEqual(drafts[0].payload.metadata, {
+    beforeProgress: 10,
+    afterProgress: 35,
+    progressDelta: 25,
+    updatesCount: 2,
+  });
+});
+
+test("closes the merged progress event when another event type also " +
+  "fired this update", () => {
+  const context = baseContext({
+    beforeProgress: 20,
+    afterProgress: 35,
+    existingOpenProgressEvent: {
+      id: "existing-event",
+      data: {
+        metadata: {
+          beforeProgress: 10,
+          afterProgress: 20,
+          progressDelta: 10,
+          updatesCount: 1,
+        },
+      },
+    },
+  });
+
+  const drafts = detectProgressEvents(context, true);
+
+  assert.equal(drafts.length, 1);
+  assert.deepEqual(drafts[0].target, {
+    kind: "update",
+    docId: "existing-event",
+  });
+  assert.equal(drafts[0].payload.status, "closed");
   assert.deepEqual(drafts[0].payload.metadata, {
     beforeProgress: 10,
     afterProgress: 35,
@@ -89,7 +134,7 @@ test("creates a backInRace event after a long inactivity gap", () => {
     currentUpdatedAt: Timestamp.fromMillis(8 * ONE_DAY_MS),
   });
 
-  const drafts = detectProgressEvents(context);
+  const drafts = detectProgressEvents(context, false);
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "backInRace");
@@ -103,7 +148,7 @@ test("does not create backInRace for the actor's first-ever update", () => {
     currentUpdatedAt: Timestamp.fromMillis(30 * ONE_DAY_MS),
   });
 
-  const drafts = detectProgressEvents(context);
+  const drafts = detectProgressEvents(context, false);
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "progress");
@@ -115,7 +160,7 @@ test("does not create backInRace when the gap is under the threshold", () => {
     currentUpdatedAt: Timestamp.fromMillis(3 * ONE_DAY_MS),
   });
 
-  const drafts = detectProgressEvents(context);
+  const drafts = detectProgressEvents(context, false);
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "progress");
