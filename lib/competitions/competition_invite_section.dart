@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -39,6 +41,43 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
   final FirestoreService firestoreService = FirestoreService();
 
   bool isLoading = false;
+  bool isSearching = false;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> searchResults = [];
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    usernameController.addListener(_onQueryChanged);
+  }
+
+  void _onQueryChanged() {
+    final input = usernameController.text.trim();
+    _debounce?.cancel();
+
+    // Email search stays exact-match/submit-triggered only — a live prefix
+    // search on email would let someone enumerate registered addresses
+    // character by character.
+    if (input.isEmpty || input.contains('@')) {
+      setState(() {
+        searchResults = [];
+        isSearching = false;
+      });
+      return;
+    }
+
+    setState(() => isSearching = true);
+    _debounce = Timer(const Duration(milliseconds: 250), () async {
+      final results = await firestoreService.searchUsersByUsernamePrefix(
+        input,
+      );
+      if (!mounted) return;
+      setState(() {
+        searchResults = results;
+        isSearching = false;
+      });
+    });
+  }
 
   Future<void> inviteUser() async {
     final input = usernameController.text.trim();
@@ -62,7 +101,31 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
         return;
       }
 
-      final data = userDoc.data();
+      await _sendInviteTo(userDoc.data());
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _inviteFromSearchResult(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    setState(() => isLoading = true);
+    try {
+      await _sendInviteTo(doc.data());
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  /// Shared validation + send logic for both the exact-match submit path
+  /// and tapping a live search result.
+  Future<void> _sendInviteTo(Map<String, dynamic> data) async {
+    try {
       final toUid = data['uid'];
       final toUsername = data['username'] ?? '';
 
@@ -116,8 +179,9 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
       );
 
       usernameController.clear();
-
       if (!mounted) return;
+      setState(() => searchResults = []);
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Invite sent')));
@@ -126,17 +190,13 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error sending invite: $e')));
-    } finally {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
     }
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    usernameController.removeListener(_onQueryChanged);
     usernameController.dispose();
     super.dispose();
   }
@@ -156,11 +216,43 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
         const SizedBox(height: 12),
         TextField(
           controller: usernameController,
-          decoration: const InputDecoration(
+          onSubmitted: (_) => inviteUser(),
+          decoration: InputDecoration(
             labelText: 'Username or email',
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
+            suffixIcon: isSearching
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : null,
           ),
         ),
+        if (searchResults.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: searchResults.map((doc) {
+                final username = doc.data()['username'] as String? ?? '';
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(username),
+                  trailing: isLoading
+                      ? null
+                      : const Icon(Icons.add_circle_outline),
+                  onTap: isLoading ? null : () => _inviteFromSearchResult(doc),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,

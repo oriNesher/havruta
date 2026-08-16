@@ -130,6 +130,13 @@ class FirestoreService {
     return _db.collection('competitions').get();
   }
 
+  /// Get a single competition by id
+  Future<DocumentSnapshot<Map<String, dynamic>>> getCompetition(
+    String competitionId,
+  ) {
+    return _db.collection('competitions').doc(competitionId).get();
+  }
+
   /// Get participants of a competition
   Stream<QuerySnapshot<Map<String, dynamic>>> getCompetitionParticipants(
     String competitionId,
@@ -234,6 +241,24 @@ class FirestoreService {
 
     if (result.docs.isEmpty) return null;
     return result.docs.first;
+  }
+
+  /// Live prefix search on usernameLower, for as-you-type search fields.
+  /// Deliberately not offered for email (prefix search on email would let
+  /// someone enumerate registered addresses character by character).
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  searchUsersByUsernamePrefix(String prefix, {int limit = 8}) async {
+    final normalized = prefix.trim().toLowerCase();
+    if (normalized.isEmpty) return [];
+
+    final result = await _db
+        .collection('users')
+        .where('usernameLower', isGreaterThanOrEqualTo: normalized)
+        .where('usernameLower', isLessThan: '$normalized')
+        .limit(limit)
+        .get();
+
+    return result.docs;
   }
 
   /// Search users by emailLower
@@ -437,6 +462,21 @@ class FirestoreService {
         .get();
 
     for (final doc in invitesSnapshot.docs) {
+      await doc.reference.delete();
+    }
+
+    final inviteLinksSnapshot = await _db
+        .collection('challenge_invite_links')
+        .where('competitionId', isEqualTo: competitionId)
+        .get();
+
+    for (final doc in inviteLinksSnapshot.docs) {
+      final redemptionsSnapshot = await doc.reference
+          .collection('redemptions')
+          .get();
+      for (final redemption in redemptionsSnapshot.docs) {
+        await redemption.reference.delete();
+      }
       await doc.reference.delete();
     }
   }

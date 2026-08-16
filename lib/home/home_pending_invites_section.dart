@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_theme.dart';
 import '../services/firestore_service.dart';
+import '../competitions/widgets/personal_goal_input_dialog.dart';
 
 class HomePendingInvitesSection extends StatelessWidget {
   final String uid;
@@ -20,196 +21,36 @@ class HomePendingInvitesSection extends StatelessWidget {
     int? creatorTargetValue,
     String? creatorUnit,
   }) async {
-    final goalTitleController = TextEditingController();
-    final targetValueController = TextEditingController();
-    final unitController = TextEditingController();
-    bool isSubmitting = false;
-
-    await showDialog(
+    final joined = await showPersonalGoalInputDialog(
       context: outerContext,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogInnerContext, setDialogState) {
-            Future<void> submit() async {
-              final goalTitle = goalTitleController.text.trim();
-              final targetValueText = targetValueController.text.trim();
-              final unit = unitController.text.trim();
+      competitionTitle: competitionTitle,
+      creatorGoalTitle: creatorGoalTitle,
+      creatorTargetValue: creatorTargetValue,
+      creatorUnit: creatorUnit,
+      submitLabel: 'Accept',
+      onSubmit: (goalTitle, targetValue, unit) async {
+        final username = await _firestoreService.getMyUsername(uid);
+        if (username == null || username.trim().isEmpty) {
+          throw Exception('Could not find your username');
+        }
 
-              if (goalTitle.isEmpty || targetValueText.isEmpty || unit.isEmpty) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  const SnackBar(content: Text('Please fill all fields')),
-                );
-                return;
-              }
-
-              final targetValue = int.tryParse(targetValueText);
-              if (targetValue == null || targetValue <= 0) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  const SnackBar(
-                    content: Text('Target value must be a positive number'),
-                  ),
-                );
-                return;
-              }
-
-              bool acceptedSuccessfully = false;
-
-              setDialogState(() {
-                isSubmitting = true;
-              });
-
-              try {
-                final username = await _firestoreService.getMyUsername(uid);
-
-                if (username == null || username.trim().isEmpty) {
-                  if (!dialogContext.mounted) return;
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Could not find your username'),
-                    ),
-                  );
-                  return;
-                }
-
-                await _firestoreService.acceptCompetitionInvite(
-                  inviteId: inviteId,
-                  competitionId: competitionId,
-                  uid: uid,
-                  username: username,
-                  goalTitle: goalTitle,
-                  targetValue: targetValue,
-                  unit: unit,
-                );
-
-                acceptedSuccessfully = true;
-
-                if (!dialogContext.mounted) return;
-                Navigator.of(dialogContext).pop();
-
-                ScaffoldMessenger.of(outerContext).showSnackBar(
-                  const SnackBar(content: Text('Invite accepted')),
-                );
-              } catch (e) {
-                if (!dialogContext.mounted) return;
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(content: Text('Error accepting invite: $e')),
-                );
-              } finally {
-                if (!acceptedSuccessfully && dialogContext.mounted) {
-                  setDialogState(() {
-                    isSubmitting = false;
-                  });
-                }
-              }
-            }
-
-            final hasCreatorGoal = creatorGoalTitle != null &&
-                creatorGoalTitle.isNotEmpty &&
-                creatorTargetValue != null;
-            final creatorGoalDisplay = hasCreatorGoal
-                ? (creatorUnit != null && creatorUnit.isNotEmpty
-                    ? '$creatorGoalTitle — $creatorTargetValue $creatorUnit'
-                    : '$creatorGoalTitle — $creatorTargetValue')
-                : null;
-
-            return AlertDialog(
-              title: Text('Join "$competitionTitle"'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (creatorGoalDisplay != null) ...[
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          "Creator's goal, for reference:",
-                          style: TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            dialogContext,
-                          ).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          creatorGoalDisplay,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Define your personal goal for this competition',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: goalTitleController,
-                      enabled: !isSubmitting,
-                      decoration: const InputDecoration(
-                        labelText: 'My goal',
-                        hintText: 'Get fitter / Study more / Read more',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: targetValueController,
-                      enabled: !isSubmitting,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'My target value',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: unitController,
-                      enabled: !isSubmitting,
-                      decoration: const InputDecoration(
-                        labelText: 'My unit',
-                        hintText: 'pushups / minutes / pages / km',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSubmitting
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: isSubmitting ? null : submit,
-                  child: isSubmitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Accept'),
-                ),
-              ],
-            );
-          },
+        await _firestoreService.acceptCompetitionInvite(
+          inviteId: inviteId,
+          competitionId: competitionId,
+          uid: uid,
+          username: username,
+          goalTitle: goalTitle,
+          targetValue: targetValue,
+          unit: unit,
         );
       },
     );
 
-    goalTitleController.dispose();
-    targetValueController.dispose();
-    unitController.dispose();
+    if (joined && outerContext.mounted) {
+      ScaffoldMessenger.of(
+        outerContext,
+      ).showSnackBar(const SnackBar(content: Text('Invite accepted')));
+    }
   }
 
   // ── Shared Goal accept dialog ──────────────────────────────────────────────

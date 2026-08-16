@@ -17,8 +17,19 @@ import {
 } from "./events/rules/lifecycle";
 import {EventDraft} from "./events/types";
 import {persistEventDrafts, persistParticipantStreak} from "./events/persist";
+import {createInvite} from "./invites/createInvite";
+import {getInvite} from "./invites/getInvite";
+import {redeemInvite} from "./invites/redeemInvite";
+import {revokeInvite} from "./invites/revokeInvite";
+import {
+  onInviteLinkRedemptionCreated,
+} from "./invites/onInviteLinkRedemptionCreated";
+import {inviteLanding} from "./invites/landingHandler";
 
 admin.initializeApp();
+
+export {createInvite, getInvite, redeemInvite, revokeInvite,
+  onInviteLinkRedemptionCreated, inviteLanding};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {

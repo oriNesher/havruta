@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/firestore_service.dart';
-import 'competition_invite_section.dart';
+import 'challenge_invite_screen.dart';
 import 'goals_bucket_bottom_sheet.dart';
+import 'widgets/challenge_creation_stepper.dart';
 
 class CreateCompetitionScreen extends StatefulWidget {
   const CreateCompetitionScreen({super.key});
@@ -29,18 +30,8 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   final _user = FirebaseAuth.instance.currentUser;
 
   bool _isLoading = false;
-  String? _createdCompetitionId;
-  String? _createdCompetitionTitle;
-  String? _createdCompetitionType;
-  String? _createdSharedGoalTitle;
-  int? _createdSharedTargetValue;
-  String? _createdSharedUnit;
-  String? _createdGoalTitle;
-  int? _createdTargetValue;
-  String? _createdUnit;
 
   bool get _isPersonal => _selectedType == 'personalGoalChallenge';
-  bool get _alreadyCreated => _createdCompetitionId != null;
 
   @override
   void initState() {
@@ -57,7 +48,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   }
 
   void _onTypeChanged(String newType) {
-    if (_alreadyCreated) return;
     setState(() {
       _selectedType = newType;
       _linkedGoalTitle = null;
@@ -134,6 +124,12 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
       }
 
       String competitionId;
+      String? createdGoalTitle;
+      int? createdTargetValue;
+      String? createdUnit;
+      String? createdSharedGoalTitle;
+      int? createdSharedTargetValue;
+      String? createdSharedUnit;
 
       if (_isPersonal) {
         competitionId = await _firestoreService.createCompetition(
@@ -147,6 +143,9 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
           deadline: deadline.isNotEmpty ? deadline : null,
           linkedGoalTitle: _linkedGoalTitle,
         );
+        createdGoalTitle = goalText;
+        createdTargetValue = targetValue;
+        createdUnit = unit;
 
         final goalExists = await _firestoreService.goalExistsInBucket(
           uid,
@@ -166,27 +165,29 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
           sharedUnit: unit,
           deadline: deadline.isNotEmpty ? deadline : null,
         );
+        createdSharedGoalTitle = goalText;
+        createdSharedTargetValue = targetValue;
+        createdSharedUnit = unit;
       }
 
       if (!mounted) return;
 
-      setState(() {
-        _createdCompetitionId = competitionId;
-        _createdCompetitionTitle = challengeName;
-        _createdCompetitionType = _selectedType;
-        if (_isPersonal) {
-          _createdGoalTitle = goalText;
-          _createdTargetValue = targetValue;
-          _createdUnit = unit;
-        } else {
-          _createdSharedGoalTitle = goalText;
-          _createdSharedTargetValue = targetValue;
-          _createdSharedUnit = unit;
-        }
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Challenge created')),
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChallengeInviteScreen(
+            competitionId: competitionId,
+            competitionTitle: challengeName,
+            competitionType: _selectedType,
+            currentUserUid: uid,
+            sharedGoalTitle: createdSharedGoalTitle,
+            sharedTargetValue: createdSharedTargetValue,
+            sharedUnit: createdSharedUnit,
+            creatorGoalTitle: createdGoalTitle,
+            creatorTargetValue: createdTargetValue,
+            creatorUnit: createdUnit,
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -243,6 +244,7 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('New Challenge')),
+      bottomNavigationBar: const ChallengeCreationStepper(currentStep: 1),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -261,9 +263,8 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
                 ),
               ],
               selected: {_selectedType},
-              onSelectionChanged: _alreadyCreated
-                  ? null
-                  : (selection) => _onTypeChanged(selection.first),
+              onSelectionChanged: (selection) =>
+                  _onTypeChanged(selection.first),
               style: ButtonStyle(
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
@@ -316,7 +317,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
                       'e.g. "Run 30km" or "Read 4 books".',
               TextField(
                 controller: _goalController,
-                enabled: !_alreadyCreated,
                 decoration: InputDecoration(
                   hintText: 'Run 30km / Read 4 books / Do 300 pushups',
                   helperText: _isPersonal
@@ -334,7 +334,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               'The number you need to reach to complete the goal. e.g. 30 or 4.',
               TextField(
                 controller: _targetController,
-                enabled: !_alreadyCreated,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   hintText: '30',
@@ -345,39 +344,37 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
             const SizedBox(height: 28),
 
             // Optional section header
-            if (!_alreadyCreated) ...[
-              Row(
-                children: [
-                  Text(
-                    'Add more details',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                      fontWeight: FontWeight.w500,
-                    ),
+            Row(
+              children: [
+                Text(
+                  'Add more details',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                    fontWeight: FontWeight.w500,
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      'optional',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.45,
-                        ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'optional',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.45,
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
 
             // Title
             _fieldSection(
@@ -386,7 +383,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               'e.g. "Family Health Challenge" or "Reading Challenge".',
               TextField(
                 controller: _titleController,
-                enabled: !_alreadyCreated,
                 decoration: const InputDecoration(
                   hintText: 'Family Health Challenge',
                   border: OutlineInputBorder(),
@@ -402,7 +398,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               'Skip this and progress will show as a number or percentage.',
               TextField(
                 controller: _unitController,
-                enabled: !_alreadyCreated,
                 decoration: const InputDecoration(
                   hintText: 'days / books / km',
                   border: OutlineInputBorder(),
@@ -418,39 +413,29 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
                 'Link this challenge to one of your long-term goals. '
                 'It connects the challenge to your personal growth journey.',
                 InkWell(
-                  onTap: _alreadyCreated ? null : _openGoalsBucketForLinkedGoal,
+                  onTap: _openGoalsBucketForLinkedGoal,
                   borderRadius: BorderRadius.circular(4),
                   child: InputDecorator(
-                    decoration: InputDecoration(
-                      enabled: !_alreadyCreated,
-                      suffixIcon: _alreadyCreated
-                          ? null
-                          : const Icon(Icons.chevron_right),
-                      border: const OutlineInputBorder(),
-                      contentPadding: const EdgeInsets.symmetric(
+                    decoration: const InputDecoration(
+                      suffixIcon: Icon(Icons.chevron_right),
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 16,
                       ),
                     ),
                     child: Text(
-                      _linkedGoalTitle ??
-                          (_alreadyCreated
-                              ? '—'
-                              : 'Tap to select from your goals'),
+                      _linkedGoalTitle ?? 'Tap to select from your goals',
                       style: TextStyle(
                         color: _linkedGoalTitle == null
-                            ? (_alreadyCreated
-                                ? theme.disabledColor
-                                : theme.hintColor)
-                            : (_alreadyCreated
-                                ? theme.disabledColor
-                                : theme.colorScheme.onSurface),
+                            ? theme.hintColor
+                            : theme.colorScheme.onSurface,
                       ),
                     ),
                   ),
                 ),
               ),
-              if (!_alreadyCreated && _linkedGoalTitle != null) ...[
+              if (_linkedGoalTitle != null) ...[
                 const SizedBox(height: 4),
                 Align(
                   alignment: Alignment.centerRight,
@@ -469,7 +454,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               'Add a time frame if you want. e.g. "30 days" or "By August 1st".',
               TextField(
                 controller: _deadlineController,
-                enabled: !_alreadyCreated,
                 decoration: const InputDecoration(
                   hintText: '30 days / By August 1st',
                   border: OutlineInputBorder(),
@@ -485,7 +469,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               'e.g. "Weekends count too" or "Only gym workouts count".',
               TextField(
                 controller: _rulesController,
-                enabled: !_alreadyCreated,
                 maxLines: 3,
                 decoration: const InputDecoration(
                   hintText: 'Weekends count too...',
@@ -496,47 +479,19 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
             const SizedBox(height: 28),
 
             // Create button
-            if (!_alreadyCreated)
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: _isLoading ? null : _createChallenge,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Create Challenge'),
-                ),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _isLoading ? null : _createChallenge,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Create Challenge'),
               ),
-
-            // Post-creation state
-            if (_alreadyCreated) ...[
-              const SizedBox(height: 8),
-              const Text('Challenge created! Invite people to join.'),
-              const SizedBox(height: 24),
-              CompetitionInviteSection(
-                competitionId: _createdCompetitionId!,
-                competitionTitle: _createdCompetitionTitle ?? '',
-                currentUserUid: _user!.uid,
-                competitionType: _createdCompetitionType ?? 'personalGoalChallenge',
-                sharedGoalTitle: _createdSharedGoalTitle,
-                sharedTargetValue: _createdSharedTargetValue,
-                sharedUnit: _createdSharedUnit,
-                creatorGoalTitle: _createdGoalTitle,
-                creatorTargetValue: _createdTargetValue,
-                creatorUnit: _createdUnit,
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Done'),
-                ),
-              ),
-            ],
+            ),
           ],
         ),
       ),

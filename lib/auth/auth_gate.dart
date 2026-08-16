@@ -8,6 +8,8 @@ import 'login_screen.dart';
 import 'username_screen.dart';
 import '../home/home_screen.dart';
 import '../services/notification_service.dart';
+import '../services/pending_invite_store.dart';
+import '../competitions/invite_redeem_screen.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -18,8 +20,11 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   final NotificationService _notificationService = NotificationService();
+  final PendingInviteStore _pendingInviteStore = PendingInviteStore();
   bool _notificationsInitialized = false;
   String? _initializedForUserId;
+  bool _pendingInviteChecked = false;
+  String? _pendingInviteLinkId;
 
   late final StreamSubscription<User?> _authSubscription;
 
@@ -57,6 +62,8 @@ class _AuthGateState extends State<AuthGate> {
         _userDocData = null;
         _userDocLoadedForUid = null;
         _resetNotificationInit();
+        _pendingInviteChecked = false;
+        _pendingInviteLinkId = null;
       } else {
         _loading = true; // show spinner while fetching user doc
       }
@@ -100,6 +107,23 @@ class _AuthGateState extends State<AuthGate> {
     _initializedForUserId = null;
   }
 
+  Future<void> _checkPendingInvite(String uid) async {
+    if (_pendingInviteChecked) return;
+    _pendingInviteChecked = true;
+    try {
+      final linkId = await _pendingInviteStore.getPendingInviteToken();
+      if (linkId == null) return;
+      // Clear on entry, not only on successful redemption — otherwise a user
+      // who backs out of the redeem screen would see it again every launch.
+      await _pendingInviteStore.clearPendingInviteToken();
+      if (mounted && _user?.uid == uid) {
+        setState(() => _pendingInviteLinkId = linkId);
+      }
+    } catch (e) {
+      debugPrint('Pending invite check error: $e');
+    }
+  }
+
   @override
   void dispose() {
     _authSubscription.cancel();
@@ -133,6 +157,14 @@ class _AuthGateState extends State<AuthGate> {
 
     // Fire-and-forget; the guard inside makes it a no-op after the first call.
     _initNotificationsForUser(_user!.uid);
+    _checkPendingInvite(_user!.uid);
+
+    if (_pendingInviteLinkId != null) {
+      return InviteRedeemScreen(
+        linkId: _pendingInviteLinkId!,
+        onDone: () => setState(() => _pendingInviteLinkId = null),
+      );
+    }
 
     return const HomeScreen();
   }

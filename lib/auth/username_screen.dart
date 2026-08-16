@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../home/home_screen.dart';
+import 'auth_gate.dart';
 
 class UsernameScreen extends StatefulWidget {
   const UsernameScreen({super.key});
@@ -32,10 +32,13 @@ class _UsernameScreenState extends State<UsernameScreen> {
       "createdAt": FieldValue.serverTimestamp(),
     });
 
+    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => const HomeScreen(),
+        // Re-enters AuthGate (rather than going to HomeScreen directly) so
+        // its pending-invite-link check runs for newly-registered users too.
+        builder: (context) => const AuthGate(),
       ),
     );
   }

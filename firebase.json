@@ -20,6 +20,9 @@
       }
     }
   },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "functions": [
     {
       "source": "functions",
@@ -36,5 +39,20 @@
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
     }
-  ]
+  ],
+  "hosting": {
+    "public": "web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "!/.well-known/**",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/i/**",
+        "function": "inviteLanding"
+      }
+    ]
+  }
 }
