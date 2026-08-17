@@ -248,6 +248,8 @@ class _CreateChallengeButton extends StatefulWidget {
 }
 
 class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
+  // TEMP: cooldown disabled — flip back to true to re-enable the scarcity gating.
+  static const _cooldownEnabled = false;
   static const _firstWait = Duration(minutes: 3);
   static const _cooldown = Duration(days: 3);
 
@@ -286,6 +288,7 @@ class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
   }
 
   DateTime? get _eligibleAt {
+    if (!_cooldownEnabled) return null;
     if (_lastCompetitionCreatedAt != null) {
       return _lastCompetitionCreatedAt!.add(_cooldown);
     }

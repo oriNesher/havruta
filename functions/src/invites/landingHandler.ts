@@ -2,7 +2,7 @@ import {onRequest} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import {lookupInvite} from "./lookup";
 import {BETA_GATE_CONFIG} from "./betaGateConfig";
-import {buildInviteUrl} from "./config";
+import {buildAndroidIntentUrl, buildInviteUrl} from "./config";
 
 /**
  * @param {string} value Untrusted text (e.g. a challenge title) to embed
@@ -76,7 +76,16 @@ export const inviteLanding = onRequest(
     }
 
     const preview = await lookupInvite(linkId);
-    const appLink = buildInviteUrl(linkId);
+    // A plain https href to this same page can't hand off to the app when
+    // tapped from inside a browser tab already on this origin (Chrome only
+    // re-resolves App Links for intents arriving from outside the tab) —
+    // intent:// forces that re-resolution. iOS has no equivalent here yet,
+    // so it still gets the plain link.
+    const userAgent = req.get("user-agent") ?? "";
+    const isAndroid = /Android/i.test(userAgent);
+    const appLink = isAndroid ?
+      buildAndroidIntentUrl(linkId) :
+      buildInviteUrl(linkId);
 
     if (!preview.valid) {
       const reasonText: Record<string, string> = {

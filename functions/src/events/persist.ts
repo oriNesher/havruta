@@ -2,9 +2,13 @@ import * as admin from "firebase-admin";
 import {EventDraft, EventsContext} from "./types";
 
 /**
- * Writes decided event drafts to competitions/{competitionId}/events.
- * Contains no detection logic — rules decide what happens, this only
- * performs the create/update.
+ * Writes decided event drafts to competitions/{competitionId}/events, then
+ * closes any open progress event this batch didn't explicitly touch. A
+ * progress event only stays open across calls when the same actor's next
+ * progress update explicitly merges into it (an "update" draft targeting
+ * that doc); any other write to the competition's events — another actor's
+ * event, a join/leave, a backInRace — means something happened since, so it
+ * no longer represents an uninterrupted run and gets closed.
  * @param {string} competitionId Competition the drafts belong to.
  * @param {EventDraft[]} drafts Drafts produced by the event rules.
  * @return {Promise<void>} Resolves once all writes complete.
@@ -21,6 +25,15 @@ export async function persistEventDrafts(
     .doc(competitionId)
     .collection("events");
 
+  // Doc ids to exempt from the stale-progress sweep below: explicit merges
+  // into an existing progress doc, plus any progress doc freshly created by
+  // this same batch (its id isn't known until the write resolves).
+  const exemptDocIds = new Set(
+    drafts
+      .filter((draft) => draft.target.kind === "update")
+      .map((draft) => (draft.target as {docId: string}).docId)
+  );
+
   await Promise.all(
     drafts.map(async (draft) => {
       if (draft.target.kind === "update") {
@@ -32,7 +45,7 @@ export async function persistEventDrafts(
         return;
       }
 
-      await eventsRef.add({
+      const created = await eventsRef.add({
         type: draft.type,
         status: "open",
         competitionId,
@@ -41,7 +54,48 @@ export async function persistEventDrafts(
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         ...draft.payload,
       });
+
+      if (draft.type === "progress") {
+        exemptDocIds.add(created.id);
+      }
     })
+  );
+
+  await closeStaleOpenProgressEvents(eventsRef, exemptDocIds);
+}
+
+/**
+ * Closes every open progress event not named in exemptDocIds — i.e. every
+ * progress event that still exists only because nothing has touched it,
+ * not because this batch just merged into or created it.
+ * @param {FirebaseFirestore.CollectionReference} eventsRef The competition's
+ *   events collection.
+ * @param {Set<string>} exemptDocIds Doc ids this batch just merged into or
+ *   freshly created — left untouched.
+ * @return {Promise<void>} Resolves once all closes complete.
+ */
+async function closeStaleOpenProgressEvents(
+  eventsRef: FirebaseFirestore.CollectionReference,
+  exemptDocIds: Set<string>
+): Promise<void> {
+  const openProgressSnap = await eventsRef
+    .where("type", "==", "progress")
+    .where("status", "==", "open")
+    .get();
+
+  const staleDocs = openProgressSnap.docs.filter(
+    (doc) => !exemptDocIds.has(doc.id)
+  );
+
+  if (staleDocs.length === 0) return;
+
+  await Promise.all(
+    staleDocs.map((doc) =>
+      doc.ref.update({
+        status: "closed",
+        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    )
   );
 }
 
