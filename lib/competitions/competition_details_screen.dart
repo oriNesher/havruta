@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_theme.dart';
 import '../services/firestore_service.dart';
 import 'competition_invite_section.dart';
+import 'widgets/invite_link_card.dart';
 
 class CompetitionDetailsScreen extends StatefulWidget {
   final String competitionId;
@@ -352,6 +353,11 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
               ],
 
               if (user != null) ...[
+                InviteLinkCard(
+                  competitionId: widget.competitionId,
+                  competitionTitle: widget.title,
+                ),
+                const SizedBox(height: 16),
                 CompetitionInviteSection(
                   competitionId: widget.competitionId,
                   competitionTitle: widget.title,

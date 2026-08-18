@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 
-import '../services/invite_service.dart';
 import 'competition_invite_section.dart';
 import 'widgets/challenge_creation_stepper.dart';
+import 'widgets/invite_link_card.dart';
 
 /// Dedicated invite screen shown right after a challenge is created.
 /// Deliberately contains only two things: a shareable link and a search
@@ -40,54 +38,6 @@ class ChallengeInviteScreen extends StatefulWidget {
 }
 
 class _ChallengeInviteScreenState extends State<ChallengeInviteScreen> {
-  final _inviteService = InviteService();
-  bool _isCreatingLink = false;
-
-  Future<void> _shareLink() async {
-    setState(() => _isCreatingLink = true);
-    try {
-      final invite = await _inviteService.createInvite(
-        competitionId: widget.competitionId,
-      );
-
-      if (!mounted) return;
-      await SharePlus.instance.share(
-        ShareParams(
-          text: invite.url,
-          subject: 'Join me in "${widget.competitionTitle}" on Havruta',
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not create invite link: $e')));
-    } finally {
-      if (mounted) setState(() => _isCreatingLink = false);
-    }
-  }
-
-  Future<void> _copyLink() async {
-    setState(() => _isCreatingLink = true);
-    try {
-      final invite = await _inviteService.createInvite(
-        competitionId: widget.competitionId,
-      );
-      await Clipboard.setData(ClipboardData(text: invite.url));
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Invite link copied')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not create invite link: $e')));
-    } finally {
-      if (mounted) setState(() => _isCreatingLink = false);
-    }
-  }
-
   void _finish() {
     Navigator.popUntil(context, (route) => route.isFirst);
   }
@@ -121,50 +71,9 @@ class _ChallengeInviteScreenState extends State<ChallengeInviteScreen> {
 
             // Primary action: share invite link — lowest friction, works
             // through the OS share sheet for 1:1 chat sharing.
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Share invite link',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Anyone with this link can join "${widget.competitionTitle}".',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: _isCreatingLink ? null : _shareLink,
-                            icon: _isCreatingLink
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.ios_share),
-                            label: const Text('Share'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          onPressed: _isCreatingLink ? null : _copyLink,
-                          icon: const Icon(Icons.copy_outlined),
-                          tooltip: 'Copy link',
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+            InviteLinkCard(
+              competitionId: widget.competitionId,
+              competitionTitle: widget.competitionTitle,
             ),
             const SizedBox(height: 24),
 
