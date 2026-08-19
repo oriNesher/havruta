@@ -2,8 +2,10 @@ import * as assert from "node:assert/strict";
 import {test} from "node:test";
 import {Timestamp} from "firebase-admin/firestore";
 import {
-  buildProgressEventUpdate,
+  buildProgressEventMetadata,
   detectProgressEvents,
+  isWithinProgressMergeWindow,
+  PROGRESS_MERGE_WINDOW_MS,
 } from "../rules/progress";
 import {EventsContext} from "../types";
 
@@ -40,7 +42,7 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
 }
 
 test("produces an upsertProgress draft when no inactivity gap applies", () => {
-  const drafts = detectProgressEvents(baseContext(), false);
+  const drafts = detectProgressEvents(baseContext());
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "progress");
@@ -48,15 +50,6 @@ test("produces an upsertProgress draft when no inactivity gap applies", () => {
   assert.deepEqual(drafts[0].recipients, ["bob"]);
   assert.equal(drafts[0].payload.beforeProgress, 10);
   assert.equal(drafts[0].payload.afterProgress, 20);
-  assert.equal(drafts[0].payload.hasSeparatingEvent, false);
-});
-
-test("carries hasSeparatingEvent through to the upsertProgress payload", () => {
-  const drafts = detectProgressEvents(baseContext(), true);
-
-  assert.equal(drafts.length, 1);
-  assert.deepEqual(drafts[0].target, {kind: "upsertProgress"});
-  assert.equal(drafts[0].payload.hasSeparatingEvent, true);
 });
 
 test("creates a backInRace event after a long inactivity gap", () => {
@@ -65,7 +58,7 @@ test("creates a backInRace event after a long inactivity gap", () => {
     currentUpdatedAt: Timestamp.fromMillis(8 * ONE_DAY_MS),
   });
 
-  const drafts = detectProgressEvents(context, false);
+  const drafts = detectProgressEvents(context);
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "backInRace");
@@ -79,7 +72,7 @@ test("does not create backInRace for the actor's first-ever update", () => {
     currentUpdatedAt: Timestamp.fromMillis(30 * ONE_DAY_MS),
   });
 
-  const drafts = detectProgressEvents(context, false);
+  const drafts = detectProgressEvents(context);
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "progress");
@@ -91,18 +84,16 @@ test("does not create backInRace when the gap is under the threshold", () => {
     currentUpdatedAt: Timestamp.fromMillis(3 * ONE_DAY_MS),
   });
 
-  const drafts = detectProgressEvents(context, false);
+  const drafts = detectProgressEvents(context);
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "progress");
 });
 
-test("buildProgressEventUpdate starts fresh metadata with no existing " +
-  "event", () => {
-  const result = buildProgressEventUpdate(undefined, 10, 20, false);
+test("buildProgressEventMetadata starts fresh with no existing event", () => {
+  const metadata = buildProgressEventMetadata(undefined, 10, 20);
 
-  assert.equal(result.status, "open");
-  assert.deepEqual(result.metadata, {
+  assert.deepEqual(metadata, {
     beforeProgress: 10,
     afterProgress: 20,
     progressDelta: 10,
@@ -110,16 +101,14 @@ test("buildProgressEventUpdate starts fresh metadata with no existing " +
   });
 });
 
-test("buildProgressEventUpdate merges onto existing metadata", () => {
-  const result = buildProgressEventUpdate(
+test("buildProgressEventMetadata merges onto existing metadata", () => {
+  const metadata = buildProgressEventMetadata(
     {beforeProgress: 10, afterProgress: 20, progressDelta: 10, updatesCount: 1},
     20,
-    35,
-    false
+    35
   );
 
-  assert.equal(result.status, "open");
-  assert.deepEqual(result.metadata, {
+  assert.deepEqual(metadata, {
     beforeProgress: 10,
     afterProgress: 35,
     progressDelta: 25,
@@ -127,16 +116,35 @@ test("buildProgressEventUpdate merges onto existing metadata", () => {
   });
 });
 
-test("buildProgressEventUpdate closes when a separator fired, whether " +
-  "creating fresh or merging", () => {
-  const fresh = buildProgressEventUpdate(undefined, 10, 20, true);
-  assert.equal(fresh.status, "closed");
+test("buildProgressEventMetadata stays correct when a later update's " +
+  "invocation is processed before an earlier one's (out-of-order trigger " +
+  "delivery)", () => {
+  // Real order was 10->20 then 20->35, but the second one's Cloud Function
+  // invocation happened to commit first.
+  const afterSecondTap = buildProgressEventMetadata(undefined, 20, 35);
+  const afterFirstTap = buildProgressEventMetadata(afterSecondTap, 10, 20);
 
-  const merged = buildProgressEventUpdate(
-    {beforeProgress: 10, afterProgress: 20, progressDelta: 10, updatesCount: 1},
-    20,
-    35,
-    true
-  );
-  assert.equal(merged.status, "closed");
+  assert.deepEqual(afterFirstTap, {
+    beforeProgress: 10,
+    afterProgress: 35,
+    progressDelta: 25,
+    updatesCount: 2,
+  });
+});
+
+test("isWithinProgressMergeWindow is false with no existing event", () => {
+  const now = Timestamp.fromMillis(1_000_000);
+  assert.equal(isWithinProgressMergeWindow(undefined, now), false);
+});
+
+test("isWithinProgressMergeWindow merges updates inside the window", () => {
+  const lastUpdatedAt = Timestamp.fromMillis(1_000_000);
+  const now = Timestamp.fromMillis(1_000_000 + PROGRESS_MERGE_WINDOW_MS);
+  assert.equal(isWithinProgressMergeWindow(lastUpdatedAt, now), true);
+});
+
+test("isWithinProgressMergeWindow starts fresh once the window lapses", () => {
+  const lastUpdatedAt = Timestamp.fromMillis(1_000_000);
+  const now = Timestamp.fromMillis(1_000_000 + PROGRESS_MERGE_WINDOW_MS + 1);
+  assert.equal(isWithinProgressMergeWindow(lastUpdatedAt, now), false);
 });

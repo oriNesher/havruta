@@ -231,18 +231,8 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
     const streakDrafts = detectStreakEvents(context);
     const firstBloodDrafts = detectFirstBloodEvents(context);
 
-    // Any other event type firing on this same update interrupts the plain
-    // progress narrative, so the progress event should stop absorbing
-    // further updates once this one is written.
-    const hasSeparatingEvent =
-      rankingDrafts.length > 0 ||
-      gapDrafts.length > 0 ||
-      progressionDrafts.length > 0 ||
-      streakDrafts.length > 0 ||
-      firstBloodDrafts.length > 0;
-
     const drafts = [
-      ...detectProgressEvents(context, hasSeparatingEvent),
+      ...detectProgressEvents(context),
       ...rankingDrafts,
       ...gapDrafts,
       ...progressionDrafts,

@@ -550,11 +550,16 @@ class _ParticipantsListState extends State<_ParticipantsList> {
                 isMe: isMe,
                 baseFraction: baseFraction,
                 deltaFraction: deltaFraction,
-                showLogButton: isMe && canLog,
-                isLoggingProgress: _loggingProgress,
-                onLogProgress: _logProgress,
               );
             }),
+            // Pinned below the (re-orderable) rows instead of on "my" row
+            // itself — otherwise overtaking someone reshuffles the
+            // leaderboard mid-tap and a spammed tap can land on the card
+            // behind where the button used to be, opening competition details.
+            if (canLog) _LogProgressButton(
+              isLoggingProgress: _loggingProgress,
+              onLogProgress: _logProgress,
+            ),
           ],
         );
       },
@@ -1136,9 +1141,6 @@ class _ParticipantRow extends StatelessWidget {
   final bool isMe;
   final double baseFraction;
   final double deltaFraction;
-  final bool showLogButton;
-  final bool isLoggingProgress;
-  final VoidCallback? onLogProgress;
 
   const _ParticipantRow({
     required this.rank,
@@ -1149,9 +1151,6 @@ class _ParticipantRow extends StatelessWidget {
     required this.isMe,
     required this.baseFraction,
     required this.deltaFraction,
-    this.showLogButton = false,
-    this.isLoggingProgress = false,
-    this.onLogProgress,
   });
 
   @override
@@ -1250,47 +1249,131 @@ class _ParticipantRow extends StatelessWidget {
             percentText: percentText,
             isMe: isMe,
           ),
-          if (showLogButton) ...[
-            const SizedBox(height: 12),
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: colorScheme.outline.withValues(alpha: 0.12),
-            ),
-            const SizedBox(height: 12),
-            Center(
-              child: ElevatedButton(
-                onPressed: isLoggingProgress ? null : onLogProgress,
-                style: ElevatedButton.styleFrom(
-                  elevation: 0,
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  minimumSize: Size.zero,
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  textStyle: AppTheme.display(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 1.4),
-                ),
-                child: isLoggingProgress
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                      )
-                    : const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.add, size: 18, color: Colors.white),
-                          SizedBox(width: 8),
-                          Text('LOG PROGRESS'),
-                        ],
-                      ),
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────
+// Log progress button — pinned below the participant rows
+// ─────────────────────────────────────────────
+
+class _LogProgressButton extends StatelessWidget {
+  final bool isLoggingProgress;
+  final VoidCallback onLogProgress;
+
+  const _LogProgressButton({
+    required this.isLoggingProgress,
+    required this.onLogProgress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        const SizedBox(height: 2),
+        Divider(
+          height: 1,
+          thickness: 1,
+          color: colorScheme.outline.withValues(alpha: 0.12),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          // Swallows taps over this area so they never fall through to the
+          // card's own GestureDetector — otherwise, while the button is
+          // briefly disabled (onPressed: null) right after logging, a tap
+          // here would bubble up and open the details screen.
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {},
+            child: ElevatedButton(
+              onPressed: isLoggingProgress ? null : onLogProgress,
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: colorScheme.primary,
+                foregroundColor: Colors.white,
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                textStyle: AppTheme.display(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 1.4),
+              ),
+              child: isLoggingProgress
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                    )
+                  : const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _CutoutPlusIcon(size: 18, color: Colors.white),
+                        SizedBox(width: 8),
+                        Text('ADD PROGRESS'),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// A filled circle with a plus-shaped hole punched through the middle, so
+// whatever sits behind it (the button's background color) shows through the
+// plus instead of the plus being drawn on top in a solid color.
+class _CutoutPlusIcon extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const _CutoutPlusIcon({required this.size, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _CutoutPlusPainter(color: color),
+    );
+  }
+}
+
+class _CutoutPlusPainter extends CustomPainter {
+  final Color color;
+
+  _CutoutPlusPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final barLength = size.width * 0.6;
+    final barThickness = size.width * 0.22;
+
+    canvas.saveLayer(Offset.zero & size, Paint());
+    canvas.drawCircle(center, size.width / 2, Paint()..color = color);
+
+    final cutout = Paint()..blendMode = BlendMode.clear;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center, width: barLength, height: barThickness),
+        Radius.circular(barThickness / 2),
+      ),
+      cutout,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center, width: barThickness, height: barLength),
+        Radius.circular(barThickness / 2),
+      ),
+      cutout,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _CutoutPlusPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 // ─────────────────────────────────────────────

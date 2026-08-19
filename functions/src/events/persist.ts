@@ -1,18 +1,13 @@
 import * as admin from "firebase-admin";
 import {EventDraft, EventsContext} from "./types";
 import {
-  buildProgressEventUpdate,
+  buildProgressEventMetadata,
+  isWithinProgressMergeWindow,
   ProgressEventMetadata,
 } from "./rules/progress";
 
 /**
- * Writes decided event drafts to competitions/{competitionId}/events, then
- * closes any open progress event this batch didn't explicitly touch. A
- * progress event only stays open across calls when the same actor's next
- * progress update explicitly merges into it (an "update" draft targeting
- * that doc); any other write to the competition's events — another actor's
- * event, a join/leave, a backInRace — means something happened since, so it
- * no longer represents an uninterrupted run and gets closed.
+ * Writes decided event drafts to competitions/{competitionId}/events.
  * @param {string} competitionId Competition the drafts belong to.
  * @param {EventDraft[]} drafts Drafts produced by the event rules.
  * @return {Promise<void>} Resolves once all writes complete.
@@ -29,15 +24,6 @@ export async function persistEventDrafts(
     .doc(competitionId)
     .collection("events");
 
-  // Doc ids to exempt from the stale-progress sweep below: explicit merges
-  // into an existing progress doc, plus whichever progress doc this batch's
-  // upsert (below) ends up touching.
-  const exemptDocIds = new Set(
-    drafts
-      .filter((draft) => draft.target.kind === "update")
-      .map((draft) => (draft.target as {docId: string}).docId)
-  );
-
   await Promise.all(
     drafts.map(async (draft) => {
       if (draft.target.kind === "update") {
@@ -50,9 +36,7 @@ export async function persistEventDrafts(
       }
 
       if (draft.target.kind === "upsertProgress") {
-        const docId =
-          await upsertProgressEvent(eventsRef, competitionId, draft);
-        exemptDocIds.add(docId);
+        await upsertProgressEvent(eventsRef, competitionId, draft);
         return;
       }
 
@@ -67,81 +51,92 @@ export async function persistEventDrafts(
       });
     })
   );
+}
 
-  await closeStaleOpenProgressEvents(eventsRef, exemptDocIds);
+interface ProgressCursorData {
+  eventId: string;
+  lastUpdatedAt: FirebaseFirestore.Timestamp;
+  metadata: ProgressEventMetadata;
 }
 
 /**
- * Merges a progress update into the actor's still-open progress event, or
- * creates a fresh one, inside a transaction. The existing-open-event read
- * has to happen here rather than earlier in context.ts: reading it ahead of
- * time and deciding create-vs-merge from that stale snapshot is exactly what
- * let concurrent rapid-fire updates (e.g. the "log progress" button mashed
- * repeatedly) each see "no open event" and each create their own duplicate
- * instead of merging. Firestore aborts and retries a transaction whose query
- * results changed before commit, so concurrent upserts for the same actor
- * serialize correctly instead of racing.
+ * Merges a progress update into the actor's still-fresh progress event, or
+ * creates a new one, inside a transaction. The merge decision is driven by
+ * a small per-actor "cursor" doc (competitions/{id}/progressCursors/{uid})
+ * rather than a query against the events collection or the event doc
+ * itself, for two reasons:
+ *
+ * - Race safety: deciding create-vs-merge from a query or a stale read
+ *   outside the transaction is exactly what let concurrent rapid-fire
+ *   updates (e.g. the "log progress" button mashed repeatedly) each see
+ *   "nothing to merge into" and each create their own duplicate instead of
+ *   merging. A transactional read of one specific document (even one that
+ *   doesn't exist yet) is something Firestore reliably detects conflicts
+ *   on; a query that currently matches nothing is not, since there's no
+ *   document for a concurrent transaction's write to collide with. Keying
+ *   the cursor doc's id on the actor makes this a document read, so
+ *   concurrent upserts for the same actor serialize correctly instead of
+ *   racing.
+ * - History: unlike the event doc itself, the cursor is safe to overwrite
+ *   every update (including across session boundaries) because it isn't
+ *   user-visible — the actual event doc gets a fresh id each new session
+ *   (once the merge window in isWithinProgressMergeWindow has lapsed since
+ *   the cursor's last update), so a past session's card is preserved
+ *   instead of being overwritten by the next one.
+ *
+ * The cursor carries its own copy of the current event's metadata so the
+ * transaction never needs to read the event doc — only the cursor doc
+ * participates in conflict detection, keeping unrelated actors' updates
+ * from contending with each other.
  * @param {FirebaseFirestore.CollectionReference} eventsRef The competition's
  *   events collection.
  * @param {string} competitionId Competition the event belongs to.
  * @param {EventDraft} draft The upsertProgress draft to apply.
- * @return {Promise<string>} The id of the progress event doc that was
- *   merged into or created.
+ * @return {Promise<void>} Resolves once the merge or create completes.
  */
 async function upsertProgressEvent(
   eventsRef: FirebaseFirestore.CollectionReference,
   competitionId: string,
   draft: EventDraft
-): Promise<string> {
+): Promise<void> {
   const payload = draft.payload as {
     competitionTitle: string;
     actorUid: string;
     actorUsername: string;
     beforeProgress: number;
     afterProgress: number;
-    hasSeparatingEvent: boolean;
   };
 
-  return admin.firestore().runTransaction(async (transaction) => {
-    const openSnap = await transaction.get(
-      eventsRef
-        .where("type", "==", "progress")
-        .where("actorUid", "==", payload.actorUid)
-        .where("status", "==", "open")
-        .limit(1)
-    );
+  const cursorRef = admin
+    .firestore()
+    .collection("competitions")
+    .doc(competitionId)
+    .collection("progressCursors")
+    .doc(payload.actorUid);
 
-    const existingDoc = openSnap.empty ? null : openSnap.docs[0];
-    const existingMetadata = existingDoc?.data().metadata as
-      | Partial<ProgressEventMetadata>
-      | undefined;
+  await admin.firestore().runTransaction(async (transaction) => {
+    const cursorSnap = await transaction.get(cursorRef);
+    const cursorData = cursorSnap.data() as ProgressCursorData | undefined;
+    const now = admin.firestore.Timestamp.now();
 
-    const {status, metadata} = buildProgressEventUpdate(
-      existingMetadata,
+    const canMerge =
+      !!cursorData &&
+      isWithinProgressMergeWindow(cursorData.lastUpdatedAt, now);
+
+    const metadata = buildProgressEventMetadata(
+      canMerge ? cursorData?.metadata : undefined,
       payload.beforeProgress,
-      payload.afterProgress,
-      payload.hasSeparatingEvent
+      payload.afterProgress
     );
 
-    if (existingDoc) {
-      transaction.update(existingDoc.ref, {
-        competitionTitle: payload.competitionTitle,
-        actorUsername: payload.actorUsername,
-        status,
-        metadata,
-        unseenByUserUids: draft.recipients,
-        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      return existingDoc.id;
-    }
+    const eventRef = canMerge && cursorData ?
+      eventsRef.doc(cursorData.eventId) :
+      eventsRef.doc();
 
-    const newRef = eventsRef.doc();
-    transaction.set(newRef, {
+    const fields = {
       type: "progress",
-      status,
       competitionId,
       unseenByUserUids: draft.recipients,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       competitionTitle: payload.competitionTitle,
       actorUid: payload.actorUid,
@@ -149,44 +144,23 @@ async function upsertProgressEvent(
       targetUid: null,
       targetUsername: null,
       metadata,
+    };
+
+    if (canMerge) {
+      transaction.update(eventRef, fields);
+    } else {
+      transaction.set(eventRef, {
+        ...fields,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    transaction.set(cursorRef, {
+      eventId: eventRef.id,
+      lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      metadata,
     });
-    return newRef.id;
   });
-}
-
-/**
- * Closes every open progress event not named in exemptDocIds — i.e. every
- * progress event that still exists only because nothing has touched it,
- * not because this batch just merged into or created it.
- * @param {FirebaseFirestore.CollectionReference} eventsRef The competition's
- *   events collection.
- * @param {Set<string>} exemptDocIds Doc ids this batch just merged into or
- *   freshly created — left untouched.
- * @return {Promise<void>} Resolves once all closes complete.
- */
-async function closeStaleOpenProgressEvents(
-  eventsRef: FirebaseFirestore.CollectionReference,
-  exemptDocIds: Set<string>
-): Promise<void> {
-  const openProgressSnap = await eventsRef
-    .where("type", "==", "progress")
-    .where("status", "==", "open")
-    .get();
-
-  const staleDocs = openProgressSnap.docs.filter(
-    (doc) => !exemptDocIds.has(doc.id)
-  );
-
-  if (staleDocs.length === 0) return;
-
-  await Promise.all(
-    staleDocs.map((doc) =>
-      doc.ref.update({
-        status: "closed",
-        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      })
-    )
-  );
 }
 
 /**
