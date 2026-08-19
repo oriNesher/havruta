@@ -15,71 +15,121 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final auth = FirebaseAuth.instance;
 
-  Future<void> signUp() async {
-    try {
-      await auth.createUserWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
-      );
+  bool isSignUp = false;
+  bool isSubmitting = false;
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const UsernameScreen()),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
-    }
+  void _toggleMode() {
+    setState(() => isSignUp = !isSignUp);
   }
 
-  Future<void> login() async {
+  Future<void> _submit() async {
+    setState(() => isSubmitting = true);
     try {
-      await auth.signInWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
-      );
+      if (isSignUp) {
+        await auth.createUserWithEmailAndPassword(
+          email: emailController.text.trim(),
+          password: passwordController.text.trim(),
+        );
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Logged in")));
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const UsernameScreen()),
+        );
+      } else {
+        await auth.signInWithEmailAndPassword(
+          email: emailController.text.trim(),
+          password: passwordController.text.trim(),
+        );
+      }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => isSubmitting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Havruta')),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: emailController,
-              decoration: const InputDecoration(labelText: "Email"),
-            ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isSignUp ? 'Create account' : 'Welcome back',
+                style: theme.textTheme.headlineLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isSignUp
+                    ? 'Sign up to start your Havruta'
+                    : 'Sign in to continue',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                ),
+              ),
 
-            const SizedBox(height: 20),
+              const SizedBox(height: 32),
 
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: "Password"),
-            ),
+              TextField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: "Email"),
+              ),
 
-            const SizedBox(height: 30),
+              const SizedBox(height: 16),
 
-            ElevatedButton(onPressed: login, child: const Text("Login")),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: "Password"),
+              ),
 
-            const SizedBox(height: 10),
+              const SizedBox(height: 24),
 
-            ElevatedButton(onPressed: signUp, child: const Text("Sign Up")),
-          ],
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: isSubmitting ? null : _submit,
+                  child: isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(isSignUp ? "Create Account" : "Login"),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              SizedBox(
+                width: double.infinity,
+                child: Center(
+                  child: TextButton(
+                    onPressed: isSubmitting ? null : _toggleMode,
+                    child: Text(
+                      isSignUp
+                          ? "Already have an account? Sign In"
+                          : "Don't have an account? Sign Up",
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
