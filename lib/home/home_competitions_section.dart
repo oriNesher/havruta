@@ -155,7 +155,7 @@ class _SkeletonCompetitionCard extends StatelessWidget {
         border: Border.all(color: colorScheme.outline.withValues(alpha: 0.15)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 8, 16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -166,8 +166,6 @@ class _SkeletonCompetitionCard extends StatelessWidget {
                 const _SkeletonBlock(width: 130, height: 16, radius: 8),
                 const Spacer(),
                 const _SkeletonBlock(width: 36, height: 12, radius: 6),
-                // Space equivalent to the PopupMenuButton icon
-                const SizedBox(width: 40),
               ],
             ),
             const SizedBox(height: 12),
@@ -262,7 +260,7 @@ class _CompetitionCard extends StatelessWidget {
           border: Border.all(color: colorScheme.outline.withValues(alpha: 0.15)),
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 8, 16),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -304,20 +302,6 @@ class _CompetitionCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                  PopupMenuButton<String>(
-                    icon: Icon(
-                      Icons.more_horiz,
-                      color: colorScheme.onSurface.withValues(alpha: 0.45),
-                    ),
-                    color: colorScheme.surface,
-                    onSelected: (v) { if (v == 'details') _openDetails(context); },
-                    itemBuilder: (_) => [
-                      PopupMenuItem(
-                        value: 'details',
-                        child: Text('View Details', style: TextStyle(color: colorScheme.onSurface)),
-                      ),
-                    ],
-                  ),
                 ],
               ),
               // ── Metadata chips ───────────────────────
