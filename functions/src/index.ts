@@ -11,6 +11,7 @@ import {detectRankingEvents} from "./events/rules/ranking";
 import {detectGapEvents} from "./events/rules/gap";
 import {detectProgressionEvents} from "./events/rules/progression";
 import {detectStreakEvents} from "./events/rules/streak";
+import {detectFirstBloodEvents} from "./events/rules/firstBlood";
 import {
   shouldCreateJoinedEvent,
   shouldCreateLeftEvent,
@@ -228,6 +229,7 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
     const gapDrafts = detectGapEvents(context);
     const progressionDrafts = detectProgressionEvents(context);
     const streakDrafts = detectStreakEvents(context);
+    const firstBloodDrafts = detectFirstBloodEvents(context);
 
     // Any other event type firing on this same update interrupts the plain
     // progress narrative, so the progress event should stop absorbing
@@ -236,7 +238,8 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
       rankingDrafts.length > 0 ||
       gapDrafts.length > 0 ||
       progressionDrafts.length > 0 ||
-      streakDrafts.length > 0;
+      streakDrafts.length > 0 ||
+      firstBloodDrafts.length > 0;
 
     const drafts = [
       ...detectProgressEvents(context, hasSeparatingEvent),
@@ -244,6 +247,7 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
       ...gapDrafts,
       ...progressionDrafts,
       ...streakDrafts,
+      ...firstBloodDrafts,
     ];
 
     await persistEventDrafts(context.competitionId, drafts);

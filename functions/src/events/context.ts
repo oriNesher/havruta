@@ -121,6 +121,10 @@ export async function buildEventsContext(
     "finishedInPosition",
   ]);
 
+  const hasFirstBloodEvent = (await countEvents(eventsRef, [
+    "firstBlood",
+  ])) > 0;
+
   const todayTimestamp = currentUpdatedAt ?? admin.firestore.Timestamp.now();
   const todayDateStr = toDateString(todayTimestamp);
   const previousActiveDate: string | null = before.lastActiveDate ?? null;
@@ -150,6 +154,7 @@ export async function buildEventsContext(
     currentUpdatedAt,
     firedCloseRaceCheckpoints,
     completionsCount,
+    hasFirstBloodEvent,
     todayDateStr,
     isNewActiveDay,
     newStreakCount,

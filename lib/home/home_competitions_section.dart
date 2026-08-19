@@ -949,6 +949,8 @@ class _CompetitionEventRow extends StatelessWidget {
         return Icons.bolt;
       case 'progress':
         return Icons.trending_up;
+      case 'firstBlood':
+        return Icons.bloodtype;
       case 'backInRace':
         return Icons.replay;
       case 'nearCompletion':
@@ -1010,6 +1012,8 @@ class _CompetitionEventRow extends StatelessWidget {
           name(actor),
           text(delta != null ? ' made progress (+$delta)' : ' made progress'),
         ];
+      case 'firstBlood':
+        return [name(actor), text(' got first blood')];
       case 'backInRace':
         return [name(actor), text(' is back in the race')];
       case 'nearCompletion':
@@ -1254,37 +1258,30 @@ class _ParticipantRow extends StatelessWidget {
               color: colorScheme.outline.withValues(alpha: 0.12),
             ),
             const SizedBox(height: 12),
-            GestureDetector(
-              onTap: isLoggingProgress ? null : onLogProgress,
-              child: Center(
+            Center(
+              child: ElevatedButton(
+                onPressed: isLoggingProgress ? null : onLogProgress,
+                style: ElevatedButton.styleFrom(
+                  elevation: 0,
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  textStyle: AppTheme.display(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 1.4),
+                ),
                 child: isLoggingProgress
                     ? const SizedBox(
-                        width: 30,
-                        height: 30,
+                        width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                       )
-                    : Row(
+                    : const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.add, size: 18, color: Colors.white),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'LOG PROGRESS',
-                            style: AppTheme.display(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.8,
-                            ),
-                          ),
+                          Icon(Icons.add, size: 18, color: Colors.white),
+                          SizedBox(width: 8),
+                          Text('LOG PROGRESS'),
                         ],
                       ),
               ),

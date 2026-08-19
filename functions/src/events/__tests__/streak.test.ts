@@ -24,6 +24,7 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
     currentUpdatedAt: null,
     firedCloseRaceCheckpoints: [],
     completionsCount: 0,
+    hasFirstBloodEvent: false,
     todayDateStr: "2026-03-10",
     isNewActiveDay: true,
     newStreakCount: 3,

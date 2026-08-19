@@ -25,6 +25,7 @@ export interface EventsContext {
   currentUpdatedAt: FirebaseFirestore.Timestamp | null;
   firedCloseRaceCheckpoints: number[];
   completionsCount: number;
+  hasFirstBloodEvent: boolean;
   todayDateStr: string;
   isNewActiveDay: boolean;
   newStreakCount: number;
