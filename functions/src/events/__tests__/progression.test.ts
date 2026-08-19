@@ -19,7 +19,6 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
     afterProgress: 20,
     participants: [],
     participantUids: ["alice", "bob"],
-    existingOpenProgressEvent: null,
     openTiedEvents: [],
     previousUpdatedAt: null,
     currentUpdatedAt: null,

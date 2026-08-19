@@ -20,7 +20,6 @@ export interface EventsContext {
   afterProgress: number;
   participants: ParticipantData[];
   participantUids: string[];
-  existingOpenProgressEvent: ExistingOpenEvent | null;
   openTiedEvents: ExistingOpenEvent[];
   previousUpdatedAt: FirebaseFirestore.Timestamp | null;
   currentUpdatedAt: FirebaseFirestore.Timestamp | null;
@@ -33,7 +32,8 @@ export interface EventsContext {
 
 export type EventDraftTarget =
   | {kind: "create"}
-  | {kind: "update"; docId: string};
+  | {kind: "update"; docId: string}
+  | {kind: "upsertProgress"};
 
 export interface EventDraft {
   type: string;

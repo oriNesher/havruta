@@ -1,5 +1,9 @@
 import * as admin from "firebase-admin";
 import {EventDraft, EventsContext} from "./types";
+import {
+  buildProgressEventUpdate,
+  ProgressEventMetadata,
+} from "./rules/progress";
 
 /**
  * Writes decided event drafts to competitions/{competitionId}/events, then
@@ -26,8 +30,8 @@ export async function persistEventDrafts(
     .collection("events");
 
   // Doc ids to exempt from the stale-progress sweep below: explicit merges
-  // into an existing progress doc, plus any progress doc freshly created by
-  // this same batch (its id isn't known until the write resolves).
+  // into an existing progress doc, plus whichever progress doc this batch's
+  // upsert (below) ends up touching.
   const exemptDocIds = new Set(
     drafts
       .filter((draft) => draft.target.kind === "update")
@@ -45,7 +49,14 @@ export async function persistEventDrafts(
         return;
       }
 
-      const created = await eventsRef.add({
+      if (draft.target.kind === "upsertProgress") {
+        const docId =
+          await upsertProgressEvent(eventsRef, competitionId, draft);
+        exemptDocIds.add(docId);
+        return;
+      }
+
+      await eventsRef.add({
         type: draft.type,
         status: "open",
         competitionId,
@@ -54,14 +65,93 @@ export async function persistEventDrafts(
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         ...draft.payload,
       });
-
-      if (draft.type === "progress") {
-        exemptDocIds.add(created.id);
-      }
     })
   );
 
   await closeStaleOpenProgressEvents(eventsRef, exemptDocIds);
+}
+
+/**
+ * Merges a progress update into the actor's still-open progress event, or
+ * creates a fresh one, inside a transaction. The existing-open-event read
+ * has to happen here rather than earlier in context.ts: reading it ahead of
+ * time and deciding create-vs-merge from that stale snapshot is exactly what
+ * let concurrent rapid-fire updates (e.g. the "log progress" button mashed
+ * repeatedly) each see "no open event" and each create their own duplicate
+ * instead of merging. Firestore aborts and retries a transaction whose query
+ * results changed before commit, so concurrent upserts for the same actor
+ * serialize correctly instead of racing.
+ * @param {FirebaseFirestore.CollectionReference} eventsRef The competition's
+ *   events collection.
+ * @param {string} competitionId Competition the event belongs to.
+ * @param {EventDraft} draft The upsertProgress draft to apply.
+ * @return {Promise<string>} The id of the progress event doc that was
+ *   merged into or created.
+ */
+async function upsertProgressEvent(
+  eventsRef: FirebaseFirestore.CollectionReference,
+  competitionId: string,
+  draft: EventDraft
+): Promise<string> {
+  const payload = draft.payload as {
+    competitionTitle: string;
+    actorUid: string;
+    actorUsername: string;
+    beforeProgress: number;
+    afterProgress: number;
+    hasSeparatingEvent: boolean;
+  };
+
+  return admin.firestore().runTransaction(async (transaction) => {
+    const openSnap = await transaction.get(
+      eventsRef
+        .where("type", "==", "progress")
+        .where("actorUid", "==", payload.actorUid)
+        .where("status", "==", "open")
+        .limit(1)
+    );
+
+    const existingDoc = openSnap.empty ? null : openSnap.docs[0];
+    const existingMetadata = existingDoc?.data().metadata as
+      | Partial<ProgressEventMetadata>
+      | undefined;
+
+    const {status, metadata} = buildProgressEventUpdate(
+      existingMetadata,
+      payload.beforeProgress,
+      payload.afterProgress,
+      payload.hasSeparatingEvent
+    );
+
+    if (existingDoc) {
+      transaction.update(existingDoc.ref, {
+        competitionTitle: payload.competitionTitle,
+        actorUsername: payload.actorUsername,
+        status,
+        metadata,
+        unseenByUserUids: draft.recipients,
+        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return existingDoc.id;
+    }
+
+    const newRef = eventsRef.doc();
+    transaction.set(newRef, {
+      type: "progress",
+      status,
+      competitionId,
+      unseenByUserUids: draft.recipients,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      competitionTitle: payload.competitionTitle,
+      actorUid: payload.actorUid,
+      actorUsername: payload.actorUsername,
+      targetUid: null,
+      targetUsername: null,
+      metadata,
+    });
+    return newRef.id;
+  });
 }
 
 /**

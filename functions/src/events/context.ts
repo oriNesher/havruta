@@ -97,20 +97,6 @@ export async function buildEventsContext(
     return null;
   }
 
-  const existingEventSnap = await eventsRef
-    .where("type", "==", "progress")
-    .where("actorUid", "==", actorUid)
-    .where("status", "==", "open")
-    .limit(1)
-    .get();
-
-  const existingOpenProgressEvent = existingEventSnap.empty ?
-    null :
-    {
-      id: existingEventSnap.docs[0].id,
-      data: existingEventSnap.docs[0].data(),
-    };
-
   // Open "tied" events for the whole competition, so ranking can merge a
   // repeat tie between the same two participants into the one still-open
   // event instead of creating a duplicate.
@@ -159,7 +145,6 @@ export async function buildEventsContext(
     afterProgress,
     participants,
     participantUids,
-    existingOpenProgressEvent,
     openTiedEvents,
     previousUpdatedAt,
     currentUpdatedAt,

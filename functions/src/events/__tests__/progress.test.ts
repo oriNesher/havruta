@@ -1,7 +1,10 @@
 import * as assert from "node:assert/strict";
 import {test} from "node:test";
 import {Timestamp} from "firebase-admin/firestore";
-import {detectProgressEvents} from "../rules/progress";
+import {
+  buildProgressEventUpdate,
+  detectProgressEvents,
+} from "../rules/progress";
 import {EventsContext} from "../types";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -23,7 +26,6 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
     afterProgress: 20,
     participants: [],
     participantUids: ["alice", "bob"],
-    existingOpenProgressEvent: null,
     openTiedEvents: [],
     previousUpdatedAt: Timestamp.fromMillis(0),
     currentUpdatedAt: Timestamp.fromMillis(ONE_DAY_MS),
@@ -36,96 +38,24 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
   };
 }
 
-test("creates a new progress event when none is open", () => {
+test("produces an upsertProgress draft when no inactivity gap applies", () => {
   const drafts = detectProgressEvents(baseContext(), false);
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "progress");
-  assert.deepEqual(drafts[0].target, {kind: "create"});
+  assert.deepEqual(drafts[0].target, {kind: "upsertProgress"});
   assert.deepEqual(drafts[0].recipients, ["bob"]);
-  assert.equal(drafts[0].payload.status, "open");
-  assert.deepEqual(drafts[0].payload.metadata, {
-    beforeProgress: 10,
-    afterProgress: 20,
-    progressDelta: 10,
-    updatesCount: 1,
-  });
+  assert.equal(drafts[0].payload.beforeProgress, 10);
+  assert.equal(drafts[0].payload.afterProgress, 20);
+  assert.equal(drafts[0].payload.hasSeparatingEvent, false);
 });
 
-test("closes a freshly created progress event when another event type " +
-  "also fired this update", () => {
+test("carries hasSeparatingEvent through to the upsertProgress payload", () => {
   const drafts = detectProgressEvents(baseContext(), true);
 
   assert.equal(drafts.length, 1);
-  assert.deepEqual(drafts[0].target, {kind: "create"});
-  assert.equal(drafts[0].payload.status, "closed");
-});
-
-test("merges into an existing open progress event", () => {
-  const context = baseContext({
-    beforeProgress: 20,
-    afterProgress: 35,
-    existingOpenProgressEvent: {
-      id: "existing-event",
-      data: {
-        metadata: {
-          beforeProgress: 10,
-          afterProgress: 20,
-          progressDelta: 10,
-          updatesCount: 1,
-        },
-      },
-    },
-  });
-
-  const drafts = detectProgressEvents(context, false);
-
-  assert.equal(drafts.length, 1);
-  assert.deepEqual(drafts[0].target, {
-    kind: "update",
-    docId: "existing-event",
-  });
-  assert.equal(drafts[0].payload.status, "open");
-  assert.deepEqual(drafts[0].payload.metadata, {
-    beforeProgress: 10,
-    afterProgress: 35,
-    progressDelta: 25,
-    updatesCount: 2,
-  });
-});
-
-test("closes the merged progress event when another event type also " +
-  "fired this update", () => {
-  const context = baseContext({
-    beforeProgress: 20,
-    afterProgress: 35,
-    existingOpenProgressEvent: {
-      id: "existing-event",
-      data: {
-        metadata: {
-          beforeProgress: 10,
-          afterProgress: 20,
-          progressDelta: 10,
-          updatesCount: 1,
-        },
-      },
-    },
-  });
-
-  const drafts = detectProgressEvents(context, true);
-
-  assert.equal(drafts.length, 1);
-  assert.deepEqual(drafts[0].target, {
-    kind: "update",
-    docId: "existing-event",
-  });
-  assert.equal(drafts[0].payload.status, "closed");
-  assert.deepEqual(drafts[0].payload.metadata, {
-    beforeProgress: 10,
-    afterProgress: 35,
-    progressDelta: 25,
-    updatesCount: 2,
-  });
+  assert.deepEqual(drafts[0].target, {kind: "upsertProgress"});
+  assert.equal(drafts[0].payload.hasSeparatingEvent, true);
 });
 
 test("creates a backInRace event after a long inactivity gap", () => {
@@ -164,4 +94,48 @@ test("does not create backInRace when the gap is under the threshold", () => {
 
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].type, "progress");
+});
+
+test("buildProgressEventUpdate starts fresh metadata with no existing " +
+  "event", () => {
+  const result = buildProgressEventUpdate(undefined, 10, 20, false);
+
+  assert.equal(result.status, "open");
+  assert.deepEqual(result.metadata, {
+    beforeProgress: 10,
+    afterProgress: 20,
+    progressDelta: 10,
+    updatesCount: 1,
+  });
+});
+
+test("buildProgressEventUpdate merges onto existing metadata", () => {
+  const result = buildProgressEventUpdate(
+    {beforeProgress: 10, afterProgress: 20, progressDelta: 10, updatesCount: 1},
+    20,
+    35,
+    false
+  );
+
+  assert.equal(result.status, "open");
+  assert.deepEqual(result.metadata, {
+    beforeProgress: 10,
+    afterProgress: 35,
+    progressDelta: 25,
+    updatesCount: 2,
+  });
+});
+
+test("buildProgressEventUpdate closes when a separator fired, whether " +
+  "creating fresh or merging", () => {
+  const fresh = buildProgressEventUpdate(undefined, 10, 20, true);
+  assert.equal(fresh.status, "closed");
+
+  const merged = buildProgressEventUpdate(
+    {beforeProgress: 10, afterProgress: 20, progressDelta: 10, updatesCount: 1},
+    20,
+    35,
+    true
+  );
+  assert.equal(merged.status, "closed");
 });
