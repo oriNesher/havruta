@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
 import '../app_theme.dart';
 import '../competitions/competition_event.dart';
 import '../services/firestore_service.dart';
+import '../services/last_progress_amount_store.dart';
 import '../services/progress_snapshot_cache.dart';
 import '../competitions/competition_details_screen.dart';
 
@@ -410,6 +412,7 @@ class _ParticipantsList extends StatefulWidget {
 
 class _ParticipantsListState extends State<_ParticipantsList> {
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
+  final _lastAmountStore = LastProgressAmountStore();
   Map<String, int>? _lastSeenProgress;
   bool _loggingProgress = false;
 
@@ -435,12 +438,35 @@ class _ParticipantsListState extends State<_ParticipantsList> {
     }
   }
 
-  Future<void> _logProgress() async {
+  Future<void> _openAddProgressPopup() async {
+    final lastAmount = await _lastAmountStore.getLastAmount(
+      widget.currentUid,
+      widget.competitionId,
+    );
+    if (!mounted) return;
+
+    final amount = await showAddProgressDialog(
+      context,
+      initialAmount: lastAmount ?? 1,
+    );
+    if (amount == null) return;
+
+    await _submitProgress(amount);
+    await _lastAmountStore.saveLastAmount(
+      widget.currentUid,
+      widget.competitionId,
+      amount,
+    );
+  }
+
+  Future<void> _submitProgress(int amount) async {
+    if (amount <= 0) return;
     setState(() => _loggingProgress = true);
     try {
-      await widget.firestoreService.incrementMyProgress(
+      await widget.firestoreService.addProgress(
         competitionId: widget.competitionId,
         uid: widget.currentUid,
+        amount: amount,
       );
     } catch (e) {
       if (!mounted) return;
@@ -540,9 +566,9 @@ class _ParticipantsListState extends State<_ParticipantsList> {
             // itself — otherwise overtaking someone reshuffles the
             // leaderboard mid-tap and a spammed tap can land on the card
             // behind where the button used to be, opening competition details.
-            if (canLog) _LogProgressButton(
+            if (canLog) _AddProgressButton(
               isLoggingProgress: _loggingProgress,
-              onLogProgress: _logProgress,
+              onTap: _openAddProgressPopup,
             ),
           ],
         );
@@ -1240,21 +1266,22 @@ class _ParticipantRow extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-// Log progress button — pinned below the participant rows
+// Add progress button — pinned below the participant rows
 // ─────────────────────────────────────────────
 
-class _LogProgressButton extends StatelessWidget {
+class _AddProgressButton extends StatelessWidget {
   final bool isLoggingProgress;
-  final VoidCallback onLogProgress;
+  final VoidCallback onTap;
 
-  const _LogProgressButton({
+  const _AddProgressButton({
     required this.isLoggingProgress,
-    required this.onLogProgress,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+
     return Column(
       children: [
         const SizedBox(height: 2),
@@ -1273,7 +1300,7 @@ class _LogProgressButton extends StatelessWidget {
             behavior: HitTestBehavior.opaque,
             onTap: () {},
             child: ElevatedButton(
-              onPressed: isLoggingProgress ? null : onLogProgress,
+              onPressed: isLoggingProgress ? null : onTap,
               style: ElevatedButton.styleFrom(
                 elevation: 0,
                 backgroundColor: colorScheme.primary,
@@ -1301,6 +1328,234 @@ class _LogProgressButton extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Add-progress popup — numeric input, quick-add chips, hold-to-submit
+// ─────────────────────────────────────────────
+
+const List<int> _quickAddAmounts = [1, 5, 25];
+
+/// Shows the add-progress popup, prefilled with [initialAmount]. Returns the
+/// submitted amount once the user completes the hold-to-submit gesture, or
+/// null if they cancelled.
+Future<int?> showAddProgressDialog(
+  BuildContext context, {
+  required int initialAmount,
+}) {
+  return showDialog<int>(
+    context: context,
+    builder: (dialogContext) => _AddProgressDialog(initialAmount: initialAmount),
+  );
+}
+
+class _AddProgressDialog extends StatefulWidget {
+  final int initialAmount;
+
+  const _AddProgressDialog({required this.initialAmount});
+
+  @override
+  State<_AddProgressDialog> createState() => _AddProgressDialogState();
+}
+
+class _AddProgressDialogState extends State<_AddProgressDialog> {
+  // Owned by this State (not by the showDialog<int> Future) so it's disposed
+  // only once this widget is actually unmounted — the dialog route's exit
+  // transition keeps this TextField alive and reacting (losing focus,
+  // animating its label) for a bit after Navigator.pop() resolves that
+  // Future, so disposing on the Future's completion tore the controller down
+  // while the field could still touch it, crashing mid-frame.
+  late final TextEditingController _controller =
+      TextEditingController(text: '${widget.initialAmount}');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  int _currentAmount() => int.tryParse(_controller.text.trim()) ?? 0;
+
+  void _applyQuickAdd(int delta) {
+    final next = _currentAmount() + delta;
+    _controller.text = '$next';
+    _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final green = colorScheme.tertiary;
+
+    return AlertDialog(
+      title: const Text('Add progress'),
+      content: SizedBox(
+        width: 260,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              autofocus: true,
+              style: AppTheme.mono(fontSize: 34, fontWeight: FontWeight.w700),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _quickAddAmounts
+                  .map(
+                    (amount) => OutlinedButton(
+                      onPressed: () => _applyQuickAdd(amount),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: green,
+                        side: BorderSide(color: green),
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text('+$amount'),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 20),
+            _HoldToSubmitButton(
+              enabled: _currentAmount() > 0,
+              color: green,
+              onConfirmed: () => Navigator.of(context).pop(_currentAmount()),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
+/// A button that only fires [onConfirmed] after being pressed and held for
+/// the full [_holdDuration] — releasing early cancels the hold instead of
+/// submitting, giving a deliberate confirmation gesture for a write that
+/// (unlike the old +1 tap) can move progress by a large, hard-to-undo
+/// amount.
+class _HoldToSubmitButton extends StatefulWidget {
+  final bool enabled;
+  final Color color;
+  final VoidCallback onConfirmed;
+
+  const _HoldToSubmitButton({
+    required this.enabled,
+    required this.color,
+    required this.onConfirmed,
+  });
+
+  @override
+  State<_HoldToSubmitButton> createState() => _HoldToSubmitButtonState();
+}
+
+class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
+    with SingleTickerProviderStateMixin {
+  static const _holdDuration = Duration(seconds: 4);
+
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _holdDuration)
+      ..addStatusListener(_onStatusChanged);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeStatusListener(_onStatusChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onStatusChanged(AnimationStatus status) {
+    // Only a hold that runs the animation all the way to 1.0 counts as a
+    // confirmation — a release partway through animates back to 0 instead
+    // of completing, so this only ever fires for a genuine full-length hold.
+    if (status == AnimationStatus.completed) {
+      widget.onConfirmed();
+    }
+  }
+
+  void _startHold() {
+    if (!mounted || !widget.enabled) return;
+    _controller.forward(from: 0);
+  }
+
+  void _cancelHold() {
+    // The dialog closes as soon as a hold completes (see _onStatusChanged),
+    // which can leave a pointer-up still in flight for the pointer that
+    // completed it — guard against acting on a disposed controller.
+    if (!mounted || _controller.value == 0) return;
+    _controller.animateBack(0, duration: const Duration(milliseconds: 200));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: widget.enabled ? 1 : 0.4,
+      child: GestureDetector(
+        // Without this, a tap only registers where a descendant actually
+        // paints (the small centered label, or the fill once it's already
+        // grown) — most of the button's surface would be dead space for
+        // hit-testing and the hold would never start.
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => _startHold(),
+        onTapUp: (_) => _cancelHold(),
+        onTapCancel: _cancelHold,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final progress = _controller.value;
+            final secondsLeft = (_holdDuration.inSeconds * (1 - progress)).ceil();
+
+            return Container(
+              height: 52,
+              width: double.infinity,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: widget.color, width: 2),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: progress,
+                    child: Container(color: widget.color),
+                  ),
+                  Text(
+                    progress > 0 ? 'HOLD… ${secondsLeft}s' : 'HOLD TO SUBMIT',
+                    style: AppTheme.display(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                      color: progress > 0.5 ? Colors.white : widget.color,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }

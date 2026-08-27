@@ -11,6 +11,61 @@ export interface BuildContextParams {
   after: FirebaseFirestore.DocumentData;
 }
 
+interface ActiveDayClaim {
+  todayDateStr: string;
+  isNewActiveDay: boolean;
+  newStreakCount: number;
+}
+
+/**
+ * Atomically claims today as a new active day for this participant.
+ *
+ * The trigger's before/after snapshot reflects the participant doc's state
+ * at write time, which lags behind lastActiveDate/currentStreak updates
+ * still in flight from a previous invocation — so when the "log progress"
+ * button is mashed repeatedly, several invocations can each read yesterday's
+ * lastActiveDate and independently believe they're the first update of the
+ * day, each creating their own duplicate activityStreak event. Reading and
+ * writing the participant doc inside one transaction closes that race:
+ * Firestore serializes concurrent claims for the same doc, so only the
+ * first invocation sees isNewActiveDay: true.
+ * @param {FirebaseFirestore.DocumentReference} participantRef The
+ *   participant doc to claim the day on.
+ * @param {FirebaseFirestore.Timestamp} today The moment to claim.
+ * @return {Promise<ActiveDayClaim>} The claim result.
+ */
+async function claimActiveDay(
+  participantRef: FirebaseFirestore.DocumentReference,
+  today: FirebaseFirestore.Timestamp
+): Promise<ActiveDayClaim> {
+  const todayDateStr = toDateString(today);
+
+  return admin.firestore().runTransaction(async (transaction) => {
+    const snap = await transaction.get(participantRef);
+    const data = snap.data() ?? {};
+
+    const previousActiveDate: string | null = data.lastActiveDate ?? null;
+    const previousStreakCount: number = data.currentStreak ?? 0;
+
+    const isNewActiveDay = previousActiveDate !== todayDateStr;
+    const isConsecutiveDay = previousActiveDate !== null &&
+      isNextCalendarDay(previousActiveDate, todayDateStr);
+
+    const newStreakCount = isNewActiveDay ?
+      (isConsecutiveDay ? previousStreakCount + 1 : 1) :
+      previousStreakCount;
+
+    if (isNewActiveDay) {
+      transaction.update(participantRef, {
+        currentStreak: newStreakCount,
+        lastActiveDate: todayDateStr,
+      });
+    }
+
+    return {todayDateStr, isNewActiveDay, newStreakCount};
+  });
+}
+
 /**
  * Reads everything the event rules need for one participant update and
  * applies the early-exit checks that used to live inline in the trigger.
@@ -126,18 +181,12 @@ export async function buildEventsContext(
   ])) > 0;
 
   const todayTimestamp = currentUpdatedAt ?? admin.firestore.Timestamp.now();
-  const todayDateStr = toDateString(todayTimestamp);
-  const previousActiveDate: string | null = before.lastActiveDate ?? null;
-  const previousStreakCount: number = before.currentStreak ?? 0;
+  const participantRef = competitionRef
+    .collection("participants")
+    .doc(participantId);
 
-  const isNewActiveDay = previousActiveDate !== todayDateStr;
-  const isConsecutiveDay = previousActiveDate !== null &&
-    isNextCalendarDay(previousActiveDate, todayDateStr);
-
-  let newStreakCount = previousStreakCount;
-  if (isNewActiveDay) {
-    newStreakCount = isConsecutiveDay ? previousStreakCount + 1 : 1;
-  }
+  const {todayDateStr, isNewActiveDay, newStreakCount} =
+    await claimActiveDay(participantRef, todayTimestamp);
 
   return {
     competitionId,

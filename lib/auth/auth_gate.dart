@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'login_screen.dart';
 import 'username_screen.dart';
+import '../celebrations/celebration_gate.dart';
 import '../home/home_screen.dart';
 import '../services/notification_service.dart';
 import '../services/pending_invite_store.dart';
@@ -166,6 +167,6 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
 
-    return const HomeScreen();
+    return CelebrationGate(uid: _user!.uid, child: const HomeScreen());
   }
 }

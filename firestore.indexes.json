@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "actorUid", "order": "ASCENDING" },
+        { "fieldPath": "actorCelebrated", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

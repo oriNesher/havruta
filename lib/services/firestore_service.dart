@@ -192,10 +192,15 @@ class FirestoreService {
         });
   }
 
-  /// Update progress of participant by one
-  Future<void> incrementMyProgress({
+  /// Report progress as a single delta. One call is one Firestore write,
+  /// so a report of +30 (whether from a bulk action or several rapid taps
+  /// batched together client-side) reaches the backend as one document
+  /// update — the event triggers evaluate milestones, overtakes, and
+  /// completion off that single before/after change.
+  Future<void> addProgress({
     required String competitionId,
     required String uid,
+    required int amount,
   }) async {
     await _db
         .collection('competitions')
@@ -203,7 +208,7 @@ class FirestoreService {
         .collection('participants')
         .doc(uid)
         .update({
-          'progress': FieldValue.increment(1),
+          'progress': FieldValue.increment(amount),
           'updatedAt': FieldValue.serverTimestamp(),
         });
   }
@@ -537,6 +542,34 @@ class FirestoreService {
       batch.update(ref, {
         'unseenByUserUids': FieldValue.arrayRemove([uid]),
       });
+    }
+
+    await batch.commit();
+  }
+
+  /// Celebration-eligible events awaiting this user's celebration, across
+  /// every competition they're in. Filtering down to celebration types is
+  /// left to the caller (kCelebrationTypes) rather than done here, so the
+  /// allowlist can change without touching this query.
+  Stream<QuerySnapshot<Map<String, dynamic>>> getPendingCelebrations(
+    String uid,
+  ) {
+    return _db
+        .collectionGroup('events')
+        .where('actorUid', isEqualTo: uid)
+        .where('actorCelebrated', isEqualTo: false)
+        .snapshots();
+  }
+
+  /// Marks a batch of events as celebrated by their actor, once the
+  /// celebration + trash talk flow for them has run its course.
+  Future<void> markEventsCelebrated(
+    List<DocumentReference<Map<String, dynamic>>> eventRefs,
+  ) async {
+    final batch = _db.batch();
+
+    for (final ref in eventRefs) {
+      batch.update(ref, {'actorCelebrated': true});
     }
 
     await batch.commit();

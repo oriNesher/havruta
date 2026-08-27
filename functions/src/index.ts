@@ -17,7 +17,7 @@ import {
   shouldCreateLeftEvent,
 } from "./events/rules/lifecycle";
 import {EventDraft} from "./events/types";
-import {persistEventDrafts, persistParticipantStreak} from "./events/persist";
+import {persistEventDrafts} from "./events/persist";
 import {createInvite} from "./invites/createInvite";
 import {getInvite} from "./invites/getInvite";
 import {redeemInvite} from "./invites/redeemInvite";
@@ -241,11 +241,6 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
     ];
 
     await persistEventDrafts(context.competitionId, drafts);
-    await persistParticipantStreak(
-      context.competitionId,
-      event.params.participantId,
-      context
-    );
 
     logger.info("Events processed", {
       competitionId: context.competitionId,

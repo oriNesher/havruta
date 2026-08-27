@@ -1,5 +1,7 @@
+import {randomUUID} from "crypto";
 import * as admin from "firebase-admin";
-import {EventDraft, EventsContext} from "./types";
+import {EventDraft} from "./types";
+import {isCelebrationType} from "./celebrationTypes";
 import {
   buildProgressEventMetadata,
   isWithinProgressMergeWindow,
@@ -8,13 +10,23 @@ import {
 
 /**
  * Writes decided event drafts to competitions/{competitionId}/events.
+ *
+ * Every draft passed in one call came from the same trigger invocation (see
+ * onParticipantProgressCreateEvents), so they all share one batchId — this
+ * is what lets the client group, say, a "milestone" and a "tookTheLead"
+ * fired by the same progress update into a single celebration screen
+ * instead of showing them one after another.
  * @param {string} competitionId Competition the drafts belong to.
  * @param {EventDraft[]} drafts Drafts produced by the event rules.
+ * @param {string} batchId Correlates drafts from the same trigger
+ *   invocation; defaults to a fresh id when the caller doesn't need to
+ *   share one across multiple persistEventDrafts calls.
  * @return {Promise<void>} Resolves once all writes complete.
  */
 export async function persistEventDrafts(
   competitionId: string,
-  drafts: EventDraft[]
+  drafts: EventDraft[],
+  batchId: string = randomUUID()
 ): Promise<void> {
   if (drafts.length === 0) return;
 
@@ -29,6 +41,7 @@ export async function persistEventDrafts(
       if (draft.target.kind === "update") {
         await eventsRef.doc(draft.target.docId).update({
           ...draft.payload,
+          batchId,
           unseenByUserUids: draft.recipients,
           lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
@@ -36,7 +49,7 @@ export async function persistEventDrafts(
       }
 
       if (draft.target.kind === "upsertProgress") {
-        await upsertProgressEvent(eventsRef, competitionId, draft);
+        await upsertProgressEvent(eventsRef, competitionId, draft, batchId);
         return;
       }
 
@@ -44,6 +57,8 @@ export async function persistEventDrafts(
         type: draft.type,
         status: "open",
         competitionId,
+        batchId,
+        ...(isCelebrationType(draft.type) ? {actorCelebrated: false} : {}),
         unseenByUserUids: draft.recipients,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -92,12 +107,15 @@ interface ProgressCursorData {
  *   events collection.
  * @param {string} competitionId Competition the event belongs to.
  * @param {EventDraft} draft The upsertProgress draft to apply.
+ * @param {string} batchId Correlates this write with any other events
+ *   created by the same trigger invocation.
  * @return {Promise<void>} Resolves once the merge or create completes.
  */
 async function upsertProgressEvent(
   eventsRef: FirebaseFirestore.CollectionReference,
   competitionId: string,
-  draft: EventDraft
+  draft: EventDraft,
+  batchId: string
 ): Promise<void> {
   const payload = draft.payload as {
     competitionTitle: string;
@@ -136,6 +154,12 @@ async function upsertProgressEvent(
     const fields = {
       type: "progress",
       competitionId,
+      batchId,
+      // Reset (not just set-once) on every merge: "progress" is
+      // celebration-eligible, and each merge represents fresh progress the
+      // actor just logged, so a prior celebration of this same doc shouldn't
+      // suppress celebrating the new activity folded into it.
+      actorCelebrated: false,
       unseenByUserUids: draft.recipients,
       lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       competitionTitle: payload.competitionTitle,
@@ -161,32 +185,4 @@ async function upsertProgressEvent(
       metadata,
     });
   });
-}
-
-/**
- * Writes the participant's updated streak state, computed in context.ts,
- * back onto their participant doc — only when today is a new active day.
- * @param {string} competitionId Competition the participant belongs to.
- * @param {string} participantId The participant doc's id.
- * @param {EventsContext} context Shared context for this participant update.
- * @return {Promise<void>} Resolves once the write completes.
- */
-export async function persistParticipantStreak(
-  competitionId: string,
-  participantId: string,
-  context: EventsContext
-): Promise<void> {
-  if (!context.isNewActiveDay) return;
-
-  const db = admin.firestore();
-
-  await db
-    .collection("competitions")
-    .doc(competitionId)
-    .collection("participants")
-    .doc(participantId)
-    .update({
-      currentStreak: context.newStreakCount,
-      lastActiveDate: context.todayDateStr,
-    });
 }

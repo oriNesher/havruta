@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class CompetitionEvent {
   final String id;
   final String competitionId;
+  final String? competitionTitle;
   final String type;
   final String? actorUid;
   final String? actorUsername;
@@ -12,11 +13,14 @@ class CompetitionEvent {
   final Timestamp? lastUpdatedAt;
   final Map<String, dynamic>? metadata;
   final List<String> unseenByUserUids;
+  final String? batchId;
+  final bool actorCelebrated;
   final DocumentReference<Map<String, dynamic>> reference;
 
   CompetitionEvent({
     required this.id,
     required this.competitionId,
+    this.competitionTitle,
     required this.type,
     this.actorUid,
     this.actorUsername,
@@ -26,6 +30,8 @@ class CompetitionEvent {
     this.lastUpdatedAt,
     this.metadata,
     this.unseenByUserUids = const [],
+    this.batchId,
+    this.actorCelebrated = true,
     required this.reference,
   });
 
@@ -36,6 +42,7 @@ class CompetitionEvent {
     return CompetitionEvent(
       id: doc.id,
       competitionId: data['competitionId'] as String? ?? '',
+      competitionTitle: data['competitionTitle'] as String?,
       type: data['type'] as String? ?? '',
       actorUid: data['actorUid'] as String?,
       actorUsername: data['actorUsername'] as String?,
@@ -46,6 +53,11 @@ class CompetitionEvent {
       metadata: data['metadata'] as Map<String, dynamic>?,
       unseenByUserUids:
           (data['unseenByUserUids'] as List?)?.cast<String>() ?? const [],
+      batchId: data['batchId'] as String?,
+      // Defaults true for event types that never carry this field (only
+      // celebration-eligible types do), so they're inert to any code that
+      // filters on "not yet celebrated".
+      actorCelebrated: data['actorCelebrated'] as bool? ?? true,
       reference: doc.reference,
     );
   }
