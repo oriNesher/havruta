@@ -26,11 +26,14 @@ import {
   onInviteLinkRedemptionCreated,
 } from "./invites/onInviteLinkRedemptionCreated";
 import {inviteLanding} from "./invites/landingHandler";
+import {grantDailyRespect} from "./respect/grantDailyRespect";
+import {giveRespect} from "./respect/giveRespect";
 
 admin.initializeApp();
 
 export {createInvite, getInvite, redeemInvite, revokeInvite,
-  onInviteLinkRedemptionCreated, inviteLanding};
+  onInviteLinkRedemptionCreated, inviteLanding,
+  grantDailyRespect, giveRespect};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {

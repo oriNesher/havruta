@@ -10,6 +10,8 @@ import '../competitions/create_competition_screen.dart';
 import '../invites/pending_invites_screen.dart';
 import '../services/firestore_service.dart';
 import '../services/progress_snapshot_cache.dart';
+import '../services/respect_service.dart';
+import '../services/respect_store.dart';
 import 'home_competitions_section.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,6 +23,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final FirestoreService _firestoreService = FirestoreService();
+  final RespectService _respectService = RespectService();
   int _streak = 0;
   Future<String?>? _usernameFuture;
 
@@ -31,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) _usernameFuture = _firestoreService.getMyUsername(uid);
     _updateStreak();
+    _grantDailyRespect();
   }
 
   Future<void> _updateStreak() async {
@@ -38,6 +42,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (user == null) return;
     final streak = await _firestoreService.checkAndUpdateStreak(user.uid);
     if (mounted) setState(() => _streak = streak);
+  }
+
+  // Fire-and-forget, same "did they open the app today" trigger point as
+  // _updateStreak — grantDailyRespect itself is idempotent per server day.
+  Future<void> _grantDailyRespect() async {
+    try {
+      final balance = await _respectService.grantDailyRespect();
+      RespectStore.instance.updateServerBalance(balance);
+    } catch (e) {
+      debugPrint('Daily Respect grant error: $e');
+    }
   }
 
   @override
@@ -55,6 +70,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _signOut() async {
     await ProgressSnapshotCache.instance.persistAndClear(_firestoreService);
+    RespectStore.instance.reset();
     await FirebaseAuth.instance.signOut();
   }
 
@@ -215,6 +231,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 );
               },
             ),
+            const SizedBox(height: 10),
+            _RespectSummary(uid: user.uid, firestoreService: _firestoreService),
             const SizedBox(height: 20),
             _CreateChallengeButton(uid: user.uid),
             const SizedBox(height: 24),
@@ -349,6 +367,99 @@ class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
               )
             : const Text('Create Challenge'),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Respect summary — plain typography, no card/border/icon: total Respect
+// received (prominent), how much is left to give today, and a countdown to
+// the next local midnight (when a new day's grant becomes available on next
+// app open). Balance is fed into RespectStore so every Give Respect button
+// on the page shares the same live number.
+// ─────────────────────────────────────────────
+
+class _RespectSummary extends StatefulWidget {
+  final String uid;
+  final FirestoreService firestoreService;
+
+  const _RespectSummary({required this.uid, required this.firestoreService});
+
+  @override
+  State<_RespectSummary> createState() => _RespectSummaryState();
+}
+
+class _RespectSummaryState extends State<_RespectSummary> {
+  late final StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>
+  _userDocSub;
+  Timer? _ticker;
+  int _totalReceived = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _userDocSub = widget.firestoreService.getUserDoc(widget.uid).listen((
+      doc,
+    ) {
+      final data = doc.data();
+      final balance = (data?['respectBalance'] as num?)?.toInt() ?? 0;
+      RespectStore.instance.updateServerBalance(balance);
+      final received = (data?['totalRespectReceived'] as num?)?.toInt() ?? 0;
+      if (mounted) setState(() => _totalReceived = received);
+    });
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _userDocSub.cancel();
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  String _formatCountdown(Duration d) {
+    final hh = d.inHours.toString().padLeft(2, '0');
+    final mm = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final ss = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$hh:$mm:$ss';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    final now = DateTime.now();
+    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
+    final remaining = nextMidnight.difference(now);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$_totalReceived',
+          style: AppTheme.mono(
+            fontSize: 36,
+            fontWeight: FontWeight.w800,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        Text('Respect received', style: textTheme.labelSmall),
+        const SizedBox(height: 10),
+        ListenableBuilder(
+          listenable: RespectStore.instance,
+          builder: (context, _) => Text(
+            'You have ${RespectStore.instance.displayBalance} Respect to give',
+            style: textTheme.bodyMedium,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'Next Respect in ${_formatCountdown(remaining)}',
+          style: textTheme.bodySmall,
+        ),
+      ],
     );
   }
 }

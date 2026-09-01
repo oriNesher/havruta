@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../app_theme.dart';
 import '../competitions/competition_event.dart';
 import '../services/firestore_service.dart';
 import '../services/last_progress_amount_store.dart';
 import '../services/progress_snapshot_cache.dart';
+import '../services/respect_service.dart';
+import '../services/respect_store.dart';
 import '../competitions/competition_details_screen.dart';
 
 // ─────────────────────────────────────────────
@@ -1095,6 +1098,9 @@ class _CompetitionEventRow extends StatelessWidget {
     }
   }
 
+  bool get _canGiveRespect =>
+      event.actorUid != null && event.actorUid != currentUid;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -1123,6 +1129,10 @@ class _CompetitionEventRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (_canGiveRespect) ...[
+            const SizedBox(width: 8),
+            _GiveRespectButton(event: event, currentUid: currentUid),
+          ],
           const SizedBox(width: 8),
           Text(
             _relativeTime,
@@ -1133,6 +1143,86 @@ class _CompetitionEventRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Give Respect button — one icon, two states: an outline while ungiven,
+// filled solid once given. A user can give at most one Respect per event
+// (enforced server-side), so there's nothing else to show alongside it —
+// no separate badge or counter.
+// ─────────────────────────────────────────────
+
+class _GiveRespectButton extends StatefulWidget {
+  final CompetitionEvent event;
+  final String currentUid;
+
+  const _GiveRespectButton({required this.event, required this.currentUid});
+
+  @override
+  State<_GiveRespectButton> createState() => _GiveRespectButtonState();
+}
+
+class _GiveRespectButtonState extends State<_GiveRespectButton> {
+  static final _service = RespectService();
+
+  bool _optimisticallyGiven = false;
+  bool _submitting = false;
+
+  bool get _given =>
+      widget.event.respectGivenBy.contains(widget.currentUid) ||
+      _optimisticallyGiven;
+
+  Future<void> _handleTap() async {
+    if (_given || _submitting) return;
+    if (RespectStore.instance.displayBalance <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("You're out of Respect for today")),
+      );
+      return;
+    }
+
+    setState(() {
+      _optimisticallyGiven = true;
+      _submitting = true;
+    });
+    RespectStore.instance.beginSpend();
+
+    try {
+      final newBalance = await _service.giveRespect(
+        competitionId: widget.event.competitionId,
+        eventId: widget.event.id,
+      );
+      RespectStore.instance.endSpend(success: true, newBalance: newBalance);
+    } catch (e) {
+      RespectStore.instance.endSpend(success: false);
+      if (mounted) setState(() => _optimisticallyGiven = false);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not give Respect: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Same tonal-emphasis idiom as the relative-time text next to it
+    // (onSurface at partial opacity for secondary/inactive, full opacity
+    // once given) rather than a separate accent color — visible against the
+    // dark card either way, with no color swap needed to read as "on".
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _handleTap,
+      child: Icon(
+        _given ? PhosphorIconsFill.barbell : PhosphorIconsRegular.barbell,
+        size: 20,
+        color: _given ? onSurface : onSurface.withValues(alpha: 0.55),
       ),
     );
   }

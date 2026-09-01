@@ -20,6 +20,26 @@ class FirestoreService {
     return _db.collection('users').doc(uid).get();
   }
 
+  /// Live user doc — backs the Home screen's Respect balance display, which
+  /// needs to react the instant a spend or a daily grant lands.
+  Stream<DocumentSnapshot<Map<String, dynamic>>> getUserDoc(String uid) {
+    return _db.collection('users').doc(uid).snapshots();
+  }
+
+  /// "X gave you N Respect" notifications, newest first, for the
+  /// notifications screen.
+  Stream<QuerySnapshot<Map<String, dynamic>>> getRespectNotifications(
+    String uid,
+  ) {
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('respectNotifications')
+        .orderBy('createdAt', descending: true)
+        .limit(30)
+        .snapshots();
+  }
+
   /// Get username from uid
   Future<String?> getMyUsername(String uid) async {
     final doc = await _db.collection('users').doc(uid).get();

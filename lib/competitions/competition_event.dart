@@ -15,6 +15,7 @@ class CompetitionEvent {
   final List<String> unseenByUserUids;
   final String? batchId;
   final bool actorCelebrated;
+  final List<String> respectGivenBy;
   final DocumentReference<Map<String, dynamic>> reference;
 
   CompetitionEvent({
@@ -32,6 +33,7 @@ class CompetitionEvent {
     this.unseenByUserUids = const [],
     this.batchId,
     this.actorCelebrated = true,
+    this.respectGivenBy = const [],
     required this.reference,
   });
 
@@ -58,6 +60,8 @@ class CompetitionEvent {
       // celebration-eligible types do), so they're inert to any code that
       // filters on "not yet celebrated".
       actorCelebrated: data['actorCelebrated'] as bool? ?? true,
+      respectGivenBy:
+          (data['respectGivenBy'] as List?)?.cast<String>() ?? const [],
       reference: doc.reference,
     );
   }
