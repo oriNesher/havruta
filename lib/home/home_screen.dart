@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../app_theme.dart';
+// TEMPORARY — remove with the debug entry point below once Part 1 is done.
+import '../debug/onboarding_debug_screen.dart';
 import '../competitions/create_competition_screen.dart';
 import '../invites/pending_invites_screen.dart';
 import '../services/firestore_service.dart';
@@ -188,6 +191,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               );
             },
           ),
+          // TEMPORARY (debug builds only): entry point for the onboarding
+          // Part 1 test harness. Delete this block together with
+          // lib/debug/onboarding_debug_screen.dart once Part 1 is signed off.
+          if (kDebugMode)
+            Container(
+              height: 36,
+              width: 36,
+              margin: const EdgeInsets.only(right: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF181824),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFB69CFB), width: 1),
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: const Icon(
+                  Icons.bug_report_outlined,
+                  size: 18,
+                  color: Color(0xFFB69CFB),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const OnboardingDebugScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
           Container(
             height: 36,
             width: 36,

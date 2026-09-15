@@ -1,4 +1,4 @@
-import * as admin from "firebase-admin";
+import {FieldValue} from "firebase-admin/firestore";
 import {SYSTEM_USER_UID, SYSTEM_USERNAME} from "./config";
 
 /**
@@ -29,6 +29,6 @@ export async function ensureSystemUserDoc(
     usernameLower: SYSTEM_USERNAME.toLowerCase(),
     email: null,
     isSystemUser: true,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   });
 }

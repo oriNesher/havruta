@@ -29,5 +29,9 @@ module.exports = {
     "quotes": ["error", "double"],
     "import/no-unresolved": 0,
     "indent": ["error", 2],
+    // Line endings are a checkout artifact on Windows (git autocrlf), not a
+    // code-quality signal — leaving this on makes `npm run lint`, and with
+    // it the deploy predeploy hook, fail on every file in the repo.
+    "linebreak-style": 0,
   },
 };
