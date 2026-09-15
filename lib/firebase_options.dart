@@ -48,7 +48,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyD9ZnLfaWOLL5Je44iHWoREk3DNee-oU6o',
-    appId: '1:943688238219:android:3bf03ae83406e54b43c08e',
+    appId: '1:943688238219:android:a436e63155008cb743c08e',
     messagingSenderId: '943688238219',
     projectId: 'havruta-app',
     storageBucket: 'havruta-app.firebasestorage.app',
@@ -56,11 +56,11 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyC5B9BlRR_OsNpsAa9klwlRbMAGyPIHt-4',
-    appId: '1:943688238219:ios:eb5bde2a3894ebdb43c08e',
+    appId: '1:943688238219:ios:792c2db6a957168343c08e',
     messagingSenderId: '943688238219',
     projectId: 'havruta-app',
     storageBucket: 'havruta-app.firebasestorage.app',
-    iosBundleId: 'com.example.havruta',
+    iosBundleId: 'com.orinesher.havruta',
   );
 
   static const FirebaseOptions web = FirebaseOptions(
