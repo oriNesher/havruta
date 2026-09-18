@@ -98,13 +98,14 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
     }
     if (next == null && guidance.isNotEmpty) _maybeReveal(guidance);
 
-    if (_controller.wantsWelcome &&
+    // Welcome or the final completion message, once Home is settled.
+    if (_controller.wantsPrompt &&
         OnboardingAnchorRegistry.instance.settled(
               OnboardingAnchorIds.homeScreen,
             ) !=
             null) {
       SchedulerBinding.instance.addPostFrameCallback(
-        (_) => _controller.presentWelcome(),
+        (_) => _controller.presentPrompt(),
       );
     }
   }

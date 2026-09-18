@@ -7,7 +7,8 @@
 // the Celebration/Trash Talk tutorial, Part 4 drives/inspects Havruta's
 // scripted progress, its real Event and the Respect tutorial, Part 5
 // inspects/replays the Create Challenge + Invite People tutorial and the
-// real Challenge it tracks. It is not
+// real Challenge it tracks, Part 6 inspects/drives the final completion
+// message, the Home checklist, defer/dismiss and module versions. It is not
 // part of the product, and this whole file
 // (plus its entry point in home_screen.dart, which is wrapped in
 // `if (kDebugMode)`) should be deleted once the onboarding flow is signed
@@ -24,6 +25,7 @@ import '../onboarding/modules/invite_people_module.dart';
 import '../onboarding/onboarding_controller.dart';
 import '../onboarding/onboarding_ids.dart';
 import '../onboarding/onboarding_repository.dart';
+import '../onboarding/onboarding_registry.dart';
 import '../onboarding/onboarding_state.dart';
 import '../services/firestore_service.dart';
 
@@ -534,10 +536,9 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
 
   Future<void> _p3Inspect() => _guard(() async {
         _header('P3 — Module 2/3 state');
-        final state = _onboarding.state;
         _log('   active module: ${_onboarding.activeModule?.id.name ?? '—'}');
         for (final id in [OnboardingModuleId.acceptInvites, ..._part3Modules]) {
-          _log('   persisted ${id.name}: ${state.statusOf(id).name}');
+          _log('   persisted ${id.name}: ${_onboarding.statusOf(id).name}');
         }
         _onboarding.debugDescribe().forEach((key, value) {
           if (key.startsWith('m2.') ||
@@ -690,7 +691,7 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
     _log('   active module: ${_onboarding.activeModule?.id.name ?? '—'}');
     _log(
       '   persisted eventsRespect: '
-      '${_onboarding.state.statusOf(OnboardingModuleId.eventsRespect).name}',
+      '${_onboarding.statusOf(OnboardingModuleId.eventsRespect).name}',
     );
     _onboarding.debugDescribe().forEach((key, value) {
       if (key.startsWith('m4.') ||
@@ -879,7 +880,7 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
     _log('   active module: ${_onboarding.activeModule?.id.name ?? '—'}');
     for (final id in _part5Modules) {
       _log(
-        '   persisted ${id.name}: ${_onboarding.state.statusOf(id).name}  '
+        '   persisted ${id.name}: ${_onboarding.statusOf(id).name}  '
         'data=${_onboarding.state.dataOf(id)}',
       );
     }
@@ -1007,11 +1008,20 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
         'activeModule': OnboardingModuleId.createChallenge.name,
         'modules': {
           OnboardingModuleId.createChallenge.name: {
-            'status': OnboardingModuleStatus.active.name,
+            ...OnboardingModuleProgress(
+              status: OnboardingModuleStatus.active,
+              version: OnboardingModuleRegistry.versionOf(
+                OnboardingModuleId.createChallenge,
+              ),
+            ).toMap(),
             'data': {CreateChallengeModule.competitionIdKey: FieldValue.delete()},
           },
           OnboardingModuleId.invitePeople.name: {
-            'status': OnboardingModuleStatus.notStarted.name,
+            ...OnboardingModuleProgress(
+              version: OnboardingModuleRegistry.versionOf(
+                OnboardingModuleId.invitePeople,
+              ),
+            ).toMap(),
             'data': FieldValue.delete(),
           },
         },
@@ -1045,6 +1055,137 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
       'state re-read; active module: '
       '${_onboarding.activeModule?.id.name ?? '—'}',
     );
+    if (mounted) Navigator.pop(context);
+  });
+
+  // ── Part 6: completion, checklist, deferral, versions ─────────────────
+
+  OnboardingModuleId _p6Target = OnboardingModuleId.eventsRespect;
+
+  String _p6Progress(OnboardingModuleProgress p) => p.isEmpty
+      ? '(no record)'
+      : '${p.status.name}@v${p.version} '
+            'completedV=${p.completedVersion ?? '—'} '
+            'dismissedV=${p.dismissedVersion ?? '—'}';
+
+  Future<void> _p6Inspect() => _guard(() async {
+    _header('P6 — onboarding state');
+    final state = _onboarding.state;
+    _log('   welcome: ${state.welcome?.name ?? '(unanswered)'}');
+    _log('   narrative: ${state.narrative?.name ?? '(not finished)'}  '
+        'inProgress=${_onboarding.narrativeInProgress}');
+    _log('   running module: ${_onboarding.activeModule?.id.name ?? '—'}  '
+        '(persisted activeModule: ${state.activeModule?.name ?? '—'})');
+    _log('   wantsWelcome=${_onboarding.wantsWelcome}  '
+        'wantsCompletionMessage=${_onboarding.wantsCompletionMessage}');
+    _log('   showsChecklist=${_onboarding.showsChecklist}');
+
+    _header('P6 — modules (registry vs persisted)');
+    final inChecklist = {for (final i in _onboarding.checklist) i.id: i.state};
+    for (final definition in OnboardingModuleRegistry.definitions) {
+      final id = definition.id;
+      final bump = OnboardingModuleRegistry.debugVersionBumps[id];
+      _log('   ${id.name}');
+      _log('     registry v${OnboardingModuleRegistry.versionOf(id)}'
+          '${bump != null ? ' (debug +$bump)' : ''}  '
+          'checklist=${definition.checklist != null ? 'yes' : 'never'}  '
+          'prereqs=${definition.prerequisites.map((p) => p.name).toList()}');
+      _log('     persisted: ${_p6Progress(state.progressOf(id))}');
+      _log('     effective=${_onboarding.statusOf(id).name}  '
+          'eligible=${_onboarding.isEligible(id)}  '
+          'shown=${inChecklist[id]?.name ?? 'no'}');
+      final data = state.dataOf(id);
+      if (data.isNotEmpty) _log('     data: $data');
+    }
+
+    _header('P6 — stored users/$_uid.${OnboardingTutorialState.firestoreField}');
+    final userDoc = await _db
+        .collection('users')
+        .doc(_uid)
+        .get(const GetOptions(source: Source.server));
+    final persisted = userDoc.data()?[OnboardingTutorialState.firestoreField];
+    _log('   ${persisted ?? '(none)'}');
+  });
+
+  Future<void> _p6ForceFinalMessage() => _guard(() async {
+    _header('P6 — force final message');
+    _onboarding.debugSetNarrative(OnboardingNarrativeStatus.completed);
+    _pass('narrative = completed (message owed)');
+    _log('Returning Home — "You\'re ready." should appear once Home settles '
+        '(only while no module is running).');
+    if (mounted) Navigator.pop(context);
+  });
+
+  Future<void> _p6SetNarrative(OnboardingNarrativeStatus? status) =>
+      _guard(() async {
+        _header('P6 — narrative → ${status?.name ?? '(not finished)'}');
+        _onboarding.debugSetNarrative(status);
+        _pass('narrative: ${_onboarding.state.narrative?.name ?? '—'}  '
+            'inProgress=${_onboarding.narrativeInProgress}');
+      });
+
+  Future<void> _p6SkipWelcome() => _guard(() async {
+    _header('P6 — record Welcome = deferred (Skip)');
+    _onboarding.deferWelcome();
+    _pass('welcome: ${_onboarding.state.welcome?.name}');
+  });
+
+  Future<void> _p6Start() => _guard(() async {
+    _header('P6 — start ${_p6Target.name} on its own');
+    await _onboarding.startModule(_p6Target);
+    _pass('module active: ${_onboarding.activeModule?.id.name}');
+    if (mounted) Navigator.pop(context);
+  });
+
+  Future<void> _p6SetStatus(OnboardingModuleStatus status) => _guard(() async {
+    _header('P6 — ${_p6Target.name} → ${status.name}');
+    _onboarding.debugSetModuleStatus(_p6Target, status);
+    _pass('persisted: '
+        '${_p6Progress(_onboarding.state.progressOf(_p6Target))}  '
+        'effective=${_onboarding.statusOf(_p6Target).name}');
+  });
+
+  Future<void> _p6ResetModule() => _guard(() async {
+    _header('P6 — reset ${_p6Target.name} only (not started, no history)');
+    await _onboarding.debugResetModules([_p6Target], activate: false);
+    _pass('persisted: '
+        '${_p6Progress(_onboarding.state.progressOf(_p6Target))}; '
+        'other modules untouched');
+  });
+
+  Future<void> _p6ForgetModule() => _guard(() async {
+    _header('P6 — forget ${_p6Target.name} (simulate newly added module)');
+    await _onboarding.debugForgetModule(_p6Target);
+    _pass('record deleted; effective='
+        '${_onboarding.statusOf(_p6Target).name}  '
+        'eligible=${_onboarding.isEligible(_p6Target)}');
+  });
+
+  Future<void> _p6BumpVersion() => _guard(() async {
+    _header('P6 — ship ${_p6Target.name} version +1 (in memory)');
+    final bumps = OnboardingModuleRegistry.debugVersionBumps;
+    bumps[_p6Target] = (bumps[_p6Target] ?? 0) + 1;
+    await _onboarding.reload();
+    _pass('${_p6Target.name} now v'
+        '${OnboardingModuleRegistry.versionOf(_p6Target)}; '
+        'effective=${_onboarding.statusOf(_p6Target).name}');
+    _log('Persisted history is unchanged. Bumps last until a real app '
+        'restart (Simulate relaunch keeps them).');
+  });
+
+  Future<void> _p6ClearBumps() => _guard(() async {
+    _header('P6 — clear debug version bumps');
+    OnboardingModuleRegistry.debugVersionBumps.clear();
+    await _onboarding.reload();
+    _pass('all modules back to their registry versions');
+  });
+
+  Future<void> _p6SimulateRelaunch() => _guard(() async {
+    _header('P6 — simulate app relaunch');
+    await _onboarding.reload();
+    _pass('state re-read; running: '
+        '${_onboarding.activeModule?.id.name ?? '—'}  '
+        'checklist: ${_onboarding.checklist.map((i) => i.id.name).toList()}');
     if (mounted) Navigator.pop(context);
   });
 
@@ -1234,6 +1375,79 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
                     _chip('Delete tracked Challenge', _p5DeleteTrackedChallenge,
                         primary: false),
                     _chip('Relaunch → Home', _p5SimulateRelaunch,
+                        primary: false),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _sectionLabel('PART 6 — completion, checklist, versions'),
+                ListenableBuilder(
+                  listenable: _onboarding,
+                  builder: (context, _) => Text(
+                    'narrative: ${_onboarding.state.narrative?.name ?? '—'}   '
+                    'inProgress: ${_onboarding.narrativeInProgress}   '
+                    'checklist: ${_onboarding.checklist.length}',
+                    style: AppTheme.mono(
+                      fontSize: 11,
+                      color: const Color(0xFFB69CFB),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip('Inspect P6', _p6Inspect, primary: false),
+                    _chip('Force final message', _p6ForceFinalMessage),
+                    _chip('Narrative: incomplete',
+                        () => _p6SetNarrative(null),
+                        primary: false),
+                    _chip('Narrative: acknowledged',
+                        () => _p6SetNarrative(
+                            OnboardingNarrativeStatus.acknowledged),
+                        primary: false),
+                    _chip('Skip Welcome (deferred)', _p6SkipWelcome,
+                        primary: false),
+                    _chip('Relaunch → Home', _p6SimulateRelaunch,
+                        primary: false),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text('Target module:',
+                    style: AppTheme.mono(fontSize: 11, color: Colors.white70)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final id in OnboardingModuleId.values)
+                      ChoiceChip(
+                        label: Text(id.name,
+                            style: const TextStyle(fontSize: 12)),
+                        selected: _p6Target == id,
+                        onSelected: _busy
+                            ? null
+                            : (_) => setState(() => _p6Target = id),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip('Start', _p6Start),
+                    _chip('Defer', () => _p6SetStatus(
+                        OnboardingModuleStatus.deferred)),
+                    _chip('Dismiss', () => _p6SetStatus(
+                        OnboardingModuleStatus.dismissed)),
+                    _chip('Mark completed', () => _p6SetStatus(
+                        OnboardingModuleStatus.completed)),
+                    _chip('Reset module', _p6ResetModule, primary: false),
+                    _chip('Forget record (new module)', _p6ForgetModule,
+                        primary: false),
+                    _chip('Version +1', _p6BumpVersion, primary: false),
+                    _chip('Clear version bumps', _p6ClearBumps,
                         primary: false),
                   ],
                 ),

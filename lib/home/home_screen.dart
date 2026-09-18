@@ -20,6 +20,7 @@ import '../services/progress_snapshot_cache.dart';
 import '../services/respect_service.dart';
 import '../services/respect_store.dart';
 import 'home_competitions_section.dart';
+import 'home_onboarding_checklist.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -297,6 +298,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 id: OnboardingAnchorIds.homeCreateChallengeButton,
                 child: _CreateChallengeButton(uid: user.uid),
               ),
+              const HomeOnboardingChecklist(),
               const SizedBox(height: 24),
               Text(
                 'MY COMPETITIONS',

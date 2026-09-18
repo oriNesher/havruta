@@ -323,6 +323,15 @@ class OnboardingRepository {
 
   // ── TEMPORARY (debug harness only) ────────────────────────────────────
 
+  /// TEMPORARY: deletes [id]'s whole persisted record (status, version
+  /// history and data), as if the module had never existed for this user.
+  Future<void> debugDeleteModuleRecord(String uid, OnboardingModuleId id) {
+    return _db.collection('users').doc(uid).update({
+      '${OnboardingTutorialState.firestoreField}.modules.${id.name}':
+          FieldValue.delete(),
+    });
+  }
+
   /// TEMPORARY: by default deletes the caller's onboarding challenges,
   /// invites, and ledger server-side so Module 1 can be replayed from
   /// pending invitations. With [scope] `acceptInvitesProgress` it instead

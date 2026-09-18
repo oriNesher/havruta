@@ -55,6 +55,16 @@ class OnboardingGuidance {
     this.waitForUserTouch = false,
   });
 
+  OnboardingGuidance withActions(List<OnboardingGuidanceAction> actions) =>
+      OnboardingGuidance(
+        anchorIds: anchorIds,
+        message: message,
+        actions: actions,
+        modal: modal,
+        passThroughAnchorIds: passThroughAnchorIds,
+        waitForUserTouch: waitForUserTouch,
+      );
+
   /// Stable identity for "the same guidance", used by the guide layer to
   /// avoid re-running one-shot effects (like scrolling into view) and by
   /// modules to recognize which of their guidance was shown.

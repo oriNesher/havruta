@@ -75,6 +75,27 @@ class InvitePeopleModule extends OnboardingModule {
 
   bool get _inviteUsed => _confirmedSentInvites > 0 || _linkShared;
 
+  /// Only reached when started on its own (e.g. from the Home checklist) —
+  /// as Create Challenge's continuation it starts directly. Refuses unless
+  /// the tracked Challenge still exists as one this user created, so it
+  /// never starts with nothing to point at.
+  @override
+  Future<void> prepare(OnboardingModuleHost host) async {
+    final known = host.moduleData(
+      OnboardingModuleId.createChallenge,
+    )[CreateChallengeModule.competitionIdKey];
+    if (known is! String) {
+      throw StateError('No Challenge tracked by Create Challenge');
+    }
+    final confirmed = await host.repository.confirmOwnChallenge(
+      known,
+      host.uid,
+    );
+    if (confirmed != true) {
+      throw StateError('Tracked Challenge $known is missing or unreachable');
+    }
+  }
+
   @override
   void start(OnboardingModuleHost host) {
     _host = host;
