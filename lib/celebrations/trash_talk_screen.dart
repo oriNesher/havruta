@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../competitions/competition_event.dart';
+import '../onboarding/onboarding_anchor.dart';
+import '../onboarding/onboarding_ids.dart';
+import '../services/app_signals.dart';
 import 'celebration_types.dart';
 import 'celebration_visuals.dart';
 import 'shareable_card.dart';
@@ -27,8 +30,12 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
 
   late final List<CompetitionEvent> _sortedEvents = [...widget.events]
     ..sort(
-      (a, b) => celebrationPriorityRank(a.type).compareTo(celebrationPriorityRank(b.type)),
+      (a, b) => celebrationPriorityRank(
+        a.type,
+      ).compareTo(celebrationPriorityRank(b.type)),
     );
+
+  String get _batchId => widget.events.first.batchId ?? '';
 
   @override
   void initState() {
@@ -50,7 +57,18 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
 
     setState(() => _isSharing = true);
     try {
-      await captureAndShareCard(boundaryKey: _cardKey, shareText: message);
+      final shown = await captureAndShareCard(
+        boundaryKey: _cardKey,
+        shareText: message,
+      );
+      if (shown) {
+        AppSignals.instance.emit(
+          TrashTalkShareSheetShown(
+            competitionId: widget.events.first.competitionId,
+            batchId: widget.events.first.batchId,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -76,7 +94,10 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
           onPressed: () => Navigator.of(context).pop(),
           tooltip: 'Dismiss',
         ),
-        title: Text('Trash Talk', style: AppTheme.display(fontWeight: FontWeight.w700)),
+        title: Text(
+          'Trash Talk',
+          style: AppTheme.display(fontWeight: FontWeight.w700),
+        ),
       ),
       body: SafeArea(
         child: Padding(
@@ -87,30 +108,34 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
               Expanded(
                 child: Center(
                   child: SingleChildScrollView(
-                    child: RepaintBoundary(
-                      key: _cardKey,
-                      child: ShareableCard(
-                        accentColor: accentColor,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            AnimatedBuilder(
-                              animation: _messageController,
-                              builder: (context, _) => Text(
-                                _messageController.text.isEmpty
-                                    ? ' '
-                                    : _messageController.text,
-                                style: AppTheme.display(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                    child: OnboardingAnchor(
+                      id: OnboardingAnchorIds.trashTalkCard(_batchId),
+                      child: RepaintBoundary(
+                        key: _cardKey,
+                        child: ShareableCard(
+                          accentColor: accentColor,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              AnimatedBuilder(
+                                animation: _messageController,
+                                builder: (context, _) => Text(
+                                  _messageController.text.isEmpty
+                                      ? ' '
+                                      : _messageController.text,
+                                  style: AppTheme.display(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 16),
-                            for (final event in _sortedEvents) CelebrationEventRow(event: event),
-                          ],
+                              const SizedBox(height: 16),
+                              for (final event in _sortedEvents)
+                                CelebrationEventRow(event: event),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -125,26 +150,29 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
                 decoration: const InputDecoration(labelText: 'Your message'),
               ),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _isSharing ? null : _share,
-                style: ElevatedButton.styleFrom(backgroundColor: accentColor),
-                child: _isSharing
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
+              OnboardingAnchor(
+                id: OnboardingAnchorIds.trashTalkShareButton(_batchId),
+                child: ElevatedButton(
+                  onPressed: _isSharing ? null : _share,
+                  style: ElevatedButton.styleFrom(backgroundColor: accentColor),
+                  child: _isSharing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.ios_share, size: 18),
+                            SizedBox(width: 8),
+                            Text('SHARE'),
+                          ],
                         ),
-                      )
-                    : const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.ios_share, size: 18),
-                          SizedBox(width: 8),
-                          Text('SHARE'),
-                        ],
-                      ),
+                ),
               ),
             ],
           ),

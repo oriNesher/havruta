@@ -114,8 +114,7 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
               )
             : null;
         return _Spotlight(
-          signature: entry.signature,
-          message: entry.message,
+          guidance: entry,
           holes: holes,
           passThroughHoles: [
             if (debugHole != null)
@@ -141,7 +140,7 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
       return;
     }
     if (!_pulse.isAnimating) _pulse.repeat();
-    _controller.noteGuidedRoute(next.anchors.first.route);
+    _controller.noteGuidanceShown(next.guidance, next.anchors.first.route);
 
     // Bring a target that's scrolled out of view into it — once per
     // distinct piece of guidance, so this can't fight the user's own
@@ -189,8 +188,7 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
 
 @immutable
 class _Spotlight {
-  final String signature;
-  final String message;
+  final OnboardingGuidance guidance;
 
   /// The controls the guidance points at: ringed, and tappable.
   final List<Rect> holes;
@@ -201,12 +199,13 @@ class _Spotlight {
   final List<OnboardingAnchorState> anchors;
 
   const _Spotlight({
-    required this.signature,
-    required this.message,
+    required this.guidance,
     required this.holes,
     this.passThroughHoles = const [],
     required this.anchors,
   });
+
+  String get signature => guidance.signature;
 
   @override
   bool operator ==(Object other) =>
@@ -233,11 +232,11 @@ class _SpotlightView extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final size = constraints.biggest;
         final union = spotlight.holes
             .reduce((a, b) => a.expandToInclude(b))
             .inflate(_holePadding);
-        final below = (size.height - union.bottom) >= union.top;
+        final padding = MediaQuery.paddingOf(context);
+        final keyboard = MediaQuery.viewInsetsOf(context).bottom;
 
         return Stack(
           children: [
@@ -253,12 +252,15 @@ class _SpotlightView extends StatelessWidget {
                 ),
               ),
             ),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: below ? union.bottom + 14 : null,
-              bottom: below ? null : size.height - union.top + 14,
-              child: _GuideBubble(message: spotlight.message),
+            Positioned.fill(
+              child: CustomSingleChildLayout(
+                delegate: _BubbleLayout(
+                  target: union,
+                  safeTop: padding.top + 8,
+                  safeBottom: keyboard > 0 ? keyboard + 8 : padding.bottom + 8,
+                ),
+                child: _GuideBubble(guidance: spotlight.guidance),
+              ),
             ),
           ],
         );
@@ -267,13 +269,64 @@ class _SpotlightView extends StatelessWidget {
   }
 }
 
-class _GuideBubble extends StatelessWidget {
-  final String message;
+/// Puts the bubble on whichever side of the highlighted controls has more
+/// room (excluding the keyboard), then clamps it on-screen — so a tall
+/// target, or a dialog pushed up by the keyboard, can't push the message
+/// off the edge; at worst it overlaps the dimmed area around the target.
+class _BubbleLayout extends SingleChildLayoutDelegate {
+  static const double _gap = 14;
+  static const double _sideMargin = 16;
 
-  const _GuideBubble({required this.message});
+  final Rect target;
+  final double safeTop;
+  final double safeBottom;
+
+  const _BubbleLayout({
+    required this.target,
+    required this.safeTop,
+    required this.safeBottom,
+  });
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final width = constraints.maxWidth - _sideMargin * 2;
+    return BoxConstraints(
+      minWidth: width,
+      maxWidth: width,
+      maxHeight: constraints.maxHeight,
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final bottomLimit = size.height - safeBottom;
+    final roomBelow = bottomLimit - target.bottom;
+    final roomAbove = target.top - safeTop;
+    final preferred = roomBelow >= roomAbove
+        ? target.bottom + _gap
+        : target.top - _gap - childSize.height;
+    final maxTop = bottomLimit - childSize.height;
+    final top = maxTop < safeTop
+        ? safeTop
+        : preferred.clamp(safeTop, maxTop).toDouble();
+    return Offset(_sideMargin, top);
+  }
+
+  @override
+  bool shouldRelayout(_BubbleLayout oldDelegate) =>
+      oldDelegate.target != target ||
+      oldDelegate.safeTop != safeTop ||
+      oldDelegate.safeBottom != safeBottom;
+}
+
+class _GuideBubble extends StatelessWidget {
+  final OnboardingGuidance guidance;
+
+  const _GuideBubble({required this.guidance});
 
   @override
   Widget build(BuildContext context) {
+    final actions = guidance.actions;
     return Material(
       color: const Color(0xFF181824),
       shape: RoundedRectangleBorder(
@@ -281,21 +334,59 @@ class _GuideBubble extends StatelessWidget {
         side: BorderSide(color: _accent.withValues(alpha: 0.55)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.fromLTRB(16, 16, 16, actions.isEmpty ? 16 : 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            PhosphorIcon(PhosphorIconsFill.sparkle, size: 18, color: _accent),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w500,
-                  height: 1.35,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                PhosphorIcon(
+                  PhosphorIconsFill.sparkle,
+                  size: 18,
+                  color: _accent,
                 ),
-              ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    guidance.message,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
             ),
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (final action in actions)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: action.primary
+                          ? FilledButton(
+                              onPressed: action.onPressed,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _accent,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: Text(action.label),
+                            )
+                          : TextButton(
+                              onPressed: action.onPressed,
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.white70,
+                              ),
+                              child: Text(action.label),
+                            ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

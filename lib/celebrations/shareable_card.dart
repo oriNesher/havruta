@@ -76,17 +76,21 @@ class ShareableCard extends StatelessWidget {
 
 /// Rasterizes the [RepaintBoundary] identified by [boundaryKey] to PNG bytes
 /// and opens the native share sheet with them alongside [shareText].
-Future<void> captureAndShareCard({
+///
+/// Returns whether the share sheet was actually presented (false if the
+/// card couldn't be captured). Resolves once the sheet is dismissed; what,
+/// if anything, the user shared is not knowable.
+Future<bool> captureAndShareCard({
   required GlobalKey boundaryKey,
   required String shareText,
   String? subject,
 }) async {
   final renderObject = boundaryKey.currentContext?.findRenderObject();
-  if (renderObject is! RenderRepaintBoundary) return;
+  if (renderObject is! RenderRepaintBoundary) return false;
 
   final image = await renderObject.toImage(pixelRatio: 3.0);
   final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-  if (byteData == null) return;
+  if (byteData == null) return false;
   final Uint8List bytes = byteData.buffer.asUint8List();
 
   await SharePlus.instance.share(
@@ -102,4 +106,5 @@ Future<void> captureAndShareCard({
       ],
     ),
   );
+  return true;
 }

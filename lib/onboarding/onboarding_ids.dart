@@ -19,6 +19,31 @@ abstract final class OnboardingAnchorIds {
   /// so a module targets a specific invitation by identity, never by title.
   static String inviteCard(String inviteId) => 'invite.card.$inviteId';
 
+  /// A Home Challenge card's own Add Progress button. Keyed by competition
+  /// id so only one specific Challenge's control can ever be targeted.
+  static String addProgressButton(String competitionId) =>
+      'home.addProgress.$competitionId';
+
+  /// The Add Progress dialog's amount input + hold-to-submit area, and its
+  /// Cancel button, when opened for [competitionId].
+  static String addProgressDialogInput(String competitionId) =>
+      'addProgress.dialog.input.$competitionId';
+  static String addProgressDialogCancel(String competitionId) =>
+      'addProgress.dialog.cancel.$competitionId';
+
+  /// The Celebration screen's shareable card and its continue ("Nice!")
+  /// button. Keyed by the celebrated batch's batchId — one progress
+  /// update's events — so guidance targets one specific celebration.
+  static String celebrationCard(String batchId) => 'celebration.card.$batchId';
+  static String celebrationContinueButton(String batchId) =>
+      'celebration.continue.$batchId';
+
+  /// The Trash Talk screen's shareable card and its Share button, keyed by
+  /// the same batchId as the Celebration it was opened from.
+  static String trashTalkCard(String batchId) => 'trashTalk.card.$batchId';
+  static String trashTalkShareButton(String batchId) =>
+      'trashTalk.share.$batchId';
+
   /// TEMPORARY: the debug-only onboarding harness button in the Home app
   /// bar. The guide layer keeps it tappable through the spotlight scrim in
   /// debug builds; remove with the harness itself.

@@ -7,6 +7,8 @@ import 'package:marquee/marquee.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../app_theme.dart';
 import '../competitions/competition_event.dart';
+import '../onboarding/onboarding_anchor.dart';
+import '../onboarding/onboarding_ids.dart';
 import '../services/firestore_service.dart';
 import '../services/last_progress_amount_store.dart';
 import '../services/progress_snapshot_cache.dart';
@@ -450,6 +452,7 @@ class _ParticipantsListState extends State<_ParticipantsList> {
 
     final amount = await showAddProgressDialog(
       context,
+      competitionId: widget.competitionId,
       initialAmount: lastAmount ?? 1,
     );
     if (amount == null) return;
@@ -570,6 +573,7 @@ class _ParticipantsListState extends State<_ParticipantsList> {
             // leaderboard mid-tap and a spammed tap can land on the card
             // behind where the button used to be, opening competition details.
             if (canLog) _AddProgressButton(
+              competitionId: widget.competitionId,
               isLoggingProgress: _loggingProgress,
               onTap: _openAddProgressPopup,
             ),
@@ -1360,10 +1364,12 @@ class _ParticipantRow extends StatelessWidget {
 // ─────────────────────────────────────────────
 
 class _AddProgressButton extends StatelessWidget {
+  final String competitionId;
   final bool isLoggingProgress;
   final VoidCallback onTap;
 
   const _AddProgressButton({
+    required this.competitionId,
     required this.isLoggingProgress,
     required this.onTap,
   });
@@ -1389,31 +1395,34 @@ class _AddProgressButton extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {},
-            child: ElevatedButton(
-              onPressed: isLoggingProgress ? null : onTap,
-              style: ElevatedButton.styleFrom(
-                elevation: 0,
-                backgroundColor: colorScheme.primary,
-                foregroundColor: Colors.white,
-                minimumSize: Size.zero,
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                textStyle: AppTheme.display(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 1.4),
+            child: OnboardingAnchor(
+              id: OnboardingAnchorIds.addProgressButton(competitionId),
+              child: ElevatedButton(
+                onPressed: isLoggingProgress ? null : onTap,
+                style: ElevatedButton.styleFrom(
+                  elevation: 0,
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  textStyle: AppTheme.display(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 1.4),
+                ),
+                child: isLoggingProgress
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                      )
+                    : const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _CutoutPlusIcon(size: 18, color: Colors.white),
+                          SizedBox(width: 8),
+                          Text('ADD PROGRESS'),
+                        ],
+                      ),
               ),
-              child: isLoggingProgress
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                    )
-                  : const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _CutoutPlusIcon(size: 18, color: Colors.white),
-                        SizedBox(width: 8),
-                        Text('ADD PROGRESS'),
-                      ],
-                    ),
             ),
           ),
         ),
@@ -1428,23 +1437,31 @@ class _AddProgressButton extends StatelessWidget {
 
 const List<int> _quickAddAmounts = [1, 5, 25];
 
-/// Shows the add-progress popup, prefilled with [initialAmount]. Returns the
-/// submitted amount once the user completes the hold-to-submit gesture, or
-/// null if they cancelled.
+/// Shows the add-progress popup for [competitionId], prefilled with
+/// [initialAmount]. Returns the submitted amount once the user completes the
+/// hold-to-submit gesture, or null if they cancelled.
 Future<int?> showAddProgressDialog(
   BuildContext context, {
+  required String competitionId,
   required int initialAmount,
 }) {
   return showDialog<int>(
     context: context,
-    builder: (dialogContext) => _AddProgressDialog(initialAmount: initialAmount),
+    builder: (dialogContext) => _AddProgressDialog(
+      competitionId: competitionId,
+      initialAmount: initialAmount,
+    ),
   );
 }
 
 class _AddProgressDialog extends StatefulWidget {
+  final String competitionId;
   final int initialAmount;
 
-  const _AddProgressDialog({required this.initialAmount});
+  const _AddProgressDialog({
+    required this.competitionId,
+    required this.initialAmount,
+  });
 
   @override
   State<_AddProgressDialog> createState() => _AddProgressDialogState();
@@ -1482,52 +1499,58 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
 
     return AlertDialog(
       title: const Text('Add progress'),
-      content: SizedBox(
-        width: 260,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _controller,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              textAlign: TextAlign.center,
-              autofocus: true,
-              style: AppTheme.mono(fontSize: 34, fontWeight: FontWeight.w700),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _quickAddAmounts
-                  .map(
-                    (amount) => OutlinedButton(
-                      onPressed: () => _applyQuickAdd(amount),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: green,
-                        side: BorderSide(color: green),
-                        minimumSize: Size.zero,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      content: OnboardingAnchor(
+        id: OnboardingAnchorIds.addProgressDialogInput(widget.competitionId),
+        child: SizedBox(
+          width: 260,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _controller,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                textAlign: TextAlign.center,
+                autofocus: true,
+                style: AppTheme.mono(fontSize: 34, fontWeight: FontWeight.w700),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: _quickAddAmounts
+                    .map(
+                      (amount) => OutlinedButton(
+                        onPressed: () => _applyQuickAdd(amount),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: green,
+                          side: BorderSide(color: green),
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Text('+$amount'),
                       ),
-                      child: Text('+$amount'),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: 20),
-            _HoldToSubmitButton(
-              enabled: _currentAmount() > 0,
-              color: green,
-              onConfirmed: () => Navigator.of(context).pop(_currentAmount()),
-            ),
-          ],
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 20),
+              _HoldToSubmitButton(
+                enabled: _currentAmount() > 0,
+                color: green,
+                onConfirmed: () => Navigator.of(context).pop(_currentAmount()),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Cancel'),
+        OnboardingAnchor(
+          id: OnboardingAnchorIds.addProgressDialogCancel(widget.competitionId),
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Cancel'),
+          ),
         ),
       ],
     );

@@ -14,6 +14,13 @@ class OnboardingRepository {
 
   CollectionReference<Map<String, dynamic>> get _invites =>
       _db.collection('competition_invites');
+  CollectionReference<Map<String, dynamic>> get _competitions =>
+      _db.collection('competitions');
+
+  /// Event types the Events pipeline fires when a participant reaches their
+  /// full target (functions/src/events/rules/progression.ts): "won" for the
+  /// first to finish, "finishedInPosition" for everyone after.
+  static const completionEventTypes = ['won', 'finishedInPosition'];
 
   // ── Tutorial progress (users/{uid}.onboardingTutorial) ────────────────
 
@@ -109,6 +116,69 @@ class OnboardingRepository {
     return ids;
   }
 
+  /// The onboarding challenge's competition id for [uid], from the
+  /// onboarding_state ledger, falling back to the deterministic id.
+  Future<String> onboardingCompetitionIdFor(
+    String uid,
+    OnboardingChallengeKey key,
+  ) async {
+    try {
+      final ledger = await _db.collection('onboarding_state').doc(uid).get();
+      final challenges = ledger.data()?['challenges'];
+      final entry = challenges is Map ? challenges[key.name] : null;
+      final id = entry is Map ? entry['competitionId'] : null;
+      if (id is String) return id;
+    } catch (e) {
+      debugPrint('Onboarding ledger read error (using deterministic id): $e');
+    }
+    return onboardingCompetitionId(uid, key);
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> watchCompetition(String id) {
+    return _competitions.doc(id).snapshots();
+  }
+
+  /// Live participant doc, including local-write metadata so callers can
+  /// tell an optimistic progress increment apart from a server-confirmed
+  /// one.
+  Stream<DocumentSnapshot<Map<String, dynamic>>> watchParticipant(
+    String competitionId,
+    String uid,
+  ) {
+    return _competitions
+        .doc(competitionId)
+        .collection('participants')
+        .doc(uid)
+        .snapshots(includeMetadataChanges: true);
+  }
+
+  /// Live "reached the target" events in one competition. These are only
+  /// ever written by Cloud Functions, so any doc here is real pipeline
+  /// output; callers filter by actor.
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchCompletionEvents(
+    String competitionId,
+  ) {
+    return _competitions
+        .doc(competitionId)
+        .collection('events')
+        .where('type', whereIn: completionEventTypes)
+        .snapshots();
+  }
+
+  /// Identity check for an onboarding challenge: explicit metadata (which
+  /// challenge, and whose), never the display title.
+  static bool isOnboardingChallengeFor(
+    Map<String, dynamic> data,
+    String uid,
+    OnboardingChallengeKey key,
+  ) {
+    final meta = data['onboarding'];
+    return meta is Map &&
+        meta['isOnboarding'] == true &&
+        meta['onboardingUserId'] == uid &&
+        meta['onboardingChallengeKey'] == key.name;
+  }
+
   /// Live invite doc, including local-write metadata so callers can tell a
   /// still-in-flight accept apart from a server-confirmed one.
   Stream<DocumentSnapshot<Map<String, dynamic>>> watchInvite(String id) {
@@ -127,13 +197,18 @@ class OnboardingRepository {
 
   // ── TEMPORARY (debug harness only) ────────────────────────────────────
 
-  /// TEMPORARY: deletes the caller's onboarding challenges, invites, and
-  /// ledger server-side so Module 1 can be replayed from pending invites.
+  /// TEMPORARY: by default deletes the caller's onboarding challenges,
+  /// invites, and ledger server-side so Module 1 can be replayed from
+  /// pending invitations. With [scope] `acceptInvitesProgress` it instead
+  /// only rewinds Challenge A to "accepted, no progress" (progress 0, its
+  /// events deleted) so the Part 3 win can be replayed.
   /// Remove together with lib/debug/onboarding_debug_screen.dart.
-  Future<Map<String, dynamic>> resetOnboardingForTesting() async {
+  Future<Map<String, dynamic>> resetOnboardingForTesting({
+    String? scope,
+  }) async {
     final result = await _functions
         .httpsCallable('resetOnboardingForTesting')
-        .call<Map<dynamic, dynamic>>();
+        .call<Map<dynamic, dynamic>>({if (scope != null) 'scope': scope});
     return Map<String, dynamic>.from(result.data);
   }
 }

@@ -3,7 +3,8 @@
 // This screen exists only to exercise and inspect onboarding from a real
 // device in debug: Part 1 drives the system-managed onboarding backend
 // (functions/src/onboarding/), Part 2 drives the tutorial session
-// (lib/onboarding/). It is not part of the product, and this whole file
+// (lib/onboarding/), Part 3 replays/inspects the report-progress win and
+// the Celebration/Trash Talk tutorial. It is not part of the product, and this whole file
 // (plus its entry point in home_screen.dart, which is wrapped in
 // `if (kDebugMode)`) should be deleted once the onboarding flow is signed
 // off — along with the resetOnboardingForTesting callable it uses.
@@ -16,7 +17,9 @@ import 'package:cloud_functions/cloud_functions.dart';
 import '../app_theme.dart';
 import '../onboarding/onboarding_controller.dart';
 import '../onboarding/onboarding_ids.dart';
+import '../onboarding/onboarding_repository.dart';
 import '../onboarding/onboarding_state.dart';
+import '../services/firestore_service.dart';
 
 const String kSystemUserUid = 'havruta_system';
 
@@ -503,6 +506,168 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
         _pass('deleted $_unrelatedInviteId');
       });
 
+  // ── Part 3: report progress + Celebration/Trash Talk ──────────────────
+
+  static const _part3Modules = [
+    OnboardingModuleId.reportProgress,
+    OnboardingModuleId.celebrationTrashTalk,
+  ];
+
+  /// Title of a deliberately NOT-onboarding challenge that reuses Challenge
+  /// A's exact title, to prove Module 2 targets by id + metadata only.
+  static const _unrelatedChallengeTitle = 'Accept two invitations in Havruta';
+
+  String get _challengeAId =>
+      onboardingCompetitionId(_uid, OnboardingChallengeKey.acceptInvites);
+
+  Future<void> _p3Inspect() => _guard(() async {
+        _header('P3 — Module 2/3 state');
+        final state = _onboarding.state;
+        _log('   active module: ${_onboarding.activeModule?.id.name ?? '—'}');
+        for (final id in [OnboardingModuleId.acceptInvites, ..._part3Modules]) {
+          _log('   persisted ${id.name}: ${state.statusOf(id).name}');
+        }
+        _onboarding.debugDescribe().forEach((key, value) {
+          if (key.startsWith('m2.') ||
+              key.startsWith('m3.') ||
+              key == 'guidance' ||
+              key == 'mountedAnchors') {
+            _log('   $key: $value');
+          }
+        });
+
+        _header('P3 — Challenge A (server)');
+        final compRef = _db.collection('competitions').doc(_challengeAId);
+        final comp = await compRef.get(const GetOptions(source: Source.server));
+        _check(comp.exists, 'Challenge A exists ($_challengeAId)');
+        if (!comp.exists) return;
+        final meta = comp.data()!['onboarding'] as Map?;
+        _check(meta?['onboardingChallengeKey'] == 'acceptInvites',
+            'identified by onboarding metadata key "acceptInvites"');
+        _log('   status: ${comp.data()!['status']}, '
+            'sharedTargetValue: ${comp.data()!['sharedTargetValue']}');
+
+        for (final pUid in [_uid, kSystemUserUid]) {
+          final p = await compRef
+              .collection('participants')
+              .doc(pUid)
+              .get(const GetOptions(source: Source.server));
+          final who = pUid == _uid ? 'me' : 'Havruta';
+          if (!p.exists) {
+            _log('   participant[$who]: MISSING');
+            continue;
+          }
+          final d = p.data()!;
+          _log('   participant[$who]: progress ${d['progress']} / '
+              '${d['targetValue']}');
+        }
+
+        final events = await compRef
+            .collection('events')
+            .get(const GetOptions(source: Source.server));
+        _log('   events in Challenge A: ${events.docs.length}');
+        for (final e in events.docs) {
+          final d = e.data();
+          final mine = d['actorUid'] == _uid ? 'me' : d['actorUid'];
+          _log('     ${d['type']}  actor=$mine  batch=${d['batchId']}'
+              '${d.containsKey('actorCelebrated') ? '  actorCelebrated=${d['actorCelebrated']}' : ''}');
+        }
+        final wins = events.docs.where((e) =>
+            e.data()['actorUid'] == _uid &&
+            OnboardingRepository.completionEventTypes
+                .contains(e.data()['type']));
+        _check(wins.isNotEmpty,
+            'my won/finishedInPosition event exists (real Events pipeline)',
+            'none yet — report progress to the target');
+
+        final pending = await _db
+            .collectionGroup('events')
+            .where('actorUid', isEqualTo: _uid)
+            .where('actorCelebrated', isEqualTo: false)
+            .get(const GetOptions(source: Source.server));
+        final batches = <String>{
+          for (final d in pending.docs)
+            '${d.data()['competitionId']} / ${d.data()['batchId']}',
+        };
+        _log('   uncelebrated batches queued for me: ${batches.length}');
+        for (final b in batches) {
+          _log('     $b');
+        }
+      });
+
+  Future<void> _p3StartModule(OnboardingModuleId id) => _guard(() async {
+        _header('P3 — start/resume ${id.name}');
+        await _onboarding.startModule(id);
+        _pass('module active: ${_onboarding.activeModule?.id.name}');
+        if (mounted) Navigator.pop(context);
+      });
+
+  Future<void> _p3ReplayWin() => _guard(() async {
+        _header('P3 — replay win (Challenge A progress + Part 3 tutorial)');
+        Map<String, dynamic>? result;
+        await _onboarding.debugResetModules(
+          _part3Modules,
+          whileDetached: () async {
+            result = await _onboarding.repository
+                .resetOnboardingForTesting(scope: 'acceptInvitesProgress');
+          },
+        );
+        for (final path in (result?['deleted'] as List?) ?? const []) {
+          _log('   $path');
+        }
+        _pass('Challenge A back to 0 with no events; Module 2 active: '
+            '${_onboarding.activeModule?.id.name}');
+        _log('Returning Home — Challenge A\'s ADD PROGRESS should be '
+            'highlighted.');
+        if (mounted) Navigator.pop(context);
+      });
+
+  Future<void> _p3ResetTutorialOnly() => _guard(() async {
+        _header('P3 — reset Part 3 tutorial only (keep progress/win)');
+        await _onboarding.debugResetModules(_part3Modules);
+        _pass('Module 2/3 marked not started; backend untouched');
+        _onboarding.debugDescribe().forEach((key, value) {
+          if (key.startsWith('m2.') || key == 'activeModule') {
+            _log('   $key: $value');
+          }
+        });
+        _log('If the win already exists, Module 2 completes on its own and '
+            'must NOT ask for progress again.');
+      });
+
+  Future<void> _p3AddUnrelatedChallenge() => _guard(() async {
+        _header('P3 — add unrelated challenge (same title as A)');
+        final user = await _db.collection('users').doc(_uid).get();
+        final id = await FirestoreService().createSharedGoalCompetition(
+          title: _unrelatedChallengeTitle,
+          description: 'TEMPORARY debug fixture — not an onboarding record.',
+          createdBy: _uid,
+          creatorUsername: user.data()?['username'] as String? ?? 'debug',
+          sharedGoalTitle: 'Debug unrelated goal',
+          sharedTargetValue: 2,
+          sharedUnit: 'invitations',
+        );
+        _pass('created competitions/$id with Challenge A\'s title');
+        _log('Its ADD PROGRESS must never be highlighted.');
+      });
+
+  Future<void> _p3RemoveUnrelatedChallenge() => _guard(() async {
+        _header('P3 — remove unrelated challenge(s)');
+        final mine = await _db
+            .collection('competitions')
+            .where('createdBy', isEqualTo: _uid)
+            .where('title', isEqualTo: _unrelatedChallengeTitle)
+            .get();
+        var removed = 0;
+        for (final doc in mine.docs) {
+          if (doc.data()['onboarding'] != null) continue;
+          await FirestoreService().deleteCompetition(doc.id);
+          removed++;
+          _log('   deleted competitions/${doc.id}');
+        }
+        _pass('removed $removed debug fixture challenge(s)');
+      });
+
   // ── UI ────────────────────────────────────────────────────────────────
 
   Color _colorFor(_LineKind kind) {
@@ -621,6 +786,27 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
                     _chip('+ unrelated invite', _p2AddUnrelatedInvite,
                         primary: false),
                     _chip('− unrelated invite', _p2RemoveUnrelatedInvite,
+                        primary: false),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _sectionLabel('PART 3 — progress, win, Celebration'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip('Inspect P3', _p3Inspect, primary: false),
+                    _chip('Replay win (reset A)', _p3ReplayWin),
+                    _chip('Reset P3 tutorial only', _p3ResetTutorialOnly),
+                    _chip('Start/resume Module 2',
+                        () => _p3StartModule(OnboardingModuleId.reportProgress)),
+                    _chip(
+                        'Start/resume Module 3',
+                        () => _p3StartModule(
+                            OnboardingModuleId.celebrationTrashTalk)),
+                    _chip('+ unrelated challenge', _p3AddUnrelatedChallenge,
+                        primary: false),
+                    _chip('− unrelated challenge', _p3RemoveUnrelatedChallenge,
                         primary: false),
                   ],
                 ),

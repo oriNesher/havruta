@@ -15,8 +15,9 @@ enum OnboardingWelcomeChoice {
 /// OnboardingController.narrative, not here.
 enum OnboardingModuleId {
   acceptInvites,
-  // Later parts add: reportProgress, celebrationTrashTalk, eventsRespect,
-  // createChallenge, invitePeople, ...
+  reportProgress,
+  celebrationTrashTalk,
+  // Later parts add: eventsRespect, createChallenge, invitePeople, ...
 }
 
 enum OnboardingModuleStatus { notStarted, active, completed }
@@ -59,8 +60,9 @@ class OnboardingTutorialState {
   }) {
     return OnboardingTutorialState(
       welcome: welcome ?? this.welcome,
-      activeModule:
-          clearActiveModule ? null : (activeModule ?? this.activeModule),
+      activeModule: clearActiveModule
+          ? null
+          : (activeModule ?? this.activeModule),
       modules: modules,
     );
   }

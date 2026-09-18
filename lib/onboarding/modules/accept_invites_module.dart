@@ -56,7 +56,7 @@ class AcceptInvitesModule extends OnboardingModule {
   OnboardingModuleId get id => OnboardingModuleId.acceptInvites;
 
   @override
-  bool get returnsHomeOnComplete => true;
+  OnboardingUnwind get unwindOnComplete => OnboardingUnwind.toHome;
 
   @override
   Future<void> prepare(OnboardingModuleHost host) async {

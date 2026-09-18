@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'modules/accept_invites_module.dart';
+import 'modules/celebration_trash_talk_module.dart';
 import 'modules/onboarding_module.dart';
+import 'modules/report_progress_module.dart';
 import 'onboarding_anchor.dart';
 import 'onboarding_ids.dart';
 import 'onboarding_repository.dart';
@@ -31,10 +33,23 @@ class OnboardingController extends ChangeNotifier
   /// picks up where they left off and finished modules are never replayed.
   static const List<OnboardingModuleId> narrative = [
     OnboardingModuleId.acceptInvites,
+    OnboardingModuleId.reportProgress,
+    OnboardingModuleId.celebrationTrashTalk,
   ];
+
+  /// Modules that always run straight after another, whether or not the
+  /// guided narrative is on: the Celebration/Trash Talk tutorial explains
+  /// the celebration that Module 2's win itself produces, so starting
+  /// Module 2 on its own (e.g. from a future checklist) must carry on into
+  /// it rather than leave that celebration unexplained.
+  static const Map<OnboardingModuleId, OnboardingModuleId> _continuations = {
+    OnboardingModuleId.reportProgress: OnboardingModuleId.celebrationTrashTalk,
+  };
 
   static OnboardingModule _createModule(OnboardingModuleId id) => switch (id) {
     OnboardingModuleId.acceptInvites => AcceptInvitesModule(),
+    OnboardingModuleId.reportProgress => ReportProgressModule(),
+    OnboardingModuleId.celebrationTrashTalk => CelebrationTrashTalkModule(),
   };
 
   /// Used to show the Welcome prompt and to unwind back to Home without a
@@ -196,19 +211,39 @@ class OnboardingController extends ChangeNotifier
     if (!identical(module, _activeModule)) return;
     module.stop();
     _activeModule = null;
+    final next = _continuations[module.id];
+    final continueWith =
+        next != null &&
+            _state.statusOf(next) != OnboardingModuleStatus.completed
+        ? next
+        : null;
+    // Persisting the continuation as the explicit active module (in the
+    // same write that completes this one) is what makes a relaunch between
+    // the two resume into it.
     _save(
       _state
-          .copyWith(clearActiveModule: true)
+          .copyWith(
+            activeModule: continueWith,
+            clearActiveModule: continueWith == null,
+          )
           .withModuleStatus(module.id, OnboardingModuleStatus.completed),
     );
     notifyListeners();
 
     final session = _session;
     unawaited(() async {
-      if (module.returnsHomeOnComplete) await _returnHome();
+      switch (module.unwindOnComplete) {
+        case OnboardingUnwind.toHome:
+          await _returnHome();
+        case OnboardingUnwind.guidedRoute:
+          await _popGuidedRoute();
+        case OnboardingUnwind.none:
+          break;
+      }
       if (session != _session) return;
-      // Whatever the narrative offers next starts here; in Part 2 there is
-      // nothing after Module 1, so the guide simply stops.
+      // Whatever the narrative offers next starts here. After the last
+      // available module (Celebration/Trash Talk, in Part 3) the guide
+      // simply stops.
       _resume();
       notifyListeners();
     }());
@@ -237,6 +272,44 @@ class OnboardingController extends ChangeNotifier
     navigator.popUntil((r) => r.isFirst);
   }
 
+  /// Pops just the screen the guide last pointed at (e.g. Trash Talk), the
+  /// same as the user closing it, so whatever product flow pushed it
+  /// unwinds itself normally — CelebrationScreen pops itself after Trash
+  /// Talk, and CelebrationGate then marks the batch celebrated and moves
+  /// its queue on. Never pops anything else.
+  ///
+  /// Waits for the app to be back in the foreground first: completing a
+  /// module can coincide with the native share sheet (or the app the user
+  /// shared to) being in front, and the user should see the screen they
+  /// left before it goes away.
+  Future<void> _popGuidedRoute() async {
+    final route = _lastGuidedRoute;
+    final navigator = navigatorKey.currentState;
+    if (route == null || navigator == null || route.isFirst) return;
+
+    final session = _session;
+    bool ready() =>
+        route.isCurrent &&
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+
+    // Generous: the user may take a while in another app after sharing.
+    // If they close the screen themselves meanwhile, route.isActive ends it.
+    final deadline = DateTime.now().add(const Duration(minutes: 10));
+    while (true) {
+      while (!ready()) {
+        if (!route.isActive || session != _session) return;
+        if (DateTime.now().isAfter(deadline)) return;
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      // A beat on the screen before it closes — and a re-check, in case the
+      // share sheet was only just opening and took the foreground meanwhile.
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (!route.isActive || session != _session) return;
+      if (ready()) break;
+    }
+    navigator.pop();
+  }
+
   // ── Welcome prompt ────────────────────────────────────────────────────
 
   /// Called by the guide layer once Home is the settled, top-most screen.
@@ -250,7 +323,8 @@ class OnboardingController extends ChangeNotifier
     await Future<void>.delayed(const Duration(milliseconds: 700));
 
     final context = navigatorKey.currentState?.overlay?.context;
-    final homeSettled = OnboardingAnchorRegistry.instance.settled(
+    final homeSettled =
+        OnboardingAnchorRegistry.instance.settled(
           OnboardingAnchorIds.homeScreen,
         ) !=
         null;
@@ -301,8 +375,15 @@ class OnboardingController extends ChangeNotifier
 
   // ── Guide layer callbacks ─────────────────────────────────────────────
 
-  /// The route the guide most recently highlighted something on.
-  void noteGuidedRoute(ModalRoute<dynamic>? route) => _lastGuidedRoute = route;
+  /// The guide layer is now showing [guidance] on [route]. Remembers the
+  /// route (for unwinding) and tells the active module.
+  void noteGuidanceShown(
+    OnboardingGuidance guidance,
+    ModalRoute<dynamic>? route,
+  ) {
+    _lastGuidedRoute = route;
+    _activeModule?.guidanceShown(guidance);
+  }
 
   // ── Persistence ───────────────────────────────────────────────────────
 
@@ -342,6 +423,33 @@ class OnboardingController extends ChangeNotifier
     await repository.clearState(uid);
     await _load();
     return result;
+  }
+
+  /// TEMPORARY: marks [ids] not started (and makes the first of them the
+  /// active module) so they replay, without touching Welcome or earlier
+  /// modules. Explicit `notStarted` entries are written rather than keys
+  /// removed, because saves merge into Firestore. [whileDetached] runs
+  /// with no module watching (e.g. a backend reset), so nothing reacts to
+  /// the records it rewrites.
+  Future<void> debugResetModules(
+    List<OnboardingModuleId> ids, {
+    Future<void> Function()? whileDetached,
+  }) async {
+    final uid = _uid;
+    if (uid == null || ids.isEmpty) return;
+    var next = _state.copyWith(activeModule: ids.first);
+    for (final id in ids) {
+      next = next.withModuleStatus(id, OnboardingModuleStatus.notStarted);
+    }
+    _detach();
+    _uid = uid;
+    notifyListeners();
+    try {
+      if (whileDetached != null) await whileDetached();
+      await repository.saveState(uid, next);
+    } finally {
+      await _load();
+    }
   }
 
   /// TEMPORARY: snapshot of everything the debug screen inspects.
