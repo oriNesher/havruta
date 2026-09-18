@@ -42,6 +42,7 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
 
   _Spotlight? _spotlight;
   String? _scrolledFor;
+  DateTime? _lastRevealAt;
 
   @override
   void initState() {
@@ -74,6 +75,7 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
     if (next != _spotlight) {
       SchedulerBinding.instance.addPostFrameCallback((_) => _apply(next));
     }
+    if (next == null && guidance.isNotEmpty) _maybeReveal(guidance);
 
     if (_controller.wantsWelcome &&
         OnboardingAnchorRegistry.instance.settled(
@@ -128,6 +130,29 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
       }
     }
     return null;
+  }
+
+  /// Nothing is usable, possibly because the target sits on an item a lazy
+  /// container hasn't built (an off-screen carousel page): ask containers
+  /// to bring the highest-priority unmounted anchor into view. Throttled,
+  /// and it retries, since the container may itself still be loading — or
+  /// may have moved on (e.g. a newer item arrived) after an earlier reveal.
+  void _maybeReveal(List<OnboardingGuidance> guidance) {
+    final now = DateTime.now();
+    final last = _lastRevealAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
+      return;
+    }
+    _lastRevealAt = now;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final registry = OnboardingAnchorRegistry.instance;
+      for (final entry in guidance) {
+        for (final id in entry.anchorIds) {
+          if (!registry.isMounted(id) && registry.reveal(id)) return;
+        }
+      }
+    });
   }
 
   void _apply(_Spotlight? next) {

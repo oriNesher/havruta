@@ -4,7 +4,9 @@
 // device in debug: Part 1 drives the system-managed onboarding backend
 // (functions/src/onboarding/), Part 2 drives the tutorial session
 // (lib/onboarding/), Part 3 replays/inspects the report-progress win and
-// the Celebration/Trash Talk tutorial. It is not part of the product, and this whole file
+// the Celebration/Trash Talk tutorial, Part 4 drives/inspects Havruta's
+// scripted progress, its real Event and the Respect tutorial. It is not
+// part of the product, and this whole file
 // (plus its entry point in home_screen.dart, which is wrapped in
 // `if (kDebugMode)`) should be deleted once the onboarding flow is signed
 // off — along with the resetOnboardingForTesting callable it uses.
@@ -174,7 +176,13 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
               '[$key] participant target is $expectedTarget', '${p['targetValue']}');
           _check(p['unit'] == expectedUnit,
               '[$key] participant unit is "$expectedUnit"', '${p['unit']}');
-          _check(p['progress'] == 0, '[$key] participant progress is 0');
+          // Module 4 (Part 4) moves Havruta to 1 in Challenge B.
+          _check(
+              p['progress'] == 0 ||
+                  (key == 'challengeFriends' && p['progress'] == 1),
+              '[$key] participant progress is 0'
+              '${key == 'challengeFriends' ? ' (or 1 after Part 4)' : ''}',
+              '${p['progress']}');
           _check(p['username'] == 'Havruta',
               '[$key] participant username is Havruta', '${p['username']}');
         }
@@ -668,6 +676,189 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
         _pass('removed $removed debug fixture challenge(s)');
       });
 
+  // ── Part 4: Events and Respect ─────────────────────────────────────────
+
+  String get _challengeBId =>
+      onboardingCompetitionId(_uid, OnboardingChallengeKey.challengeFriends);
+
+  Future<void> _p4Inspect() => _guard(() async {
+    _header('P4 — Module 4 state');
+    _log('   active module: ${_onboarding.activeModule?.id.name ?? '—'}');
+    _log(
+      '   persisted eventsRespect: '
+      '${_onboarding.state.statusOf(OnboardingModuleId.eventsRespect).name}',
+    );
+    _onboarding.debugDescribe().forEach((key, value) {
+      if (key.startsWith('m4.') ||
+          key == 'guidance' ||
+          key == 'mountedAnchors') {
+        _log('   $key: $value');
+      }
+    });
+    await _p4InspectBackend();
+  });
+
+  Future<void> _p4InspectBackend() async {
+    _header('P4 — Challenge B (server)');
+    final compRef = _db.collection('competitions').doc(_challengeBId);
+    final comp = await compRef.get(const GetOptions(source: Source.server));
+    _check(comp.exists, 'Challenge B exists ($_challengeBId)');
+    if (!comp.exists) return;
+    final meta = comp.data()!['onboarding'] as Map?;
+    _check(
+      meta?['onboardingChallengeKey'] == 'challengeFriends',
+      'identified by onboarding metadata key "challengeFriends"',
+    );
+    _log(
+      '   status: ${comp.data()!['status']}, members: '
+      '${comp.data()!['participantUids']}',
+    );
+
+    for (final pUid in [_uid, kSystemUserUid]) {
+      final p = await compRef
+          .collection('participants')
+          .doc(pUid)
+          .get(const GetOptions(source: Source.server));
+      final who = pUid == _uid ? 'me' : 'Havruta';
+      if (!p.exists) {
+        _log('   participant[$who]: MISSING');
+        continue;
+      }
+      final d = p.data()!;
+      _log(
+        '   participant[$who]: progress ${d['progress']} / '
+        '${d['targetValue']} ${d['unit'] ?? ''}',
+      );
+      if (pUid == kSystemUserUid) {
+        _check(
+          (d['progress'] as num? ?? 0) <= 1,
+          'Havruta never exceeds 1 / 2 (idempotent system progress)',
+          'progress is ${d['progress']}',
+        );
+      }
+    }
+
+    final events = await compRef
+        .collection('events')
+        .get(const GetOptions(source: Source.server));
+    _log('   events in Challenge B: ${events.docs.length}');
+    var onboardingEvents = 0;
+    for (final e in events.docs) {
+      final d = e.data();
+      final isTarget = OnboardingRepository.isSystemOnboardingProgressEvent(d);
+      if (isTarget) onboardingEvents++;
+      final actor = d['actorUid'] == _uid
+          ? 'me'
+          : d['actorUid'] == kSystemUserUid
+          ? 'Havruta'
+          : d['actorUid'];
+      _log(
+        '     ${isTarget ? '★ ' : ''}${d['type']}  id=${e.id}  '
+        'actor=$actor  batch=${d['batchId']}  '
+        'respectGivenBy=${d['respectGivenBy'] ?? []}',
+      );
+    }
+    _check(
+      onboardingEvents <= 1,
+      'at most one Module 4 progress event (★)',
+      'found $onboardingEvents',
+    );
+    _log('   ★ = the event Module 4 highlights (Havruta progress, 0 → 1)');
+
+    final user = await _db
+        .collection('users')
+        .doc(_uid)
+        .get(const GetOptions(source: Source.server));
+    _log(
+      '   my respectBalance: ${user.data()?['respectBalance']}  '
+      '(last daily grant: ${user.data()?['respectLastGrantDate']})',
+    );
+    final ledger = await _db
+        .collection('onboarding_state')
+        .doc(_uid)
+        .get(const GetOptions(source: Source.server));
+    _log('   ledger.eventsRespect: ${ledger.data()?['eventsRespect']}');
+    _log(
+      '   ledger.respectGrant: '
+      '${ledger.data()?['respectGrant'] ?? '(never granted)'}',
+    );
+  }
+
+  Future<void> _p4StartModule() => _guard(() async {
+    _header('P4 — start/resume Module 4');
+    await _onboarding.startModule(OnboardingModuleId.eventsRespect);
+    _pass('module active: ${_onboarding.activeModule?.id.name}');
+    if (mounted) Navigator.pop(context);
+  });
+
+  Future<void> _p4HammerSystemProgress() => _guard(() async {
+    _header('P4 — call ensureOnboardingSystemProgress 3x (2 at once)');
+    final repo = _onboarding.repository;
+    final first = await repo.ensureSystemProgress();
+    _log('   call 1: applied=$first');
+    final both = await Future.wait([
+      repo.ensureSystemProgress(),
+      repo.ensureSystemProgress(),
+    ]);
+    _log('   calls 2+3 (concurrent): applied=$both');
+    _check(both.every((a) => !a), 'repeat calls did not apply progress again');
+    await _p4InspectBackend();
+  });
+
+  Future<void> _p4CallRespectGrant() => _guard(() async {
+    _header('P4 — call ensureOnboardingRespect');
+    final decision = await _onboarding.repository.ensureOnboardingRespect();
+    _log('   decision: $decision');
+    _log('   (grants only when balance is 0 — once per account, ever)');
+  });
+
+  Future<void> _p4Replay() => _guard(() async {
+    _header('P4 — replay Part 4 (rewind Havruta + Module 4)');
+    Map<String, dynamic>? result;
+    await _onboarding.debugResetModules(
+      const [OnboardingModuleId.eventsRespect],
+      whileDetached: () async {
+        result = await _onboarding.repository.resetOnboardingForTesting(
+          scope: 'eventsRespectProgress',
+        );
+      },
+    );
+    for (final path in (result?['deleted'] as List?) ?? const []) {
+      _log('   $path');
+    }
+    _pass(
+      'Havruta back to 0 with its events gone; Module 4 active: '
+      '${_onboarding.activeModule?.id.name}',
+    );
+    _log(
+      'Returning Home — Havruta should progress to 1 / 2 and its '
+      'new Event get highlighted.',
+    );
+    if (mounted) Navigator.pop(context);
+  });
+
+  Future<void> _p4ResetTutorialOnly() => _guard(() async {
+    _header('P4 — reset Module 4 tutorial only (keep progress/Event)');
+    await _onboarding.debugResetModules(const [
+      OnboardingModuleId.eventsRespect,
+    ]);
+    _pass('Module 4 marked not started; backend untouched');
+    _log(
+      'If Respect was already given, Module 4 completes on its own. '
+      'Otherwise the existing Event is reused — no new progress.',
+    );
+  });
+
+  Future<void> _p4SimulateRelaunch() => _guard(() async {
+    _header('P4 — simulate app relaunch');
+    await _onboarding.reload();
+    _pass(
+      'state re-read; active module: '
+      '${_onboarding.activeModule?.id.name ?? '—'}',
+    );
+    if (mounted) Navigator.pop(context);
+  });
+
   // ── UI ────────────────────────────────────────────────────────────────
 
   Color _colorFor(_LineKind kind) {
@@ -738,7 +929,14 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
       ),
       body: Column(
         children: [
-          Padding(
+          // Scrolls on its own once the controls outgrow half the screen,
+          // so the output log below always keeps some room.
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+            ),
+            child: SingleChildScrollView(
+          child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -810,8 +1008,28 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
                         primary: false),
                   ],
                 ),
+                const SizedBox(height: 14),
+                _sectionLabel('PART 4 — Events and Respect'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip('Inspect P4', _p4Inspect, primary: false),
+                    _chip('Start/resume Module 4', _p4StartModule),
+                    _chip('Replay P4 (rewind Havruta)', _p4Replay),
+                    _chip('Reset P4 tutorial only', _p4ResetTutorialOnly),
+                    _chip('System progress 3x', _p4HammerSystemProgress,
+                        primary: false),
+                    _chip('Respect grant', _p4CallRespectGrant,
+                        primary: false),
+                    _chip('Relaunch → Home', _p4SimulateRelaunch,
+                        primary: false),
+                  ],
+                ),
                 const SizedBox(height: 12),
               ],
+            ),
+          ),
             ),
           ),
           if (_busy) const LinearProgressIndicator(),

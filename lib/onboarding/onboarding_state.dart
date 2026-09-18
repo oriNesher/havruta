@@ -17,7 +17,8 @@ enum OnboardingModuleId {
   acceptInvites,
   reportProgress,
   celebrationTrashTalk,
-  // Later parts add: eventsRespect, createChallenge, invitePeople, ...
+  eventsRespect,
+  // Later parts add: createChallenge, invitePeople, ...
 }
 
 enum OnboardingModuleStatus { notStarted, active, completed }

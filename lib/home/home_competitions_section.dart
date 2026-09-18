@@ -627,13 +627,35 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
     super.initState();
     _stream = widget.firestoreService.getCompetitionEvents(widget.competitionId);
     _nudgeTimer = Timer.periodic(_nudgeInterval, (_) => _performNudge());
+    OnboardingAnchorRegistry.instance.addRevealer(_revealAnchor);
   }
 
   @override
   void dispose() {
+    OnboardingAnchorRegistry.instance.removeRevealer(_revealAnchor);
     _nudgeTimer?.cancel();
     _pageController.dispose();
     super.dispose();
+  }
+
+  // PageView only builds the visible page, so an event's anchors don't
+  // exist while it's swiped away. Turns to the page holding the event an
+  // anchor id belongs to, when asked — only while this screen is on top.
+  bool _revealAnchor(String anchorId) {
+    if (!mounted || !_pageController.hasClients) return false;
+    if (ModalRoute.of(context)?.isCurrent == false) return false;
+    final index = _latestEvents.indexWhere(
+      (e) =>
+          OnboardingAnchorIds.homeEvent(e.id) == anchorId ||
+          OnboardingAnchorIds.homeEventRespect(e.id) == anchorId,
+    );
+    if (index < 0 || _pageController.page?.round() == index) return false;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+    return true;
   }
 
   // ── Unread tracking ──────────────────────────
@@ -850,14 +872,19 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
             controller: _pageController,
             onPageChanged: _onPageChanged,
             itemCount: events.length,
-            itemBuilder: (context, index) => GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _markSeenByIndices({index}),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: _CompetitionEventRow(
-                  event: events[index],
-                  currentUid: widget.currentUid,
+            // The anchor spans the whole page, so bringing it into view
+            // can't leave the carousel parked between pages.
+            itemBuilder: (context, index) => OnboardingAnchor(
+              id: OnboardingAnchorIds.homeEvent(events[index].id),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _markSeenByIndices({index}),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: _CompetitionEventRow(
+                    event: events[index],
+                    currentUid: widget.currentUid,
+                  ),
                 ),
               ),
             ),
@@ -1135,7 +1162,10 @@ class _CompetitionEventRow extends StatelessWidget {
           ),
           if (_canGiveRespect) ...[
             const SizedBox(width: 8),
-            _GiveRespectButton(event: event, currentUid: currentUid),
+            OnboardingAnchor(
+              id: OnboardingAnchorIds.homeEventRespect(event.id),
+              child: _GiveRespectButton(event: event, currentUid: currentUid),
+            ),
           ],
           const SizedBox(width: 8),
           Text(
@@ -1224,7 +1254,7 @@ class _GiveRespectButtonState extends State<_GiveRespectButton> {
       behavior: HitTestBehavior.opaque,
       onTap: _handleTap,
       child: Icon(
-        _given ? PhosphorIconsFill.barbell : PhosphorIconsRegular.barbell,
+        _given ? PhosphorIconsFill.pawPrint : PhosphorIconsRegular.pawPrint,
         size: 20,
         color: _given ? onSurface : onSurface.withValues(alpha: 0.55),
       ),

@@ -81,6 +81,10 @@ class OnboardingAnchorState extends State<OnboardingAnchor> {
   Widget build(BuildContext context) => widget.child;
 }
 
+/// Brings the item carrying anchor [id] into view, if this container holds
+/// one, and returns whether it did. See [OnboardingAnchorRegistry.reveal].
+typedef OnboardingAnchorRevealer = bool Function(String id);
+
 /// Every mounted OnboardingAnchor, by id. More than one anchor can share an
 /// id (e.g. the same control on two stacked routes); [settled] picks the
 /// one that's actually usable right now.
@@ -89,6 +93,26 @@ class OnboardingAnchorRegistry {
   static final OnboardingAnchorRegistry instance = OnboardingAnchorRegistry._();
 
   final Map<String, List<OnboardingAnchorState>> _byId = {};
+  final List<OnboardingAnchorRevealer> _revealers = [];
+
+  /// Registered by containers that build items lazily (e.g. a PageView that
+  /// only builds its visible page), whose off-screen items' anchors
+  /// therefore aren't mounted for Scrollable.ensureVisible to reach.
+  void addRevealer(OnboardingAnchorRevealer revealer) =>
+      _revealers.add(revealer);
+  void removeRevealer(OnboardingAnchorRevealer revealer) =>
+      _revealers.remove(revealer);
+
+  /// Asks the registered containers to bring the item carrying anchor [id]
+  /// on screen so it can mount. True if one of them did.
+  bool reveal(String id) {
+    for (final revealer in List.of(_revealers)) {
+      if (revealer(id)) return true;
+    }
+    return false;
+  }
+
+  bool isMounted(String id) => _byId.containsKey(id);
 
   void _register(String id, OnboardingAnchorState anchor) {
     _byId.putIfAbsent(id, () => []).add(anchor);

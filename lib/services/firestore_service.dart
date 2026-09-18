@@ -490,20 +490,9 @@ class FirestoreService {
       await doc.reference.delete();
     }
 
-    final inviteLinksSnapshot = await _db
-        .collection('challenge_invite_links')
-        .where('competitionId', isEqualTo: competitionId)
-        .get();
-
-    for (final doc in inviteLinksSnapshot.docs) {
-      final redemptionsSnapshot = await doc.reference
-          .collection('redemptions')
-          .get();
-      for (final redemption in redemptionsSnapshot.docs) {
-        await redemption.reference.delete();
-      }
-      await doc.reference.delete();
-    }
+    // Invite links (and their redemptions) are server-only per
+    // firestore.rules; the onCompetitionDeletedCleanupInviteLinks trigger
+    // removes them once the competition doc above is gone.
   }
 
   /// Get username by uid

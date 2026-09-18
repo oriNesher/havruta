@@ -62,7 +62,7 @@ class RespectNotificationsSection extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(
-                    PhosphorIconsFill.barbell,
+                    PhosphorIconsFill.pawPrint,
                     size: 18,
                     color: colorScheme.onSurface,
                   ),

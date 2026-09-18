@@ -26,9 +26,16 @@ import {
   onInviteLinkRedemptionCreated,
 } from "./invites/onInviteLinkRedemptionCreated";
 import {inviteLanding} from "./invites/landingHandler";
+import {
+  onCompetitionDeletedCleanupInviteLinks,
+} from "./invites/onCompetitionDeleted";
 import {grantDailyRespect} from "./respect/grantDailyRespect";
 import {giveRespect} from "./respect/giveRespect";
 import {startOnboarding} from "./onboarding/startOnboarding";
+import {
+  ensureOnboardingRespect,
+  ensureOnboardingSystemProgress,
+} from "./onboarding/eventsRespectCallables";
 // TEMPORARY — onboarding test harness; remove with the debug screen.
 import {
   resetOnboardingForTesting,
@@ -38,8 +45,10 @@ admin.initializeApp();
 
 export {createInvite, getInvite, redeemInvite, revokeInvite,
   onInviteLinkRedemptionCreated, inviteLanding,
+  onCompetitionDeletedCleanupInviteLinks,
   grantDailyRespect, giveRespect,
-  startOnboarding, resetOnboardingForTesting};
+  startOnboarding, ensureOnboardingSystemProgress, ensureOnboardingRespect,
+  resetOnboardingForTesting};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {

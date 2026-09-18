@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'modules/accept_invites_module.dart';
 import 'modules/celebration_trash_talk_module.dart';
+import 'modules/events_respect_module.dart';
 import 'modules/onboarding_module.dart';
 import 'modules/report_progress_module.dart';
 import 'onboarding_anchor.dart';
@@ -35,6 +36,7 @@ class OnboardingController extends ChangeNotifier
     OnboardingModuleId.acceptInvites,
     OnboardingModuleId.reportProgress,
     OnboardingModuleId.celebrationTrashTalk,
+    OnboardingModuleId.eventsRespect,
   ];
 
   /// Modules that always run straight after another, whether or not the
@@ -50,6 +52,7 @@ class OnboardingController extends ChangeNotifier
     OnboardingModuleId.acceptInvites => AcceptInvitesModule(),
     OnboardingModuleId.reportProgress => ReportProgressModule(),
     OnboardingModuleId.celebrationTrashTalk => CelebrationTrashTalkModule(),
+    OnboardingModuleId.eventsRespect => EventsRespectModule(),
   };
 
   /// Used to show the Welcome prompt and to unwind back to Home without a
@@ -242,8 +245,8 @@ class OnboardingController extends ChangeNotifier
       }
       if (session != _session) return;
       // Whatever the narrative offers next starts here. After the last
-      // available module (Celebration/Trash Talk, in Part 3) the guide
-      // simply stops.
+      // available module (Events and Respect, in Part 4) the guide simply
+      // stops.
       _resume();
       notifyListeners();
     }());

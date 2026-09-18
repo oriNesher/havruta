@@ -165,6 +165,57 @@ class OnboardingRepository {
         .snapshots();
   }
 
+  /// Live "progress" events whose actor is the system user in one
+  /// competition. Only Cloud Functions write events, so every doc here is
+  /// real Events pipeline output; see [isSystemOnboardingProgressEvent].
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchSystemProgressEvents(
+    String competitionId,
+  ) {
+    return _competitions
+        .doc(competitionId)
+        .collection('events')
+        .where('actorUid', isEqualTo: onboardingSystemUserUid)
+        .where('type', isEqualTo: 'progress')
+        .snapshots();
+  }
+
+  /// Havruta's Module 4 progress event: the pipeline's "progress" event for
+  /// the system user's first (0 → 1) update. Mirrors
+  /// isSystemOnboardingProgressEvent in functions/src/onboarding/
+  /// eventsRespect.ts.
+  static bool isSystemOnboardingProgressEvent(Map<String, dynamic> data) {
+    final metadata = data['metadata'];
+    return data['type'] == 'progress' &&
+        data['actorUid'] == onboardingSystemUserUid &&
+        metadata is Map &&
+        metadata['beforeProgress'] == 0;
+  }
+
+  /// The user's own profile doc (for respectBalance).
+  Stream<DocumentSnapshot<Map<String, dynamic>>> watchUser(String uid) {
+    return _db.collection('users').doc(uid).snapshots();
+  }
+
+  /// Idempotently has the system user make its one Module 4 progress update
+  /// in the caller's Challenge B (see functions/src/onboarding/
+  /// eventsRespectCallables.ts). Returns whether this call applied it.
+  Future<bool> ensureSystemProgress() async {
+    final result = await _functions
+        .httpsCallable('ensureOnboardingSystemProgress')
+        .call<Map<dynamic, dynamic>>();
+    return result.data['applied'] == true;
+  }
+
+  /// Tops an empty Respect balance up once so the tutorial's real
+  /// giveRespect can succeed; a no-op otherwise. Returns the server's
+  /// decision ("grant", "notNeeded", "alreadyGranted", ...).
+  Future<String> ensureOnboardingRespect() async {
+    final result = await _functions
+        .httpsCallable('ensureOnboardingRespect')
+        .call<Map<dynamic, dynamic>>();
+    return result.data['decision'] as String? ?? 'unknown';
+  }
+
   /// Identity check for an onboarding challenge: explicit metadata (which
   /// challenge, and whose), never the display title.
   static bool isOnboardingChallengeFor(
@@ -201,7 +252,9 @@ class OnboardingRepository {
   /// invites, and ledger server-side so Module 1 can be replayed from
   /// pending invitations. With [scope] `acceptInvitesProgress` it instead
   /// only rewinds Challenge A to "accepted, no progress" (progress 0, its
-  /// events deleted) so the Part 3 win can be replayed.
+  /// events deleted) so the Part 3 win can be replayed; with
+  /// `eventsRespectProgress` it rewinds Havruta's Module 4 progress in
+  /// Challenge B (its events deleted, any Respect given to them refunded).
   /// Remove together with lib/debug/onboarding_debug_screen.dart.
   Future<Map<String, dynamic>> resetOnboardingForTesting({
     String? scope,

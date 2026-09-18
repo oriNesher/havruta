@@ -44,6 +44,13 @@ abstract final class OnboardingAnchorIds {
   static String trashTalkShareButton(String batchId) =>
       'trashTalk.share.$batchId';
 
+  /// One real Event row in a Home Challenge card's event carousel, and that
+  /// row's Give Respect control. Keyed by event doc id, so guidance targets
+  /// one specific Event — never "an event in this Challenge".
+  static String homeEvent(String eventId) => 'home.event.$eventId';
+  static String homeEventRespect(String eventId) =>
+      'home.event.respect.$eventId';
+
   /// TEMPORARY: the debug-only onboarding harness button in the Home app
   /// bar. The guide layer keeps it tappable through the spotlight scrim in
   /// debug builds; remove with the harness itself.
@@ -53,6 +60,9 @@ abstract final class OnboardingAnchorIds {
 /// Mirrors OnboardingChallengeKey in functions/src/onboarding/config.ts —
 /// each value's `.name` is the exact key the backend uses.
 enum OnboardingChallengeKey { acceptInvites, challengeFriends }
+
+/// Mirrors SYSTEM_USER_UID in functions/src/onboarding/config.ts.
+const onboardingSystemUserUid = 'havruta_system';
 
 /// Mirrors onboardingInviteId() in functions/src/onboarding/config.ts.
 String onboardingInviteId(String uid, OnboardingChallengeKey key) =>
