@@ -112,16 +112,18 @@ export const redeemInvite = onCall<RedeemInviteRequest>(
         unit = competitionData.sharedUnit ?? "";
       } else {
         const {goalTitle: g, targetValue: t, unit: u} = request.data;
-        if (!g || !t || t <= 0 || !u) {
+        if (!g || !t || t <= 0) {
           throw new HttpsError(
             "invalid-argument",
-            "This is a personal goal challenge — goalTitle, targetValue, " +
-              "and unit are required to join."
+            "This is a personal goal challenge — goalTitle and targetValue " +
+              "are required to join."
           );
         }
         goalTitle = g;
         targetValue = t;
-        unit = u;
+        // Unit is an optional detail; the join dialog no longer asks for
+        // it, and every display path already handles an empty unit.
+        unit = u ?? "";
       }
 
       tx.update(competitionRef, {

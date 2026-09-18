@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_theme.dart';
 import '../services/firestore_service.dart';
 import '../competitions/widgets/personal_goal_input_dialog.dart';
+import '../onboarding/onboarding_anchor.dart';
+import '../onboarding/onboarding_ids.dart';
 
 class HomePendingInvitesSection extends StatelessWidget {
   final String uid;
@@ -28,7 +30,7 @@ class HomePendingInvitesSection extends StatelessWidget {
       creatorTargetValue: creatorTargetValue,
       creatorUnit: creatorUnit,
       submitLabel: 'Accept',
-      onSubmit: (goalTitle, targetValue, unit) async {
+      onSubmit: (goalTitle, targetValue) async {
         final username = await _firestoreService.getMyUsername(uid);
         if (username == null || username.trim().isEmpty) {
           throw Exception('Could not find your username');
@@ -41,7 +43,8 @@ class HomePendingInvitesSection extends StatelessWidget {
           username: username,
           goalTitle: goalTitle,
           targetValue: targetValue,
-          unit: unit,
+          // Optional detail, no longer asked for when joining.
+          unit: '',
         );
       },
     );
@@ -233,7 +236,11 @@ class HomePendingInvitesSection extends StatelessWidget {
                 (invite['creatorTargetValue'] as num?)?.toInt();
             final creatorUnit = invite['creatorUnit'] as String?;
 
-            return Card(
+            // Lets onboarding point at this specific invitation; which one
+            // (if any) is highlighted is decided centrally.
+            return OnboardingAnchor(
+              id: OnboardingAnchorIds.inviteCard(inviteId),
+              child: Card(
               margin: const EdgeInsets.only(bottom: 10),
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -305,30 +312,30 @@ class HomePendingInvitesSection extends StatelessWidget {
                       children: [
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () async {
-                              if (isShared) {
-                                await _showSharedGoalAcceptDialog(
-                                  outerContext: context,
-                                  inviteId: inviteId,
-                                  competitionId: competitionId,
-                                  competitionTitle: competitionTitle,
-                                  sharedGoalTitle: sharedGoalTitle,
-                                  sharedTargetValue: sharedTargetValue,
-                                  sharedUnit: sharedUnit,
-                                );
-                              } else {
-                                await _showPersonalGoalAcceptDialog(
-                                  outerContext: context,
-                                  inviteId: inviteId,
-                                  competitionId: competitionId,
-                                  competitionTitle: competitionTitle,
-                                  creatorGoalTitle: creatorGoalTitle,
-                                  creatorTargetValue: creatorTargetValue,
-                                  creatorUnit: creatorUnit,
-                                );
-                              }
-                            },
-                            child: const Text('Accept'),
+                              onPressed: () async {
+                                if (isShared) {
+                                  await _showSharedGoalAcceptDialog(
+                                    outerContext: context,
+                                    inviteId: inviteId,
+                                    competitionId: competitionId,
+                                    competitionTitle: competitionTitle,
+                                    sharedGoalTitle: sharedGoalTitle,
+                                    sharedTargetValue: sharedTargetValue,
+                                    sharedUnit: sharedUnit,
+                                  );
+                                } else {
+                                  await _showPersonalGoalAcceptDialog(
+                                    outerContext: context,
+                                    inviteId: inviteId,
+                                    competitionId: competitionId,
+                                    competitionTitle: competitionTitle,
+                                    creatorGoalTitle: creatorGoalTitle,
+                                    creatorTargetValue: creatorTargetValue,
+                                    creatorUnit: creatorUnit,
+                                  );
+                                }
+                              },
+                              child: const Text('Accept'),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -355,6 +362,7 @@ class HomePendingInvitesSection extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
               ),
             );
           }).toList(),

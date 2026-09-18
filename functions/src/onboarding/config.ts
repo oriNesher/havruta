@@ -29,8 +29,14 @@ export const SYSTEM_USERNAME = "Havruta";
  * way that should invalidate previously-created instances (e.g. a changed
  * target or unit). Stored on every onboarding record so a future migration
  * can find and rebuild stale instances instead of guessing from content.
+ *
+ * v2 (2026-09-18): the onboarding challenges became sharedGoalChallenges —
+ * the app's default, simpler type — instead of personalGoalChallenges.
+ * There is no migration: startOnboarding only creates documents that are
+ * missing, so a user who already has v1 records keeps them until those
+ * records are deleted (see resetOnboardingForTesting).
  */
-export const ONBOARDING_VERSION = 1;
+export const ONBOARDING_VERSION = 2;
 
 /** Stable identifier for one of the two onboarding challenges. */
 export type OnboardingChallengeKey = "acceptInvites" | "challengeFriends";
@@ -39,18 +45,20 @@ export interface OnboardingChallengeConfig {
   key: OnboardingChallengeKey;
   title: string;
   description: string;
-  goalTitle: string;
-  targetValue: number;
-  unit: string;
+  sharedGoalTitle: string;
+  sharedTargetValue: number;
+  sharedUnit: string;
 }
 
 /**
- * The two onboarding challenges, as personalGoalChallenge shells owned by
- * the system user. Challenge A ("acceptInvites") is where a new user
- * learns to accept invitations, report progress, win, and see
- * Celebrations/Trash Talk. Challenge B ("challengeFriends") is meant to
- * stay active afterward and later carry a real system-authored progress
- * update through the normal Events pipeline, to teach Events and Respect.
+ * The two onboarding challenges, as sharedGoalChallenge shells owned by the
+ * system user — the app's default challenge type, and the simpler one to
+ * meet first: accepting needs no input beyond confirming the shared goal.
+ * Challenge A ("acceptInvites") is where a new user learns to accept
+ * invitations, report progress, win, and see Celebrations/Trash Talk.
+ * Challenge B ("challengeFriends") is meant to stay active afterward and
+ * later carry a real system-authored progress update through the normal
+ * Events pipeline, to teach Events and Respect.
  */
 export const ONBOARDING_CHALLENGES: OnboardingChallengeConfig[] = [
   {
@@ -59,9 +67,9 @@ export const ONBOARDING_CHALLENGES: OnboardingChallengeConfig[] = [
     description:
       "Havruta's way of saying hi — accept a couple of invitations to " +
       "see how progress, wins, and Celebrations work.",
-    goalTitle: "Accept two invitations",
-    targetValue: 2,
-    unit: "invitations",
+    sharedGoalTitle: "Accept two invitations",
+    sharedTargetValue: 2,
+    sharedUnit: "invitations",
   },
   {
     key: "challengeFriends",
@@ -69,9 +77,9 @@ export const ONBOARDING_CHALLENGES: OnboardingChallengeConfig[] = [
     description:
       "Invite two friends of your own — this one stays active so you " +
       "can see Events and Respect play out for real.",
-    goalTitle: "Challenge two friends",
-    targetValue: 2,
-    unit: "friends",
+    sharedGoalTitle: "Challenge two friends",
+    sharedTargetValue: 2,
+    sharedUnit: "friends",
   },
 ];
 

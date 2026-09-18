@@ -29,13 +29,17 @@ import {inviteLanding} from "./invites/landingHandler";
 import {grantDailyRespect} from "./respect/grantDailyRespect";
 import {giveRespect} from "./respect/giveRespect";
 import {startOnboarding} from "./onboarding/startOnboarding";
+// TEMPORARY — onboarding test harness; remove with the debug screen.
+import {
+  resetOnboardingForTesting,
+} from "./onboarding/resetOnboardingForTesting";
 
 admin.initializeApp();
 
 export {createInvite, getInvite, redeemInvite, revokeInvite,
   onInviteLinkRedemptionCreated, inviteLanding,
   grantDailyRespect, giveRespect,
-  startOnboarding};
+  startOnboarding, resetOnboardingForTesting};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {

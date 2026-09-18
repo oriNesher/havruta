@@ -124,12 +124,11 @@ class _InviteRedeemScreenState extends State<InviteRedeemScreen> {
       creatorTargetValue: preview.creatorTargetValue,
       creatorUnit: preview.creatorUnit,
       submitLabel: "I'm in",
-      onSubmit: (goalTitle, targetValue, unit) async {
+      onSubmit: (goalTitle, targetValue) async {
         final result = await _inviteService.redeemInvite(
           linkId: widget.linkId,
           goalTitle: goalTitle,
           targetValue: targetValue,
-          unit: unit,
         );
         joinedCompetitionId = result.competitionId;
       },

@@ -6,6 +6,10 @@ import 'package:flutter/material.dart';
 /// both paths hit the same "personal goal challenges need your own goal
 /// before you can join" rule.
 ///
+/// Unit is deliberately not asked for here — it's an optional detail of a
+/// challenge, and asking for it at the moment someone is trying to join
+/// adds a required field for no real gain.
+///
 /// [onSubmit] performs the actual join (accept invite / redeem link) and
 /// should rethrow on failure — the dialog shows the error and stays open.
 /// Returns true if the join succeeded, false if the user cancelled.
@@ -15,17 +19,11 @@ Future<bool> showPersonalGoalInputDialog({
   String? creatorGoalTitle,
   int? creatorTargetValue,
   String? creatorUnit,
-  required Future<void> Function(
-    String goalTitle,
-    int targetValue,
-    String unit,
-  )
-  onSubmit,
+  required Future<void> Function(String goalTitle, int targetValue) onSubmit,
   String submitLabel = 'Join',
 }) async {
   final goalTitleController = TextEditingController();
   final targetValueController = TextEditingController();
-  final unitController = TextEditingController();
   bool isSubmitting = false;
   bool joined = false;
 
@@ -38,9 +36,8 @@ Future<bool> showPersonalGoalInputDialog({
           Future<void> submit() async {
             final goalTitle = goalTitleController.text.trim();
             final targetValueText = targetValueController.text.trim();
-            final unit = unitController.text.trim();
 
-            if (goalTitle.isEmpty || targetValueText.isEmpty || unit.isEmpty) {
+            if (goalTitle.isEmpty || targetValueText.isEmpty) {
               ScaffoldMessenger.of(dialogContext).showSnackBar(
                 const SnackBar(content: Text('Please fill all fields')),
               );
@@ -60,7 +57,7 @@ Future<bool> showPersonalGoalInputDialog({
             setDialogState(() => isSubmitting = true);
 
             try {
-              await onSubmit(goalTitle, targetValue, unit);
+              await onSubmit(goalTitle, targetValue);
               joined = true;
 
               if (!dialogContext.mounted) return;
@@ -142,16 +139,6 @@ Future<bool> showPersonalGoalInputDialog({
                       border: OutlineInputBorder(),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: unitController,
-                    enabled: !isSubmitting,
-                    decoration: const InputDecoration(
-                      labelText: 'My unit',
-                      hintText: 'pushups / minutes / pages / km',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -181,7 +168,6 @@ Future<bool> showPersonalGoalInputDialog({
 
   goalTitleController.dispose();
   targetValueController.dispose();
-  unitController.dispose();
 
   return joined;
 }

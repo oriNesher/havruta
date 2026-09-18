@@ -1,11 +1,12 @@
-// TEMPORARY — onboarding Part 1 test harness.
+// TEMPORARY — onboarding test harness.
 //
-// This screen exists only to exercise and inspect the system-managed
-// onboarding backend (functions/src/onboarding/) from a real device in
-// debug. It is not part of the product: there is no tutorial UI yet, and
-// this whole file (plus its entry point in home_screen.dart, which is
-// wrapped in `if (kDebugMode)`) should be deleted once Part 1 is signed
-// off and the real onboarding UI lands.
+// This screen exists only to exercise and inspect onboarding from a real
+// device in debug: Part 1 drives the system-managed onboarding backend
+// (functions/src/onboarding/), Part 2 drives the tutorial session
+// (lib/onboarding/). It is not part of the product, and this whole file
+// (plus its entry point in home_screen.dart, which is wrapped in
+// `if (kDebugMode)`) should be deleted once the onboarding flow is signed
+// off — along with the resetOnboardingForTesting callable it uses.
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -13,6 +14,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../app_theme.dart';
+import '../onboarding/onboarding_controller.dart';
+import '../onboarding/onboarding_ids.dart';
+import '../onboarding/onboarding_state.dart';
 
 const String kSystemUserUid = 'havruta_system';
 
@@ -133,8 +137,13 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
         _check(d['createdBy'] == kSystemUserUid,
             '[$key] createdBy is the system user', '${d['createdBy']}');
         _check(d['status'] == 'active', '[$key] status is active');
-        _check(d['type'] == 'personalGoalChallenge',
-            '[$key] type is personalGoalChallenge');
+        _check(d['type'] == 'sharedGoalChallenge',
+            '[$key] type is sharedGoalChallenge', '${d['type']}');
+        _check(d['sharedTargetValue'] == expectedTarget,
+            '[$key] competition carries sharedTargetValue',
+            '${d['sharedTargetValue']}');
+        _check(d['sharedUnit'] == expectedUnit,
+            '[$key] competition carries sharedUnit', '${d['sharedUnit']}');
 
         final meta = d['onboarding'] as Map<String, dynamic>?;
         _check(meta != null, '[$key] onboarding metadata block present');
@@ -144,8 +153,9 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
               '[$key] meta.onboardingChallengeKey correct');
           _check(meta['onboardingUserId'] == _uid,
               '[$key] meta.onboardingUserId is my uid');
-          _check(meta['onboardingVersion'] == 1,
-              '[$key] meta.onboardingVersion set', '${meta['onboardingVersion']}');
+          _check(meta['onboardingVersion'] == 2,
+              '[$key] meta.onboardingVersion is 2 (shared-goal onboarding)',
+              '${meta['onboardingVersion']}');
         }
 
         final part = await _db
@@ -175,8 +185,13 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
         _check(i['fromUid'] == kSystemUserUid, '[$key] invite fromUid is system user');
         _check(i['toUid'] == _uid, '[$key] invite toUid is me');
         _log('   [$key] invite status: ${i['status']}, toUsername: ${i['toUsername']}');
-        _check(i['creatorTargetValue'] == expectedTarget,
-            '[$key] invite carries creatorTargetValue for the accept dialog');
+        _check(i['competitionType'] == 'sharedGoalChallenge',
+            '[$key] invite competitionType is sharedGoalChallenge',
+            '${i['competitionType']}');
+        _check(i['sharedTargetValue'] == expectedTarget,
+            '[$key] invite carries sharedTargetValue for the accept dialog');
+        _check(i['sharedGoalTitle'] != null,
+            '[$key] invite carries sharedGoalTitle');
         _check((i['onboarding'] as Map?)?['isOnboarding'] == true,
             '[$key] invite carries onboarding metadata');
       }
@@ -374,6 +389,120 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
         _log('(reading my own ledger is covered in STATE above)');
       });
 
+  // ── Part 2: tutorial session ──────────────────────────────────────────
+
+  OnboardingController get _onboarding => OnboardingController.instance;
+
+  /// Invite doc id for a pending invitation that is deliberately NOT an
+  /// onboarding one — and carries an onboarding challenge's exact title, to
+  /// prove the tutorial matches on id + metadata rather than on the title.
+  String get _unrelatedInviteId => 'debug_unrelated_invite_$_uid';
+
+  Future<void> _p2Inspect() => _guard(() async {
+        _header('P2 — tutorial session state');
+        _onboarding.debugDescribe().forEach((key, value) {
+          _log('   $key: $value');
+        });
+
+        final userDoc = await _db
+            .collection('users')
+            .doc(_uid)
+            .get(const GetOptions(source: Source.server));
+        final persisted =
+            userDoc.data()?[OnboardingTutorialState.firestoreField];
+        _log('   stored users/$_uid.'
+            '${OnboardingTutorialState.firestoreField}: '
+            '${persisted ?? '(none — Welcome will be offered)'}');
+
+        for (final key in OnboardingChallengeKey.values) {
+          final invite = await _db
+              .collection('competition_invites')
+              .doc(onboardingInviteId(_uid, key))
+              .get(const GetOptions(source: Source.server));
+          _log('   invite[${key.name}]: '
+              '${invite.exists ? invite.data()!['status'] : 'MISSING'}');
+        }
+
+        final pending = await _db
+            .collection('competition_invites')
+            .where('toUid', isEqualTo: _uid)
+            .where('status', isEqualTo: 'pending')
+            .get();
+        final unrelated = pending.docs
+            .where((d) =>
+                (d.data()['onboarding'] as Map?)?['isOnboarding'] != true)
+            .length;
+        _log('   other (non-onboarding) pending invites: $unrelated');
+      });
+
+  Future<void> _p2ResetWelcome() => _guard(() async {
+        _header('P2 — reset Welcome prompt');
+        await _onboarding.debugResetTutorial();
+        _pass('tutorial state cleared (challenges/invites left alone)');
+        _log('Returning Home — the Welcome prompt should appear.');
+        if (mounted) Navigator.pop(context);
+      });
+
+  Future<void> _p2StartModule1() => _guard(() async {
+        _header('P2 — start/resume Module 1');
+        await _onboarding.startModule(OnboardingModuleId.acceptInvites);
+        _pass('module active: ${_onboarding.activeModule?.id.name}');
+        if (mounted) Navigator.pop(context);
+      });
+
+  Future<void> _p2SimulateRelaunch() => _guard(() async {
+        _header('P2 — simulate app relaunch (reload persisted state)');
+        await _onboarding.reload();
+        _pass('state re-read from Firestore');
+        _onboarding.debugDescribe().forEach((key, value) {
+          _log('   $key: $value');
+        });
+      });
+
+  Future<void> _p2FullReset() => _guard(() async {
+        _header('P2 — full reset (delete onboarding data + state)');
+        final result =
+            await _onboarding.debugResetTutorial(includeBackendData: true);
+        final deleted = (result?['deleted'] as List?) ?? const [];
+        _pass('deleted ${deleted.length} server records');
+        for (final path in deleted) {
+          _log('   $path');
+        }
+        _log('Go Home: Welcome should appear, and "Yes, show me" should '
+            'recreate two pending invitations.');
+      });
+
+  Future<void> _p2AddUnrelatedInvite() => _guard(() async {
+        _header('P2 — add unrelated pending invite');
+        await _db
+            .collection('competition_invites')
+            .doc(_unrelatedInviteId)
+            .set({
+          'competitionId': 'debug_unrelated_competition_$_uid',
+          'competitionTitle': 'Accept two invitations in Havruta',
+          'competitionType': 'sharedGoalChallenge',
+          'sharedGoalTitle': 'Debug unrelated goal',
+          'sharedTargetValue': 1,
+          'sharedUnit': 'things',
+          'fromUid': _uid,
+          'toUid': _uid,
+          'toUsername': 'debug',
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        _pass('created $_unrelatedInviteId with an onboarding challenge title');
+        _log('It must NOT be highlighted, and must not block completion.');
+      });
+
+  Future<void> _p2RemoveUnrelatedInvite() => _guard(() async {
+        _header('P2 — remove unrelated pending invite');
+        await _db
+            .collection('competition_invites')
+            .doc(_unrelatedInviteId)
+            .delete();
+        _pass('deleted $_unrelatedInviteId');
+      });
+
   // ── UI ────────────────────────────────────────────────────────────────
 
   Color _colorFor(_LineKind kind) {
@@ -402,6 +531,30 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
     }
   }
 
+  Widget _sectionLabel(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(
+          text,
+          style: AppTheme.display(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+      );
+
+  Widget _chip(String label, Future<void> Function() onTap,
+      {bool primary = true}) {
+    final child = Text(label, style: const TextStyle(fontSize: 13));
+    final style = ButtonStyle(
+      minimumSize: WidgetStateProperty.all(const Size(0, 38)),
+      padding: WidgetStateProperty.all(
+        const EdgeInsets.symmetric(horizontal: 12),
+      ),
+    );
+    return primary
+        ? ElevatedButton(
+            style: style, onPressed: _busy ? null : onTap, child: child)
+        : OutlinedButton(
+            style: style, onPressed: _busy ? null : onTap, child: child);
+  }
+
   @override
   Widget build(BuildContext context) {
     final passCount = _lines.where((l) => l.kind == _LineKind.pass).length;
@@ -409,7 +562,7 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Onboarding Part 1 — debug'),
+        title: const Text('Onboarding — debug'),
         actions: [
           IconButton(
             tooltip: 'Clear output',
@@ -421,31 +574,57 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ElevatedButton(
-                  onPressed: _busy ? null : _runCreationTest,
-                  child: const Text('1. Create'),
+                _sectionLabel('PART 1 — backend'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip('1. Create', _runCreationTest),
+                    _chip('2. Idempotency', _runIdempotencyTest),
+                    _chip('3. Recovery', _runPartialRecoveryTest),
+                    _chip('4. Security', _runSecurityTest),
+                    _chip('Inspect only', _runInspectOnly, primary: false),
+                  ],
                 ),
-                ElevatedButton(
-                  onPressed: _busy ? null : _runIdempotencyTest,
-                  child: const Text('2. Idempotency'),
+                const SizedBox(height: 14),
+                _sectionLabel('PART 2 — tutorial session'),
+                ListenableBuilder(
+                  listenable: _onboarding,
+                  builder: (context, _) {
+                    final state = _onboarding.state;
+                    return Text(
+                      'welcome: ${state.welcome?.name ?? '(unanswered)'}   '
+                      'module: ${_onboarding.activeModule?.id.name ?? '—'}   '
+                      'guiding: ${_onboarding.isGuiding}',
+                      style: AppTheme.mono(
+                        fontSize: 11,
+                        color: const Color(0xFFB69CFB),
+                      ),
+                    );
+                  },
                 ),
-                ElevatedButton(
-                  onPressed: _busy ? null : _runPartialRecoveryTest,
-                  child: const Text('3. Recovery'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip('Inspect session', _p2Inspect, primary: false),
+                    _chip('Show Welcome again', _p2ResetWelcome),
+                    _chip('Start/resume Module 1', _p2StartModule1),
+                    _chip('Simulate relaunch', _p2SimulateRelaunch,
+                        primary: false),
+                    _chip('Full reset', _p2FullReset),
+                    _chip('+ unrelated invite', _p2AddUnrelatedInvite,
+                        primary: false),
+                    _chip('− unrelated invite', _p2RemoveUnrelatedInvite,
+                        primary: false),
+                  ],
                 ),
-                ElevatedButton(
-                  onPressed: _busy ? null : _runSecurityTest,
-                  child: const Text('4. Security'),
-                ),
-                OutlinedButton(
-                  onPressed: _busy ? null : _runInspectOnly,
-                  child: const Text('Inspect only'),
-                ),
+                const SizedBox(height: 12),
               ],
             ),
           ),

@@ -73,6 +73,9 @@ async function ensureOnboardingChallenge(
     };
 
     if (!competitionSnap.exists) {
+      // Mirrors createSharedGoalCompetition's document shape exactly, so
+      // every existing screen reads this like any other shared-goal
+      // challenge.
       tx.set(competitionRef, {
         title: config.title,
         description: config.description,
@@ -80,7 +83,10 @@ async function ensureOnboardingChallenge(
         participantUids: [SYSTEM_USER_UID],
         status: "active",
         winnerUid: null,
-        type: "personalGoalChallenge",
+        type: "sharedGoalChallenge",
+        sharedGoalTitle: config.sharedGoalTitle,
+        sharedTargetValue: config.sharedTargetValue,
+        sharedUnit: config.sharedUnit,
         createdAt: FieldValue.serverTimestamp(),
         onboarding: onboardingMeta,
       });
@@ -95,9 +101,9 @@ async function ensureOnboardingChallenge(
       tx.set(participantRef, {
         uid: SYSTEM_USER_UID,
         username: SYSTEM_USERNAME,
-        goalTitle: config.goalTitle,
-        targetValue: config.targetValue,
-        unit: config.unit,
+        goalTitle: config.sharedGoalTitle,
+        targetValue: config.sharedTargetValue,
+        unit: config.sharedUnit,
         progress: 0,
         joinedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -105,21 +111,22 @@ async function ensureOnboardingChallenge(
     }
 
     if (!inviteSnap.exists) {
-      // Same shape sendCompetitionInvite writes, including the
-      // creatorGoalTitle/creatorTargetValue/creatorUnit preview fields the
-      // existing accept dialog (personalGoalInputDialog) pre-fills from.
+      // Same shape sendCompetitionInvite writes for a shared-goal
+      // challenge, including the sharedGoalTitle/sharedTargetValue/
+      // sharedUnit fields the existing shared-goal accept dialog shows and
+      // then copies onto the joining participant.
       tx.set(inviteRef, {
         competitionId: competitionRef.id,
         competitionTitle: config.title,
-        competitionType: "personalGoalChallenge",
+        competitionType: "sharedGoalChallenge",
         fromUid: SYSTEM_USER_UID,
         toUid: uid,
         toUsername,
         status: "pending",
         createdAt: FieldValue.serverTimestamp(),
-        creatorGoalTitle: config.goalTitle,
-        creatorTargetValue: config.targetValue,
-        creatorUnit: config.unit,
+        sharedGoalTitle: config.sharedGoalTitle,
+        sharedTargetValue: config.sharedTargetValue,
+        sharedUnit: config.sharedUnit,
         onboarding: onboardingMeta,
       });
     }
