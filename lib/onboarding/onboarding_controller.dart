@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import 'modules/accept_invites_module.dart';
 import 'modules/celebration_trash_talk_module.dart';
+import 'modules/create_challenge_module.dart';
 import 'modules/events_respect_module.dart';
+import 'modules/invite_people_module.dart';
 import 'modules/onboarding_module.dart';
 import 'modules/report_progress_module.dart';
 import 'onboarding_anchor.dart';
@@ -37,15 +39,19 @@ class OnboardingController extends ChangeNotifier
     OnboardingModuleId.reportProgress,
     OnboardingModuleId.celebrationTrashTalk,
     OnboardingModuleId.eventsRespect,
+    OnboardingModuleId.createChallenge,
+    OnboardingModuleId.invitePeople,
   ];
 
   /// Modules that always run straight after another, whether or not the
   /// guided narrative is on: the Celebration/Trash Talk tutorial explains
   /// the celebration that Module 2's win itself produces, so starting
   /// Module 2 on its own (e.g. from a future checklist) must carry on into
-  /// it rather than leave that celebration unexplained.
+  /// it rather than leave that celebration unexplained. Likewise Invite
+  /// People picks up on the Invite step that creating a Challenge lands on.
   static const Map<OnboardingModuleId, OnboardingModuleId> _continuations = {
     OnboardingModuleId.reportProgress: OnboardingModuleId.celebrationTrashTalk,
+    OnboardingModuleId.createChallenge: OnboardingModuleId.invitePeople,
   };
 
   static OnboardingModule _createModule(OnboardingModuleId id) => switch (id) {
@@ -53,6 +59,8 @@ class OnboardingController extends ChangeNotifier
     OnboardingModuleId.reportProgress => ReportProgressModule(),
     OnboardingModuleId.celebrationTrashTalk => CelebrationTrashTalkModule(),
     OnboardingModuleId.eventsRespect => EventsRespectModule(),
+    OnboardingModuleId.createChallenge => CreateChallengeModule(),
+    OnboardingModuleId.invitePeople => InvitePeopleModule(),
   };
 
   /// Used to show the Welcome prompt and to unwind back to Home without a
@@ -210,6 +218,15 @@ class OnboardingController extends ChangeNotifier
   void guidanceChanged() => notifyListeners();
 
   @override
+  Map<String, Object?> moduleData(OnboardingModuleId id) => _state.dataOf(id);
+
+  @override
+  void saveModuleData(OnboardingModuleId id, Map<String, Object?> data) {
+    if (_uid == null) return;
+    _save(_state.withModuleData(id, data));
+  }
+
+  @override
   void moduleCompleted(OnboardingModule module) {
     if (!identical(module, _activeModule)) return;
     module.stop();
@@ -245,8 +262,7 @@ class OnboardingController extends ChangeNotifier
       }
       if (session != _session) return;
       // Whatever the narrative offers next starts here. After the last
-      // available module (Events and Respect, in Part 4) the guide simply
-      // stops.
+      // available module (Invite People, in Part 5) the guide simply stops.
       _resume();
       notifyListeners();
     }());
@@ -429,18 +445,18 @@ class OnboardingController extends ChangeNotifier
   }
 
   /// TEMPORARY: marks [ids] not started (and makes the first of them the
-  /// active module) so they replay, without touching Welcome or earlier
-  /// modules. Explicit `notStarted` entries are written rather than keys
-  /// removed, because saves merge into Firestore. [whileDetached] runs
-  /// with no module watching (e.g. a backend reset), so nothing reacts to
-  /// the records it rewrites.
+  /// active module) and clears their module data so they replay, without
+  /// touching Welcome or earlier modules. Explicit `notStarted` entries are
+  /// written rather than keys removed, because saves merge into Firestore.
+  /// [whileDetached] runs with no module watching (e.g. a backend reset),
+  /// so nothing reacts to the records it rewrites.
   Future<void> debugResetModules(
     List<OnboardingModuleId> ids, {
     Future<void> Function()? whileDetached,
   }) async {
     final uid = _uid;
     if (uid == null || ids.isEmpty) return;
-    var next = _state.copyWith(activeModule: ids.first);
+    var next = _state.copyWith(activeModule: ids.first).withoutModuleData(ids);
     for (final id in ids) {
       next = next.withModuleStatus(id, OnboardingModuleStatus.notStarted);
     }
@@ -449,6 +465,7 @@ class OnboardingController extends ChangeNotifier
     notifyListeners();
     try {
       if (whileDetached != null) await whileDetached();
+      await repository.clearModuleData(uid, ids);
       await repository.saveState(uid, next);
     } finally {
       await _load();

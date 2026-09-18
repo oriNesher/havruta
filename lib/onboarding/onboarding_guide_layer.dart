@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show kDebugMode, listEquals;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -44,10 +45,16 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
   String? _scrolledFor;
   DateTime? _lastRevealAt;
 
+  /// waitForUserTouch guidance: the signature that is showable but still
+  /// held back this frame, and the ones the user has since touched for.
+  String? _heldForTouch;
+  final Set<String> _touchedFor = {};
+
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onControllerChanged);
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
     // Persistent (not repeating) callbacks: this runs after layout on
     // frames that already happen — scrolls, route transitions, anchors
     // mounting — instead of driving frames of its own. For users not in
@@ -57,6 +64,7 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
 
   @override
   void dispose() {
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
     _controller.removeListener(_onControllerChanged);
     _pulse.dispose();
     super.dispose();
@@ -67,10 +75,23 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
     if (mounted) SchedulerBinding.instance.scheduleFrame();
   }
 
+  /// A pointer-up (the end of the user's own tap/scroll, which the screen
+  /// has already handled) releases guidance held for a first touch.
+  void _onPointer(PointerEvent event) {
+    final held = _heldForTouch;
+    if (event is! PointerUpEvent || held == null || !mounted) return;
+    _touchedFor.add(held);
+    SchedulerBinding.instance.scheduleFrame();
+  }
+
   void _onFrame(Duration _) {
     if (!mounted) return;
 
     final guidance = _controller.guidance;
+    if (guidance.isEmpty) {
+      _heldForTouch = null;
+      _touchedFor.clear();
+    }
     final next = guidance.isEmpty ? null : _resolve(guidance);
     if (next != _spotlight) {
       SchedulerBinding.instance.addPostFrameCallback((_) => _apply(next));
@@ -89,47 +110,56 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
   }
 
   _Spotlight? _resolve(List<OnboardingGuidance> guidance) {
+    _heldForTouch = null;
     final layerBox = _layerKey.currentContext?.findRenderObject();
     if (layerBox is! RenderBox || !layerBox.hasSize) return null;
 
+    Rect toLocal(Rect global) => Rect.fromPoints(
+      layerBox.globalToLocal(global.topLeft),
+      layerBox.globalToLocal(global.bottomRight),
+    );
+
+    _Spotlight? found;
     for (final entry in guidance) {
       final anchors = <OnboardingAnchorState>[];
       final holes = <Rect>[];
       for (final id in entry.anchorIds) {
-        final found = OnboardingAnchorRegistry.instance.settled(id);
-        if (found == null) continue;
-        anchors.add(found.anchor);
-        holes.add(
-          Rect.fromPoints(
-            layerBox.globalToLocal(found.rect.topLeft),
-            layerBox.globalToLocal(found.rect.bottomRight),
-          ),
-        );
+        final settled = OnboardingAnchorRegistry.instance.settled(id);
+        if (settled == null) continue;
+        anchors.add(settled.anchor);
+        holes.add(toLocal(settled.rect));
       }
-      if (anchors.isNotEmpty) {
-        // TEMPORARY: keep the debug harness reachable, since the scrim
-        // otherwise blocks every control but the one being pointed at.
-        // Remove with the debug entry point in home_screen.dart.
-        final debugHole = kDebugMode
-            ? OnboardingAnchorRegistry.instance.settled(
-                OnboardingAnchorIds.debugHarnessButton,
-              )
-            : null;
-        return _Spotlight(
-          guidance: entry,
-          holes: holes,
-          passThroughHoles: [
-            if (debugHole != null)
-              Rect.fromPoints(
-                layerBox.globalToLocal(debugHole.rect.topLeft),
-                layerBox.globalToLocal(debugHole.rect.bottomRight),
-              ),
-          ],
-          anchors: anchors,
-        );
+      if (anchors.isEmpty) continue;
+
+      if (entry.waitForUserTouch && !_touchedFor.contains(entry.signature)) {
+        _heldForTouch = entry.signature;
+        break;
       }
+
+      // TEMPORARY: keep the debug harness reachable, since the scrim
+      // otherwise blocks every control but the one being pointed at.
+      // Remove with the debug entry point in home_screen.dart.
+      final passThroughIds = [
+        ...entry.passThroughAnchorIds,
+        if (kDebugMode) OnboardingAnchorIds.debugHarnessButton,
+      ];
+      found = _Spotlight(
+        guidance: entry,
+        holes: holes,
+        passThroughHoles: [
+          for (final id in passThroughIds)
+            if (OnboardingAnchorRegistry.instance.settled(id) case final hit?)
+              toLocal(hit.rect),
+        ],
+        anchors: anchors,
+      );
+      break;
     }
-    return null;
+
+    // A held-back step re-arms once it stops being showable (the user left
+    // the screen), so coming back to it waits for a fresh first touch.
+    _touchedFor.removeWhere((signature) => found?.signature != signature);
+    return found;
   }
 
   /// Nothing is usable, possibly because the target sits on an item a lazy
@@ -169,8 +199,9 @@ class _OnboardingGuideLayerState extends State<OnboardingGuideLayer>
 
     // Bring a target that's scrolled out of view into it — once per
     // distinct piece of guidance, so this can't fight the user's own
-    // scrolling afterwards.
-    if (_scrolledFor == next.signature) return;
+    // scrolling afterwards. Never for non-modal guidance, which is shown
+    // while the user is working on the screen themselves.
+    if (!next.guidance.modal || _scrolledFor == next.signature) return;
     _scrolledFor = next.signature;
     final layerBox = _layerKey.currentContext?.findRenderObject();
     if (layerBox is! RenderBox || !layerBox.hasSize) return;
@@ -273,20 +304,24 @@ class _SpotlightView extends StatelessWidget {
                     holes: spotlight.holes,
                     passThroughHoles: spotlight.passThroughHoles,
                     pulse: pulse.value,
+                    modal: spotlight.guidance.modal,
                   ),
                 ),
               ),
             ),
-            Positioned.fill(
-              child: CustomSingleChildLayout(
-                delegate: _BubbleLayout(
-                  target: union,
-                  safeTop: padding.top + 8,
-                  safeBottom: keyboard > 0 ? keyboard + 8 : padding.bottom + 8,
+            if (spotlight.guidance.message.isNotEmpty)
+              Positioned.fill(
+                child: CustomSingleChildLayout(
+                  delegate: _BubbleLayout(
+                    target: union,
+                    safeTop: padding.top + 8,
+                    safeBottom: keyboard > 0
+                        ? keyboard + 8
+                        : padding.bottom + 8,
+                  ),
+                  child: _GuideBubble(guidance: spotlight.guidance),
                 ),
-                child: _GuideBubble(guidance: spotlight.guidance),
               ),
-            ),
           ],
         );
       },
@@ -419,18 +454,21 @@ class _GuideBubble extends StatelessWidget {
   }
 }
 
-/// Dims everything except the highlighted controls, and — via [hitTest] —
-/// absorbs taps outside them, so the only thing the user can press is the
-/// real control the guide is pointing at.
+/// Modal: dims everything except the highlighted controls, and — via
+/// [hitTest] — absorbs taps outside them, so the only thing the user can
+/// press is the real control the guide is pointing at. Non-modal: only
+/// rings the controls; nothing is dimmed and every tap goes through.
 class _SpotlightPainter extends CustomPainter {
   final List<Rect> holes;
   final List<Rect> passThroughHoles;
   final double pulse;
+  final bool modal;
 
   const _SpotlightPainter({
     required this.holes,
     required this.pulse,
     this.passThroughHoles = const [],
+    this.modal = true,
   });
 
   Iterable<Rect> get _allHoles => [...holes, ...passThroughHoles];
@@ -442,13 +480,15 @@ class _SpotlightPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final scrim = Path()
-      ..fillType = PathFillType.evenOdd
-      ..addRect(Offset.zero & size);
-    for (final hole in _allHoles) {
-      scrim.addRRect(_hole(hole));
+    if (modal) {
+      final scrim = Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRect(Offset.zero & size);
+      for (final hole in _allHoles) {
+        scrim.addRRect(_hole(hole));
+      }
+      canvas.drawPath(scrim, Paint()..color = const Color(0xC7050509));
     }
-    canvas.drawPath(scrim, Paint()..color = const Color(0xC7050509));
 
     for (final hole in holes) {
       canvas.drawRRect(
@@ -470,11 +510,12 @@ class _SpotlightPainter extends CustomPainter {
 
   @override
   bool hitTest(Offset position) =>
-      !_allHoles.any((hole) => _hole(hole).contains(position));
+      modal && !_allHoles.any((hole) => _hole(hole).contains(position));
 
   @override
   bool shouldRepaint(_SpotlightPainter oldDelegate) =>
       oldDelegate.pulse != pulse ||
+      oldDelegate.modal != modal ||
       !listEquals(oldDelegate.holes, holes) ||
       !listEquals(oldDelegate.passThroughHoles, passThroughHoles);
 }

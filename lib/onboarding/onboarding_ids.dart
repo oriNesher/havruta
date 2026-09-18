@@ -51,6 +51,34 @@ abstract final class OnboardingAnchorIds {
   static String homeEventRespect(String eventId) =>
       'home.event.respect.$eventId';
 
+  /// Home's Create Challenge button.
+  static const homeCreateChallengeButton = 'home.createChallenge';
+
+  /// A Home Challenge card's header (title + status). Tapping anywhere on
+  /// the card opens that Challenge's details. Keyed by competition id.
+  static String homeChallengeCard(String competitionId) =>
+      'home.challengeCard.$competitionId';
+
+  /// The Create Challenge form: its Personal/Shared Goal type selector, its
+  /// required details (goal + target), and its submit button — which
+  /// creates the Challenge and moves on to the Invite step.
+  static const createChallengeTypeSelector = 'createChallenge.type';
+  static const createChallengeRequiredDetails = 'createChallenge.required';
+  static const createChallengeSubmit = 'createChallenge.submit';
+
+  /// The invite-by-search area (field, results, Invite button) and the
+  /// invite-link card for one Challenge. Both widgets are shared by the
+  /// post-creation Invite step and the Challenge details screen, so these
+  /// resolve on whichever of the two is showing [competitionId].
+  static String inviteSearch(String competitionId) =>
+      'invite.search.$competitionId';
+  static String inviteLink(String competitionId) =>
+      'invite.link.$competitionId';
+
+  /// The post-creation Invite step's Done button for [competitionId].
+  static String challengeInviteDone(String competitionId) =>
+      'challengeInvite.done.$competitionId';
+
   /// TEMPORARY: the debug-only onboarding harness button in the Home app
   /// bar. The guide layer keeps it tappable through the spotlight scrim in
   /// debug builds; remove with the harness itself.

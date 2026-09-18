@@ -5,7 +5,9 @@
 // (functions/src/onboarding/), Part 2 drives the tutorial session
 // (lib/onboarding/), Part 3 replays/inspects the report-progress win and
 // the Celebration/Trash Talk tutorial, Part 4 drives/inspects Havruta's
-// scripted progress, its real Event and the Respect tutorial. It is not
+// scripted progress, its real Event and the Respect tutorial, Part 5
+// inspects/replays the Create Challenge + Invite People tutorial and the
+// real Challenge it tracks. It is not
 // part of the product, and this whole file
 // (plus its entry point in home_screen.dart, which is wrapped in
 // `if (kDebugMode)`) should be deleted once the onboarding flow is signed
@@ -17,6 +19,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../app_theme.dart';
+import '../onboarding/modules/create_challenge_module.dart';
+import '../onboarding/modules/invite_people_module.dart';
 import '../onboarding/onboarding_controller.dart';
 import '../onboarding/onboarding_ids.dart';
 import '../onboarding/onboarding_repository.dart';
@@ -859,6 +863,191 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
     if (mounted) Navigator.pop(context);
   });
 
+  // ── Part 5: Create Challenge + Invite People ───────────────────────────
+
+  static const _part5Modules = [
+    OnboardingModuleId.createChallenge,
+    OnboardingModuleId.invitePeople,
+  ];
+
+  String? get _p5TrackedChallenge =>
+      _onboarding.state.dataOf(OnboardingModuleId.createChallenge)[
+          CreateChallengeModule.competitionIdKey] as String?;
+
+  Future<void> _p5Inspect() => _guard(() async {
+    _header('P5 — Module 5/6 state');
+    _log('   active module: ${_onboarding.activeModule?.id.name ?? '—'}');
+    for (final id in _part5Modules) {
+      _log(
+        '   persisted ${id.name}: ${_onboarding.state.statusOf(id).name}  '
+        'data=${_onboarding.state.dataOf(id)}',
+      );
+    }
+    _onboarding.debugDescribe().forEach((key, value) {
+      if (key.startsWith('m5.') ||
+          key.startsWith('m6.') ||
+          key == 'guidance') {
+        _log('   $key: $value');
+      }
+    });
+    await _p5InspectBackend();
+  });
+
+  Future<void> _p5InspectBackend() async {
+    _header('P5 — tracked Challenge (server)');
+    final startedAt = _onboarding.state.dataOf(
+      OnboardingModuleId.createChallenge,
+    )[CreateChallengeModule.startedAtKey];
+    final cid = _p5TrackedChallenge;
+    if (cid == null) {
+      _log('   no Challenge tracked yet');
+    } else {
+      final comp = await _db
+          .collection('competitions')
+          .doc(cid)
+          .get(const GetOptions(source: Source.server));
+      _check(comp.exists, 'tracked Challenge exists ($cid)');
+      if (comp.exists) {
+        final d = comp.data()!;
+        _check(d['createdBy'] == _uid, 'created by me');
+        _check(d['onboarding'] == null, 'a regular (non-onboarding) Challenge');
+        final created = (d['createdAt'] as Timestamp?)?.millisecondsSinceEpoch;
+        _check(
+          startedAt is int && created != null && created > startedAt,
+          'created after Module 5 started',
+          'createdAt=$created startedAt=$startedAt',
+        );
+        _log(
+          '   type=${d['type']}  title="${d['title']}"  '
+          'members=${d['participantUids']}',
+        );
+      }
+      final sent = await _db
+          .collection('competition_invites')
+          .where('competitionId', isEqualTo: cid)
+          .where('fromUid', isEqualTo: _uid)
+          .get(const GetOptions(source: Source.server));
+      _log('   invites I sent for it (server): ${sent.docs.length}');
+      for (final doc in sent.docs) {
+        _log('     → ${doc.data()['toUsername']}  ${doc.data()['status']}');
+      }
+      final linkShared = _onboarding.state.dataOf(
+        OnboardingModuleId.invitePeople,
+      )[InvitePeopleModule.linkSharedKey];
+      _log(
+        '   invite link shared (persisted signal): '
+        '${linkShared == cid ? 'yes' : 'no'}',
+      );
+      _log(
+        '   ⇒ invitation method used: '
+        '${sent.docs.isNotEmpty || linkShared == cid}',
+      );
+    }
+
+    final mine = await _db
+        .collection('competitions')
+        .where('createdBy', isEqualTo: _uid)
+        .get(const GetOptions(source: Source.server));
+    _log('   all Challenges I created: ${mine.docs.length}');
+    for (final doc in mine.docs) {
+      final created =
+          (doc.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch;
+      final when = startedAt is! int || created == null
+          ? '?'
+          : created > startedAt
+          ? 'after start'
+          : 'before start';
+      _log(
+        '     ${doc.id == cid ? '★ ' : ''}${doc.id}  $when  '
+        '"${doc.data()['title']}"',
+      );
+    }
+    _log('   ★ = the Challenge the tutorial tracks');
+  }
+
+  Future<void> _p5StartModule(OnboardingModuleId id) => _guard(() async {
+    _header('P5 — start/resume ${id.name}');
+    await _onboarding.startModule(id);
+    _pass('module active: ${_onboarding.activeModule?.id.name}');
+    if (mounted) Navigator.pop(context);
+  });
+
+  Future<void> _p5ResetTutorialOnly() => _guard(() async {
+    _header('P5 — reset Part 5 tutorial (Modules 5 + 6)');
+    await _onboarding.debugResetModules(_part5Modules);
+    _pass(
+      'Modules 5/6 not started, tracked Challenge forgotten; active: '
+      '${_onboarding.activeModule?.id.name}',
+    );
+    _log(
+      'Challenges you already created stay, but predate the new start — '
+      'Module 5 will ask for a NEW one. Delete old ones with "Delete '
+      'tracked Challenge" first if you want a clean Home.',
+    );
+  });
+
+  Future<void> _p5ResetModule6Only() => _guard(() async {
+    _header('P5 — reset Module 6 only (keep tracked Challenge)');
+    await _onboarding.debugResetModules(const [
+      OnboardingModuleId.invitePeople,
+    ]);
+    _pass('Module 6 active: ${_onboarding.activeModule?.id.name}');
+    _log(
+      'Persisted link-shared flag cleared. If a user invite was already '
+      'sent, Module 6 completes on its own (backend proves it).',
+    );
+  });
+
+  Future<void> _p5ForgetTrackedId() => _guard(() async {
+    _header('P5 — lose tracked id (simulate unsaved tutorial state)');
+    // Cosmetic tutorial state only: rewinds to "Module 5 active, id never
+    // saved" so recovery by creator + creation time can be exercised.
+    await _db.collection('users').doc(_uid).set({
+      OnboardingTutorialState.firestoreField: {
+        'activeModule': OnboardingModuleId.createChallenge.name,
+        'modules': {
+          OnboardingModuleId.createChallenge.name: {
+            'status': OnboardingModuleStatus.active.name,
+            'data': {CreateChallengeModule.competitionIdKey: FieldValue.delete()},
+          },
+          OnboardingModuleId.invitePeople.name: {
+            'status': OnboardingModuleStatus.notStarted.name,
+            'data': FieldValue.delete(),
+          },
+        },
+      },
+    }, SetOptions(merge: true));
+    await _onboarding.reload();
+    _pass('reloaded; active: ${_onboarding.activeModule?.id.name ?? '—'}');
+    _log(
+      'Expect Module 5 to recover the Challenge you created after it started '
+      'and hand over to Module 6 — no new Challenge asked for. Inspect P5.',
+    );
+  });
+
+  Future<void> _p5DeleteTrackedChallenge() => _guard(() async {
+    _header('P5 — delete tracked Challenge');
+    final cid = _p5TrackedChallenge;
+    if (cid == null) {
+      _log('   no Challenge tracked');
+      return;
+    }
+    // The same creator-only delete as the details screen's button.
+    await FirestoreService().deleteCompetition(cid);
+    _pass('deleted competitions/$cid (and its participants/invites)');
+    _log('Use "Reset P5 tutorial" next to replay Module 5.');
+  });
+
+  Future<void> _p5SimulateRelaunch() => _guard(() async {
+    _header('P5 — simulate app relaunch');
+    await _onboarding.reload();
+    _pass(
+      'state re-read; active module: '
+      '${_onboarding.activeModule?.id.name ?? '—'}',
+    );
+    if (mounted) Navigator.pop(context);
+  });
+
   // ── UI ────────────────────────────────────────────────────────────────
 
   Color _colorFor(_LineKind kind) {
@@ -1023,6 +1212,28 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
                     _chip('Respect grant', _p4CallRespectGrant,
                         primary: false),
                     _chip('Relaunch → Home', _p4SimulateRelaunch,
+                        primary: false),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _sectionLabel('PART 5 — Create Challenge + Invite'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip('Inspect P5', _p5Inspect, primary: false),
+                    _chip('Start/resume Module 5',
+                        () => _p5StartModule(
+                            OnboardingModuleId.createChallenge)),
+                    _chip('Start/resume Module 6',
+                        () => _p5StartModule(OnboardingModuleId.invitePeople)),
+                    _chip('Reset P5 tutorial', _p5ResetTutorialOnly),
+                    _chip('Reset Module 6 only', _p5ResetModule6Only),
+                    _chip('Lose tracked id', _p5ForgetTrackedId,
+                        primary: false),
+                    _chip('Delete tracked Challenge', _p5DeleteTrackedChallenge,
+                        primary: false),
+                    _chip('Relaunch → Home', _p5SimulateRelaunch,
                         primary: false),
                   ],
                 ),

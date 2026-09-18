@@ -272,44 +272,47 @@ class _CompetitionCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Header ───────────────────────────────
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-                  ),
-                  if (isActive) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: colorScheme.tertiary,
-                        shape: BoxShape.circle,
-                      ),
+              OnboardingAnchor(
+                id: OnboardingAnchorIds.homeChallengeCard(competitionId),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'LIVE',
-                      style: AppTheme.display(
-                        color: colorScheme.tertiary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8,
+                    if (isActive) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: colorScheme.tertiary,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                  ] else if (status.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      '${status[0].toUpperCase()}${status.substring(1)}',
-                      style: AppTheme.display(
-                        color: colorScheme.onSurface.withValues(alpha: 0.4),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                      const SizedBox(width: 4),
+                      Text(
+                        'LIVE',
+                        style: AppTheme.display(
+                          color: colorScheme.tertiary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                        ),
                       ),
-                    ),
+                    ] else if (status.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '${status[0].toUpperCase()}${status.substring(1)}',
+                        style: AppTheme.display(
+                          color: colorScheme.onSurface.withValues(alpha: 0.4),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
               // ── Metadata chips ───────────────────────
               if (daysLeft != null || (isShared && sharedTargetValue != null && sharedUnit != null)) ...[

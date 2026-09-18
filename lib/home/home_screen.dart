@@ -293,7 +293,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 10),
               _RespectSummary(uid: user.uid, firestoreService: _firestoreService),
               const SizedBox(height: 20),
-              _CreateChallengeButton(uid: user.uid),
+              OnboardingAnchor(
+                id: OnboardingAnchorIds.homeCreateChallengeButton,
+                child: _CreateChallengeButton(uid: user.uid),
+              ),
               const SizedBox(height: 24),
               Text(
                 'MY COMPETITIONS',

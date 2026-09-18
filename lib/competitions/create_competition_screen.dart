@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../onboarding/onboarding_anchor.dart';
+import '../onboarding/onboarding_ids.dart';
+import '../services/app_signals.dart';
 import '../services/firestore_service.dart';
 import 'challenge_invite_screen.dart';
 import 'goals_bucket_bottom_sheet.dart';
@@ -30,6 +33,7 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   final _user = FirebaseAuth.instance.currentUser;
 
   bool _isLoading = false;
+  bool _requiredDetailsComplete = false;
 
   bool get _isPersonal => _selectedType == 'personalGoalChallenge';
 
@@ -37,6 +41,23 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   void initState() {
     super.initState();
     _goalController.addListener(_syncTargetFromGoal);
+    _goalController.addListener(_reportDraft);
+    _targetController.addListener(_reportDraft);
+    AppSignals.instance.emit(
+      const ChallengeDraftChanged(requiredDetailsComplete: false),
+    );
+  }
+
+  /// Mirrors _createChallenge's own validation of the required fields.
+  void _reportDraft() {
+    final target = int.tryParse(_targetController.text.trim());
+    final complete =
+        _goalController.text.trim().isNotEmpty && target != null && target > 0;
+    if (complete == _requiredDetailsComplete) return;
+    _requiredDetailsComplete = complete;
+    AppSignals.instance.emit(
+      ChallengeDraftChanged(requiredDetailsComplete: complete),
+    );
   }
 
   // Detects the first number typed in the goal field (e.g. "Run 30km") and
@@ -189,6 +210,12 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
           ),
         ),
       );
+      AppSignals.instance.emit(
+        ChallengeCreated(
+          competitionId: competitionId,
+          competitionType: _selectedType,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -202,6 +229,8 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   @override
   void dispose() {
     _goalController.removeListener(_syncTargetFromGoal);
+    _goalController.removeListener(_reportDraft);
+    _targetController.removeListener(_reportDraft);
     _titleController.dispose();
     _goalController.dispose();
     _targetController.dispose();
@@ -251,22 +280,25 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Type selector
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                  value: 'personalGoalChallenge',
-                  label: Text('Personal Goal'),
+            OnboardingAnchor(
+              id: OnboardingAnchorIds.createChallengeTypeSelector,
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'personalGoalChallenge',
+                    label: Text('Personal Goal'),
+                  ),
+                  ButtonSegment(
+                    value: 'sharedGoalChallenge',
+                    label: Text('Shared Goal'),
+                  ),
+                ],
+                selected: {_selectedType},
+                onSelectionChanged: (selection) =>
+                    _onTypeChanged(selection.first),
+                style: ButtonStyle(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                ButtonSegment(
-                  value: 'sharedGoalChallenge',
-                  label: Text('Shared Goal'),
-                ),
-              ],
-              selected: {_selectedType},
-              onSelectionChanged: (selection) =>
-                  _onTypeChanged(selection.first),
-              style: ButtonStyle(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
             const SizedBox(height: 16),
@@ -307,41 +339,70 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
             ),
             const SizedBox(height: 28),
 
-            // Goal field — label changes based on type
-            _fieldSection(
-              _isPersonal ? 'My personal goal' : 'Shared goal',
-              _isPersonal
-                  ? 'Something specific you can track with a number. '
-                      'e.g. "Run 30km" or "Read 4 books" — not a vague long-term aspiration.'
-                  : 'The specific, measurable goal everyone will work toward. '
-                      'e.g. "Run 30km" or "Read 4 books".',
-              TextField(
-                controller: _goalController,
-                decoration: InputDecoration(
-                  hintText: 'Run 30km / Read 4 books / Do 300 pushups',
-                  helperText: _isPersonal
-                      ? 'Make it specific and measurable'
-                      : 'Everyone will work toward this same goal',
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
+            // Required details: goal + target.
+            OnboardingAnchor(
+              id: OnboardingAnchorIds.createChallengeRequiredDetails,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Goal field — label changes based on type
+                  _fieldSection(
+                    _isPersonal ? 'My personal goal' : 'Shared goal',
+                    _isPersonal
+                        ? 'Something specific you can track with a number. '
+                            'e.g. "Run 30km" or "Read 4 books" — not a vague long-term aspiration.'
+                        : 'The specific, measurable goal everyone will work toward. '
+                            'e.g. "Run 30km" or "Read 4 books".',
+                    TextField(
+                      controller: _goalController,
+                      decoration: InputDecoration(
+                        hintText: 'Run 30km / Read 4 books / Do 300 pushups',
+                        helperText: _isPersonal
+                            ? 'Make it specific and measurable'
+                            : 'Everyone will work toward this same goal',
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
-            // Target
-            _fieldSection(
-              'Target',
-              'The number you need to reach to complete the goal. e.g. 30 or 4.',
-              TextField(
-                controller: _targetController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  hintText: '30',
-                  border: OutlineInputBorder(),
+                  // Target
+                  _fieldSection(
+                    'Target',
+                    'The number you need to reach to complete the goal. e.g. 30 or 4.',
+                    TextField(
+                      controller: _targetController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        hintText: '30',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Create button — right after the required details, so everything
+            // below it reads as optional extras rather than more steps.
+            OnboardingAnchor(
+              id: OnboardingAnchorIds.createChallengeSubmit,
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _isLoading ? null : _createChallenge,
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Create Challenge'),
                 ),
               ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 32),
 
             // Optional section header
             Row(
@@ -474,22 +535,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
                   hintText: 'Weekends count too...',
                   border: OutlineInputBorder(),
                 ),
-              ),
-            ),
-            const SizedBox(height: 28),
-
-            // Create button
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _isLoading ? null : _createChallenge,
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Create Challenge'),
               ),
             ),
           ],

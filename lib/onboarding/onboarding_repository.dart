@@ -48,6 +48,81 @@ class OnboardingRepository {
     });
   }
 
+  /// Removes [ids]' module data, which a merged save can't do.
+  Future<void> clearModuleData(String uid, Iterable<OnboardingModuleId> ids) {
+    final field = OnboardingTutorialState.firestoreField;
+    return _db.collection('users').doc(uid).set({
+      field: {
+        'modules': {
+          for (final id in ids) id.name: {'data': FieldValue.delete()},
+        },
+      },
+    }, SetOptions(merge: true));
+  }
+
+  // ── Challenges the user creates (Modules 5–6) ─────────────────────────
+
+  /// Confirms against the server (not the local cache) that [competitionId]
+  /// exists and is a regular Challenge [uid] created — not an onboarding
+  /// one. Null if the server couldn't be reached.
+  Future<bool?> confirmOwnChallenge(String competitionId, String uid) async {
+    try {
+      final snap = await _competitions
+          .doc(competitionId)
+          .get(const GetOptions(source: Source.server));
+      final data = snap.data();
+      return data != null && isOwnRegularChallenge(data, uid);
+    } on FirebaseException catch (e) {
+      debugPrint('Challenge confirm error ($competitionId): $e');
+      return null;
+    }
+  }
+
+  /// The first regular Challenge [uid] created strictly after
+  /// [sinceMillis], by its server createdAt, if any. Recovery for a
+  /// creation whose competition id never reached the tutorial state —
+  /// identity comes from creator + creation time, never the title.
+  Future<String?> findOwnChallengeCreatedSince(
+    String uid,
+    int sinceMillis,
+  ) async {
+    final snap = await _competitions
+        .where('createdBy', isEqualTo: uid)
+        .get(const GetOptions(source: Source.server));
+    QueryDocumentSnapshot<Map<String, dynamic>>? first;
+    int? firstMillis;
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final createdAt = data['createdAt'];
+      if (createdAt is! Timestamp || !isOwnRegularChallenge(data, uid)) {
+        continue;
+      }
+      final millis = createdAt.millisecondsSinceEpoch;
+      if (millis <= sinceMillis) continue;
+      if (firstMillis == null || millis < firstMillis) {
+        first = doc;
+        firstMillis = millis;
+      }
+    }
+    return first?.id;
+  }
+
+  static bool isOwnRegularChallenge(Map<String, dynamic> data, String uid) =>
+      data['createdBy'] == uid && data['onboarding'] == null;
+
+  /// Live invitations [uid] has sent to existing users for [competitionId],
+  /// in any status, including local-write metadata so callers can tell a
+  /// still-in-flight send apart from a server-confirmed one.
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchSentInvites(
+    String competitionId,
+    String uid,
+  ) {
+    return _invites
+        .where('competitionId', isEqualTo: competitionId)
+        .where('fromUid', isEqualTo: uid)
+        .snapshots(includeMetadataChanges: true);
+  }
+
   // ── Onboarding challenges/invites (server-owned) ──────────────────────
 
   /// Calls the idempotent startOnboarding callable and returns the invite

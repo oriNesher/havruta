@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../onboarding/onboarding_anchor.dart';
+import '../../onboarding/onboarding_ids.dart';
+import '../../services/app_signals.dart';
 import '../../services/invite_service.dart';
 
 /// Shareable-link invite card. Used both right after a challenge is created
@@ -39,6 +42,9 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
           subject: 'Join me in "${widget.competitionTitle}" on Havruta',
         ),
       );
+      AppSignals.instance.emit(
+        InviteLinkShared(competitionId: widget.competitionId, method: 'share'),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -56,6 +62,9 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
         competitionId: widget.competitionId,
       );
       await Clipboard.setData(ClipboardData(text: invite.url));
+      AppSignals.instance.emit(
+        InviteLinkShared(competitionId: widget.competitionId, method: 'copy'),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -74,48 +83,51 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Share invite link',
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Anyone with this link can join "${widget.competitionTitle}".',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _isCreatingLink ? null : _shareLink,
-                    icon: _isCreatingLink
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Icon(Icons.ios_share),
-                    label: const Text('Share'),
+    return OnboardingAnchor(
+      id: OnboardingAnchorIds.inviteLink(widget.competitionId),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Share invite link',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Anyone with this link can join "${widget.competitionTitle}".',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _isCreatingLink ? null : _shareLink,
+                      icon: _isCreatingLink
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.ios_share),
+                      label: const Text('Share'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _isCreatingLink ? null : _copyLink,
-                  icon: const Icon(Icons.copy_outlined),
-                  tooltip: 'Copy link',
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _isCreatingLink ? null : _copyLink,
+                    icon: const Icon(Icons.copy_outlined),
+                    tooltip: 'Copy link',
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

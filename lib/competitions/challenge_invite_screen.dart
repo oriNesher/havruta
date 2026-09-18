@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../onboarding/onboarding_anchor.dart';
+import '../onboarding/onboarding_ids.dart';
+import '../services/app_signals.dart';
 import 'competition_invite_section.dart';
 import 'widgets/challenge_creation_stepper.dart';
 import 'widgets/invite_link_card.dart';
@@ -40,6 +43,14 @@ class ChallengeInviteScreen extends StatefulWidget {
 class _ChallengeInviteScreenState extends State<ChallengeInviteScreen> {
   void _finish() {
     Navigator.popUntil(context, (route) => route.isFirst);
+  }
+
+  @override
+  void dispose() {
+    AppSignals.instance.emit(
+      ChallengeInviteStepClosed(competitionId: widget.competitionId),
+    );
+    super.dispose();
   }
 
   @override
@@ -91,11 +102,14 @@ class _ChallengeInviteScreenState extends State<ChallengeInviteScreen> {
               creatorUnit: widget.creatorUnit,
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: _finish,
-                child: const Text('Done'),
+            OnboardingAnchor(
+              id: OnboardingAnchorIds.challengeInviteDone(widget.competitionId),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _finish,
+                  child: const Text('Done'),
+                ),
               ),
             ),
           ],

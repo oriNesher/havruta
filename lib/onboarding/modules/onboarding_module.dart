@@ -25,20 +25,42 @@ class OnboardingGuidanceAction {
 @immutable
 class OnboardingGuidance {
   final List<String> anchorIds;
+
+  /// Empty shows the highlight ring with no bubble.
   final String message;
   final List<OnboardingGuidanceAction> actions;
+
+  /// Modal guidance dims the screen and only lets the highlighted controls
+  /// be pressed. Non-modal guidance only rings them and shows the bubble —
+  /// the rest of the screen stays fully usable and is never auto-scrolled,
+  /// for steps that point something out while the user works freely.
+  final bool modal;
+
+  /// Kept pressable through a modal scrim without being highlighted — for
+  /// alternatives the step shouldn't block, only not point at.
+  final List<String> passThroughAnchorIds;
+
+  /// Held back until the user has touched the screen at least once while
+  /// it could be shown, so a screen the user just opened isn't covered
+  /// before they've had a look at it. Re-armed whenever it stops being
+  /// showable (e.g. the user leaves the screen).
+  final bool waitForUserTouch;
 
   const OnboardingGuidance({
     required this.anchorIds,
     required this.message,
     this.actions = const [],
+    this.modal = true,
+    this.passThroughAnchorIds = const [],
+    this.waitForUserTouch = false,
   });
 
   /// Stable identity for "the same guidance", used by the guide layer to
   /// avoid re-running one-shot effects (like scrolling into view) and by
   /// modules to recognize which of their guidance was shown.
   String get signature =>
-      '${anchorIds.join(',')}|$message|${actions.map((a) => a.label).join(',')}';
+      '${anchorIds.join(',')}|$message|${actions.map((a) => a.label).join(',')}'
+      '|$modal|${passThroughAnchorIds.join(',')}';
 }
 
 /// What the controller does with the screen the guide led the user onto
@@ -60,6 +82,12 @@ enum OnboardingUnwind {
 abstract interface class OnboardingModuleHost {
   String get uid;
   OnboardingRepository get repository;
+
+  /// [id]'s durable module data (see OnboardingTutorialState.moduleData).
+  Map<String, Object?> moduleData(OnboardingModuleId id);
+
+  /// Merges [data] into [id]'s durable module data and persists it.
+  void saveModuleData(OnboardingModuleId id, Map<String, Object?> data);
 
   /// The module's [OnboardingModule.guidance] may have changed.
   void guidanceChanged();
