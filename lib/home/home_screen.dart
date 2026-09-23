@@ -351,13 +351,14 @@ class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
         .snapshots()
         .listen((doc) {
       final data = doc.data();
+      if (!mounted) return;
       setState(() {
         _hasLoaded = true;
         _createdAt = (data?['createdAt'] as Timestamp?)?.toDate();
         _lastCompetitionCreatedAt =
             (data?['lastCompetitionCreatedAt'] as Timestamp?)?.toDate();
       });
-    });
+    }, onError: (Object e) => debugPrint('User doc stream error: $e'));
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -437,12 +438,17 @@ class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
 }
 
 // ─────────────────────────────────────────────
-// Respect summary — plain typography, no card/border/icon: total Respect
-// received (prominent), how much is left to give today, and a countdown to
-// the next local midnight (when a new day's grant becomes available on next
-// app open). Balance is fed into RespectStore so every Give Respect button
-// on the page shares the same live number.
+// Respect card: Respect received (left), the wallet of Respect to give
+// (right, RespectStore.walletCapacity slots), and — only while the wallet
+// has room — a countdown to the next server (UTC) day, when the daily grant
+// unlocks. Balance is fed into RespectStore so every Give Respect button on
+// the page shares the same live number.
 // ─────────────────────────────────────────────
+
+const _respectPurple = Color(0xFFB69CFB);
+const _respectTeal = Color(0xFF2DD4BF);
+const _respectMuted = Color(0xFF8888A0);
+const _respectLine = Color(0xFF2A2A42);
 
 class _RespectSummary extends StatefulWidget {
   final String uid;
@@ -459,6 +465,7 @@ class _RespectSummaryState extends State<_RespectSummary> {
   _userDocSub;
   Timer? _ticker;
   int _totalReceived = 0;
+  late int _utcDay = DateTime.now().toUtc().day;
 
   @override
   void initState() {
@@ -471,8 +478,21 @@ class _RespectSummaryState extends State<_RespectSummary> {
       RespectStore.instance.updateServerBalance(balance);
       final received = (data?['totalRespectReceived'] as num?)?.toInt() ?? 0;
       if (mounted) setState(() => _totalReceived = received);
-    });
+      // onError matters here: without it the permission-denied this
+      // listener gets at sign-out reaches the zone as an uncaught
+      // exception instead of failing quietly — see CelebrationGate.
+    }, onError: (Object e) => debugPrint('Respect summary stream error: $e'));
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      final day = DateTime.now().toUtc().day;
+      // The grant normally fires on app open; claim it here too so a
+      // countdown reaching zero while Home is open actually delivers.
+      if (day != _utcDay) {
+        _utcDay = day;
+        RespectService().grantDailyRespect().then(
+          RespectStore.instance.updateServerBalance,
+          onError: (e) => debugPrint('Daily Respect grant error: $e'),
+        );
+      }
       if (mounted) setState(() {});
     });
   }
@@ -484,7 +504,200 @@ class _RespectSummaryState extends State<_RespectSummary> {
     super.dispose();
   }
 
-  String _formatCountdown(Duration d) {
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: RespectStore.instance,
+      builder: (context, _) {
+        final wallet = RespectStore.instance.displayBalance;
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: const Color(0xFF181824),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _respectLine),
+          ),
+          child: Column(
+            children: [
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _ReceivedPanel(total: _totalReceived)),
+                    const VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      indent: 16,
+                      endIndent: 16,
+                      color: _respectLine,
+                    ),
+                    Expanded(child: _WalletPanel(wallet: wallet)),
+                  ],
+                ),
+              ),
+              if (!RespectStore.instance.isWalletFull) const _NextRespectRow(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _RespectLabel extends StatelessWidget {
+  final String text;
+  const _RespectLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: AppTheme.display(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.2,
+      color: _respectMuted,
+    ),
+  );
+}
+
+class _ReceivedPanel extends StatelessWidget {
+  final int total;
+  const _ReceivedPanel({required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _RespectLabel('RECEIVED'),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '$total',
+                    style: AppTheme.mono(
+                      fontSize: 44,
+                      fontWeight: FontWeight.w800,
+                      color: _respectPurple,
+                    ).copyWith(
+                      shadows: [
+                        Shadow(
+                          color: _respectPurple.withValues(alpha: 0.5),
+                          blurRadius: 16,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              PhosphorIcon(
+                PhosphorIconsFill.pawPrint,
+                size: 22,
+                color: _respectPurple,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WalletPanel extends StatelessWidget {
+  final int wallet;
+  const _WalletPanel({required this.wallet});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _RespectLabel('TO GIVE'),
+          const SizedBox(height: 10),
+          // Plain rows, not a GridView: the card's IntrinsicHeight needs
+          // intrinsic sizes, which scrollable viewports can't report.
+          for (var row = 0; row * 3 < RespectStore.walletCapacity; row++) ...[
+            if (row > 0) const SizedBox(height: 8),
+            Row(
+              children: [
+                for (var col = 0; col < 3; col++) ...[
+                  if (col > 0) const SizedBox(width: 8),
+                  Expanded(
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: row * 3 + col < RespectStore.walletCapacity
+                          ? _WalletSlot(filled: row * 3 + col < wallet)
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            '$wallet/${RespectStore.walletCapacity}',
+            style: AppTheme.mono(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: wallet > 0 ? _respectTeal : _respectMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WalletSlot extends StatelessWidget {
+  final bool filled;
+  const _WalletSlot({required this.filled});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      decoration: BoxDecoration(
+        color: filled
+            ? _respectTeal.withValues(alpha: 0.12)
+            : Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: filled ? _respectTeal.withValues(alpha: 0.45) : _respectLine,
+        ),
+        boxShadow: filled
+            ? [
+                BoxShadow(
+                  color: _respectTeal.withValues(alpha: 0.18),
+                  blurRadius: 10,
+                ),
+              ]
+            : null,
+      ),
+      child: Center(
+        child: PhosphorIcon(
+          PhosphorIconsFill.pawPrint,
+          size: 16,
+          color: filled ? _respectTeal : _respectLine,
+        ),
+      ),
+    );
+  }
+}
+
+class _NextRespectRow extends StatelessWidget {
+  const _NextRespectRow();
+
+  String _format(Duration d) {
     final hh = d.inHours.toString().padLeft(2, '0');
     final mm = (d.inMinutes % 60).toString().padLeft(2, '0');
     final ss = (d.inSeconds % 60).toString().padLeft(2, '0');
@@ -493,38 +706,73 @@ class _RespectSummaryState extends State<_RespectSummary> {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    // Must match the server's UTC-day grant (functions/src/respect/).
+    final now = DateTime.now().toUtc();
+    final remaining = DateTime.utc(
+      now.year,
+      now.month,
+      now.day + 1,
+    ).difference(now);
+    final dayElapsed = 1 - remaining.inSeconds / Duration.secondsPerDay;
 
-    final now = DateTime.now();
-    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
-    final remaining = nextMidnight.difference(now);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$_totalReceived',
-          style: AppTheme.mono(
-            fontSize: 36,
-            fontWeight: FontWeight.w800,
-            color: Theme.of(context).colorScheme.onSurface,
+    return Container(
+      decoration: BoxDecoration(
+        color: _respectPurple.withValues(alpha: 0.05),
+        border: const Border(top: BorderSide(color: _respectLine)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 20, 14),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 52,
+            height: 52,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox.expand(
+                  child: CircularProgressIndicator(
+                    value: dayElapsed,
+                    strokeWidth: 4,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: _respectLine,
+                    color: const Color(0xFF8B5CF6),
+                  ),
+                ),
+                PhosphorIcon(
+                  PhosphorIconsFill.pawPrint,
+                  size: 18,
+                  color: _respectPurple,
+                ),
+              ],
+            ),
           ),
-        ),
-        Text('Respect received', style: textTheme.labelSmall),
-        const SizedBox(height: 10),
-        ListenableBuilder(
-          listenable: RespectStore.instance,
-          builder: (context, _) => Text(
-            'You have ${RespectStore.instance.displayBalance} Respect to give',
-            style: textTheme.bodyMedium,
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              _format(remaining),
+              style: AppTheme.mono(
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          'Next Respect in ${_formatCountdown(remaining)}',
-          style: textTheme.bodySmall,
-        ),
-      ],
+          Text(
+            '+1',
+            style: AppTheme.mono(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: _respectMuted,
+            ),
+          ),
+          const SizedBox(width: 4),
+          PhosphorIcon(
+            PhosphorIconsFill.pawPrint,
+            size: 16,
+            color: _respectMuted,
+          ),
+        ],
+      ),
     );
   }
 }

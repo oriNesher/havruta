@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 ///
 /// A give is capped at 1 per event (enforced server-side), so there's no
 /// batching to do here — this just keeps the balance shown across the app
-/// (Home screen text, every event's Give Respect button) in sync: the last
+/// (Home screen wallet, every event's Give Respect button) in sync: the last
 /// confirmed server value, minus however many gives are currently in flight,
 /// so the number drops the instant someone taps rather than waiting on a
 /// round trip.
@@ -13,10 +13,15 @@ class RespectStore extends ChangeNotifier {
   RespectStore._();
   static final RespectStore instance = RespectStore._();
 
+  /// Mirror of RESPECT_WALLET_CAPACITY in functions/src/respect/wallet.ts.
+  static const int walletCapacity = 6;
+
   int _serverBalance = 0;
   int _pendingSpend = 0;
 
   int get displayBalance => (_serverBalance - _pendingSpend).clamp(0, 1 << 31);
+
+  bool get isWalletFull => displayBalance >= walletCapacity;
 
   /// Called from a live listener on the user doc whenever the server
   /// balance changes (daily grant or a confirmed spend).
@@ -43,9 +48,11 @@ class RespectStore extends ChangeNotifier {
   }
 
   /// Clears all state on sign-out so a new session doesn't inherit the
-  /// previous user's balance.
+  /// previous user's balance. Notifies, so anything still on screen during
+  /// the sign-out frame doesn't keep rendering the old number.
   void reset() {
     _serverBalance = 0;
     _pendingSpend = 0;
+    notifyListeners();
   }
 }
