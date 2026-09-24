@@ -2,7 +2,11 @@ import {onRequest} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import {lookupInvite} from "./lookup";
 import {BETA_GATE_CONFIG} from "./betaGateConfig";
-import {buildAndroidIntentUrl, buildInviteUrl} from "./config";
+import {
+  buildAndroidIntentUrl,
+  buildInviteUrl,
+  buildWebAppInviteUrl,
+} from "./config";
 
 /**
  * @param {string} value Untrusted text (e.g. a challenge title) to embed
@@ -125,11 +129,22 @@ export const inviteLanding = onRequest(
       `;
     }
 
+    // Offered above the beta section on purpose: the web app needs no
+    // install and no testers-group membership, so it is the one route that
+    // always works for a recipient who doesn't already have the app.
+    const webAppLink = buildWebAppInviteUrl(linkId);
+
     const bodyHtml = `
       <div class="card">
         <p class="muted">${escapeHtml(inviterName)} invited you to</p>
         <h1>${escapeHtml(challengeTitle)}</h1>
         <a class="btn btn-primary" href="${appLink}">Open in app</a>
+        <a class="btn btn-secondary" href="${webAppLink}">
+          Open in browser
+        </a>
+        <p class="muted">
+          No install needed — join straight from this browser.
+        </p>
         ${betaSectionHtml}
       </div>
     `;

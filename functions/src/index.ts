@@ -217,10 +217,17 @@ export const onParticipantProgressUpdate = onDocumentUpdated(
   },
 );
 
+// minInstances: 1 — this trigger sits directly between "user logs
+// progress" and "celebration screen appears", so its cold start (a few
+// seconds of loading firebase-admin before a single line of rule code
+// runs) was the whole perceived delay. One warm instance removes it; the
+// other progress triggers are background work nobody is waiting on, so
+// they stay cold.
 export const onParticipantProgressCreateEvents = onDocumentUpdated(
   {
     document: "competitions/{competitionId}/participants/{participantId}",
     maxInstances: 5,
+    minInstances: 1,
     concurrency: 1,
   },
   async (event) => {

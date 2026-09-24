@@ -179,11 +179,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     decoration: BoxDecoration(
                       color: const Color(0xFF181824),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF2A2A42), width: 1),
+                      border: Border.all(
+                        color: const Color(0xFF2A2A42),
+                        width: 1,
+                      ),
                     ),
                     child: IconButton(
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
                       icon: Badge(
                         isLabelVisible: count > 0,
                         label: Text('$count'),
@@ -222,11 +228,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   decoration: BoxDecoration(
                     color: const Color(0xFF181824),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFB69CFB), width: 1),
+                    border: Border.all(
+                      color: const Color(0xFFB69CFB),
+                      width: 1,
+                    ),
                   ),
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
                     icon: const Icon(
                       Icons.bug_report_outlined,
                       size: 18,
@@ -281,18 +293,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Text(
                       'Hello...',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                      ),
                     );
                   }
                   final username = snapshot.data;
                   return Text(
                     'Hello ${username ?? user.email ?? ""}',
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                    ),
                   );
                 },
               ),
               const SizedBox(height: 10),
-              _RespectSummary(uid: user.uid, firestoreService: _firestoreService),
+              _RespectSummary(
+                uid: user.uid,
+                firestoreService: _firestoreService,
+              ),
               const SizedBox(height: 20),
               OnboardingAnchor(
                 id: OnboardingAnchorIds.homeCreateChallengeButton,
@@ -302,7 +323,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 24),
               Text(
                 'MY COMPETITIONS',
-                style: AppTheme.display(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 1.0),
+                style: AppTheme.display(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.0,
+                ),
               ),
               const SizedBox(height: 12),
               HomeCompetitionsSection(uid: user.uid),
@@ -326,8 +351,7 @@ class _CreateChallengeButton extends StatefulWidget {
   const _CreateChallengeButton({required this.uid});
 
   @override
-  State<_CreateChallengeButton> createState() =>
-      _CreateChallengeButtonState();
+  State<_CreateChallengeButton> createState() => _CreateChallengeButtonState();
 }
 
 class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
@@ -350,15 +374,15 @@ class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
         .doc(widget.uid)
         .snapshots()
         .listen((doc) {
-      final data = doc.data();
-      if (!mounted) return;
-      setState(() {
-        _hasLoaded = true;
-        _createdAt = (data?['createdAt'] as Timestamp?)?.toDate();
-        _lastCompetitionCreatedAt =
-            (data?['lastCompetitionCreatedAt'] as Timestamp?)?.toDate();
-      });
-    }, onError: (Object e) => debugPrint('User doc stream error: $e'));
+          final data = doc.data();
+          if (!mounted) return;
+          setState(() {
+            _hasLoaded = true;
+            _createdAt = (data?['createdAt'] as Timestamp?)?.toDate();
+            _lastCompetitionCreatedAt =
+                (data?['lastCompetitionCreatedAt'] as Timestamp?)?.toDate();
+          });
+        }, onError: (Object e) => debugPrint('User doc stream error: $e'));
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -438,11 +462,13 @@ class _CreateChallengeButtonState extends State<_CreateChallengeButton> {
 }
 
 // ─────────────────────────────────────────────
-// Respect card: Respect received (left), the wallet of Respect to give
-// (right, RespectStore.walletCapacity slots), and — only while the wallet
-// has room — a countdown to the next server (UTC) day, when the daily grant
-// unlocks. Balance is fed into RespectStore so every Give Respect button on
-// the page shares the same live number.
+// Respect card. Left column: Respect received on one line, plus — only
+// while the wallet has room — a countdown to the next server (UTC) day,
+// when the daily grant unlocks; the pair is centred, so with the wallet
+// full the received line sits on its own in the middle. Right column: the
+// wallet of Respect to give (RespectStore.walletCapacity slots). Balance is
+// fed into RespectStore so every Give Respect button on the page shares the
+// same live number.
 // ─────────────────────────────────────────────
 
 const _respectPurple = Color(0xFFB69CFB);
@@ -470,9 +496,7 @@ class _RespectSummaryState extends State<_RespectSummary> {
   @override
   void initState() {
     super.initState();
-    _userDocSub = widget.firestoreService.getUserDoc(widget.uid).listen((
-      doc,
-    ) {
+    _userDocSub = widget.firestoreService.getUserDoc(widget.uid).listen((doc) {
       final data = doc.data();
       final balance = (data?['respectBalance'] as num?)?.toInt() ?? 0;
       RespectStore.instance.updateServerBalance(balance);
@@ -504,6 +528,12 @@ class _RespectSummaryState extends State<_RespectSummary> {
     super.dispose();
   }
 
+  // Must match the server's UTC-day grant (functions/src/respect/).
+  Duration _untilNextGrant() {
+    final now = DateTime.now().toUtc();
+    return DateTime.utc(now.year, now.month, now.day + 1).difference(now);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -517,26 +547,30 @@ class _RespectSummaryState extends State<_RespectSummary> {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: _respectLine),
           ),
-          child: Column(
-            children: [
-              IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(child: _ReceivedPanel(total: _totalReceived)),
-                    const VerticalDivider(
-                      width: 1,
-                      thickness: 1,
-                      indent: 16,
-                      endIndent: 16,
-                      color: _respectLine,
-                    ),
-                    Expanded(child: _WalletPanel(wallet: wallet)),
-                  ],
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _ReceivedPanel(
+                    total: _totalReceived,
+                    // Rebuilt every tick with a fresh value, so the
+                    // countdown can't be skipped as an unchanged widget.
+                    remaining: RespectStore.instance.isWalletFull
+                        ? null
+                        : _untilNextGrant(),
+                  ),
                 ),
-              ),
-              if (!RespectStore.instance.isWalletFull) const _NextRespectRow(),
-            ],
+                const VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  indent: 16,
+                  endIndent: 16,
+                  color: _respectLine,
+                ),
+                _WalletPanel(wallet: wallet),
+              ],
+            ),
           ),
         );
       },
@@ -562,7 +596,11 @@ class _RespectLabel extends StatelessWidget {
 
 class _ReceivedPanel extends StatelessWidget {
   final int total;
-  const _ReceivedPanel({required this.total});
+
+  /// Time until the next daily grant, or null while the wallet is full.
+  final Duration? remaining;
+
+  const _ReceivedPanel({required this.total, required this.remaining});
 
   @override
   Widget build(BuildContext context) {
@@ -570,9 +608,8 @@ class _ReceivedPanel extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const _RespectLabel('RECEIVED'),
-          const SizedBox(height: 10),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -581,29 +618,47 @@ class _ReceivedPanel extends StatelessWidget {
                   fit: BoxFit.scaleDown,
                   child: Text(
                     '$total',
-                    style: AppTheme.mono(
-                      fontSize: 44,
-                      fontWeight: FontWeight.w800,
-                      color: _respectPurple,
-                    ).copyWith(
-                      shadows: [
-                        Shadow(
-                          color: _respectPurple.withValues(alpha: 0.5),
-                          blurRadius: 16,
+                    style:
+                        AppTheme.mono(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: _respectPurple,
+                        ).copyWith(
+                          shadows: [
+                            Shadow(
+                              color: _respectPurple.withValues(alpha: 0.5),
+                              blurRadius: 16,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               PhosphorIcon(
                 PhosphorIconsFill.pawPrint,
-                size: 22,
+                size: 18,
                 color: _respectPurple,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'received',
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTheme.display(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                    color: _respectMuted,
+                  ),
+                ),
               ),
             ],
           ),
+          if (remaining != null) ...[
+            const SizedBox(height: 10),
+            _NextRespectBar(remaining: remaining!),
+          ],
         ],
       ),
     );
@@ -620,34 +675,29 @@ class _WalletPanel extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           const _RespectLabel('TO GIVE'),
           const SizedBox(height: 10),
-          // Plain rows, not a GridView: the card's IntrinsicHeight needs
-          // intrinsic sizes, which scrollable viewports can't report.
+          // Fixed-size slots in plain rows: the panel sizes itself to the
+          // slots instead of stretching them across half the card.
           for (var row = 0; row * 3 < RespectStore.walletCapacity; row++) ...[
-            if (row > 0) const SizedBox(height: 8),
+            if (row > 0) const SizedBox(height: 6),
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 for (var col = 0; col < 3; col++) ...[
-                  if (col > 0) const SizedBox(width: 8),
-                  Expanded(
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: row * 3 + col < RespectStore.walletCapacity
-                          ? _WalletSlot(filled: row * 3 + col < wallet)
-                          : const SizedBox.shrink(),
-                    ),
-                  ),
+                  if (col > 0) const SizedBox(width: 6),
+                  _WalletSlot(filled: row * 3 + col < wallet),
                 ],
               ],
             ),
           ],
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
             '$wallet/${RespectStore.walletCapacity}',
             style: AppTheme.mono(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
               color: wallet > 0 ? _respectTeal : _respectMuted,
             ),
@@ -666,11 +716,13 @@ class _WalletSlot extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
+      width: 26,
+      height: 26,
       decoration: BoxDecoration(
         color: filled
             ? _respectTeal.withValues(alpha: 0.12)
             : Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: filled ? _respectTeal.withValues(alpha: 0.45) : _respectLine,
         ),
@@ -686,7 +738,7 @@ class _WalletSlot extends StatelessWidget {
       child: Center(
         child: PhosphorIcon(
           PhosphorIconsFill.pawPrint,
-          size: 16,
+          size: 13,
           color: filled ? _respectTeal : _respectLine,
         ),
       ),
@@ -694,8 +746,11 @@ class _WalletSlot extends StatelessWidget {
   }
 }
 
-class _NextRespectRow extends StatelessWidget {
-  const _NextRespectRow();
+/// Countdown to the next daily grant, drawn as a bar whose teal fill grows
+/// from the left as the day runs out — full right before the grant lands.
+class _NextRespectBar extends StatelessWidget {
+  final Duration remaining;
+  const _NextRespectBar({required this.remaining});
 
   String _format(Duration d) {
     final hh = d.inHours.toString().padLeft(2, '0');
@@ -706,70 +761,65 @@ class _NextRespectRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Must match the server's UTC-day grant (functions/src/respect/).
-    final now = DateTime.now().toUtc();
-    final remaining = DateTime.utc(
-      now.year,
-      now.month,
-      now.day + 1,
-    ).difference(now);
-    final dayElapsed = 1 - remaining.inSeconds / Duration.secondsPerDay;
+    final elapsed = (1 - remaining.inSeconds / Duration.secondsPerDay).clamp(
+      0.0,
+      1.0,
+    );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: _respectPurple.withValues(alpha: 0.05),
-        border: const Border(top: BorderSide(color: _respectLine)),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 14, 20, 14),
-      child: Row(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Stack(
         children: [
-          SizedBox(
-            width: 52,
-            height: 52,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox.expand(
-                  child: CircularProgressIndicator(
-                    value: dayElapsed,
-                    strokeWidth: 4,
-                    strokeCap: StrokeCap.round,
-                    backgroundColor: _respectLine,
-                    color: const Color(0xFF8B5CF6),
-                  ),
+          Positioned.fill(
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: elapsed,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _respectTeal.withValues(alpha: 0.22),
                 ),
-                PhosphorIcon(
-                  PhosphorIconsFill.pawPrint,
-                  size: 18,
-                  color: _respectPurple,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              _format(remaining),
-              style: AppTheme.mono(
-                fontSize: 26,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
               ),
             ),
           ),
-          Text(
-            '+1',
-            style: AppTheme.mono(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _respectMuted,
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _respectTeal.withValues(alpha: 0.35)),
             ),
-          ),
-          const SizedBox(width: 4),
-          PhosphorIcon(
-            PhosphorIconsFill.pawPrint,
-            size: 16,
-            color: _respectMuted,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      _format(remaining),
+                      style: AppTheme.mono(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '+1',
+                  style: AppTheme.mono(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: _respectTeal,
+                  ),
+                ),
+                const SizedBox(width: 3),
+                PhosphorIcon(
+                  PhosphorIconsFill.pawPrint,
+                  size: 13,
+                  color: _respectTeal,
+                ),
+              ],
+            ),
           ),
         ],
       ),

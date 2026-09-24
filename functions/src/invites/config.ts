@@ -17,6 +17,19 @@ export function buildInviteUrl(linkId: string): string {
 }
 
 /**
+ * The same invite, opened in the Flutter web app instead of the native one.
+ *
+ * Deliberately not `/i/{linkId}` — Hosting rewrites that path to the
+ * `inviteLanding` function (this very page), so it can never reach the web
+ * app. `/join/` falls through to the SPA rewrite instead.
+ * @param {string} linkId The invite link's document id.
+ * @return {string} A URL that opens this invite in the web app.
+ */
+export function buildWebAppInviteUrl(linkId: string): string {
+  return `${INVITE_LINK_BASE_URL}/join/${linkId}`;
+}
+
+/**
  * Builds an Android `intent://` URI for the given invite link. Unlike a
  * plain https href, this forces Chrome to re-resolve the link as an
  * external intent even when tapped from inside a tab already showing

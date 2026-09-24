@@ -85,6 +85,7 @@ class _ChallengeInviteScreenState extends State<ChallengeInviteScreen> {
             InviteLinkCard(
               competitionId: widget.competitionId,
               competitionTitle: widget.competitionTitle,
+              prewarm: true,
             ),
             const SizedBox(height: 24),
 

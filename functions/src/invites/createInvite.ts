@@ -12,8 +12,10 @@ interface CreateInviteRequest {
 // fixed window instead.
 const DEFAULT_EXPIRY_DAYS = 30;
 
+// minInstances: 1 — the user is staring at a spinner on the Share button
+// until this returns, so a cold start here is felt directly.
 export const createInvite = onCall<CreateInviteRequest>(
-  {maxInstances: 5},
+  {maxInstances: 5, minInstances: 1},
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -27,7 +29,25 @@ export const createInvite = onCall<CreateInviteRequest>(
 
     const db = admin.firestore();
     const competitionRef = db.collection("competitions").doc(competitionId);
-    const competitionSnap = await competitionRef.get();
+
+    // The permission check needs the competition doc and the reuse check
+    // needs the existing-links query, but neither depends on the other —
+    // issuing them together saves a round trip on the path the user is
+    // waiting on. The permission check is still applied before anything is
+    // read out of the query's result or written.
+    //
+    // Reuse an existing active link rather than minting a new one on every
+    // tap of "Share" — avoids link proliferation for the same challenge.
+    const [competitionSnap, existingSnap] = await Promise.all([
+      competitionRef.get(),
+      db
+        .collection("challenge_invite_links")
+        .where("competitionId", "==", competitionId)
+        .where("createdBy", "==", uid)
+        .where("revoked", "==", false)
+        .limit(5)
+        .get(),
+    ]);
 
     if (!competitionSnap.exists) {
       throw new HttpsError("not-found", "Challenge not found.");
@@ -42,16 +62,6 @@ export const createInvite = onCall<CreateInviteRequest>(
         "Only participants can create an invite link for this challenge."
       );
     }
-
-    // Reuse an existing active link rather than minting a new one on every
-    // tap of "Share" — avoids link proliferation for the same challenge.
-    const existingSnap = await db
-      .collection("challenge_invite_links")
-      .where("competitionId", "==", competitionId)
-      .where("createdBy", "==", uid)
-      .where("revoked", "==", false)
-      .limit(5)
-      .get();
 
     const now = Date.now();
     const stillValid = existingSnap.docs.find((doc) => {
@@ -69,9 +79,6 @@ export const createInvite = onCall<CreateInviteRequest>(
       return {linkId: stillValid.id, url: buildInviteUrl(stillValid.id)};
     }
 
-    const userSnap = await db.collection("users").doc(uid).get();
-    const createdByUsername = userSnap.data()?.username ?? "Someone";
-
     const competitionType =
       (competitionData.type as string) ?? "personalGoalChallenge";
 
@@ -82,6 +89,17 @@ export const createInvite = onCall<CreateInviteRequest>(
     // personalGoalChallenge stores each participant's own goal on their
     // participants/{uid} subdoc, not on the competition doc itself — read
     // the creator's own goal there for the invite's "for reference" preview.
+    // Fetched alongside the username rather than after it: both are just
+    // display fields for the link, with no dependency between them.
+    const [userSnap, creatorParticipantSnap] = await Promise.all([
+      db.collection("users").doc(uid).get(),
+      competitionType === "sharedGoalChallenge" ?
+        Promise.resolve(null) :
+        competitionRef.collection("participants").doc(uid).get(),
+    ]);
+
+    const createdByUsername = userSnap.data()?.username ?? "Someone";
+
     let goalPreviewFields: Record<string, unknown> = {};
     if (competitionType === "sharedGoalChallenge") {
       goalPreviewFields = {
@@ -90,11 +108,7 @@ export const createInvite = onCall<CreateInviteRequest>(
         sharedUnit: competitionData.sharedUnit ?? null,
       };
     } else {
-      const creatorParticipantSnap = await competitionRef
-        .collection("participants")
-        .doc(uid)
-        .get();
-      const creatorParticipantData = creatorParticipantSnap.data() || {};
+      const creatorParticipantData = creatorParticipantSnap?.data() || {};
       goalPreviewFields = {
         creatorGoalTitle: creatorParticipantData.goalTitle ?? null,
         creatorTargetValue: creatorParticipantData.targetValue ?? null,

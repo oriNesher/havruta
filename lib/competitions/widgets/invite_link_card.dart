@@ -14,10 +14,19 @@ class InviteLinkCard extends StatefulWidget {
   final String competitionId;
   final String competitionTitle;
 
+  /// Fetches the link as soon as the card mounts, instead of on the first
+  /// tap, so Share opens the sheet with no round trip in between. Only set
+  /// where sharing is the point of the screen (ChallengeInviteScreen) —
+  /// createInvite mints a real, 30-day bearer link on a cache miss, so
+  /// somewhere the card is just one section among many (challenge details)
+  /// shouldn't create one for a participant who was only passing through.
+  final bool prewarm;
+
   const InviteLinkCard({
     super.key,
     required this.competitionId,
     required this.competitionTitle,
+    this.prewarm = false,
   });
 
   @override
@@ -28,12 +37,39 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
   final _inviteService = InviteService();
   bool _isCreatingLink = false;
 
+  // Held for the card's lifetime so a second action (share, then copy)
+  // doesn't pay for the callable again. createInvite already returns the
+  // same link for repeat calls, so this only removes the wait, never
+  // changes which link is handed out.
+  Future<({String linkId, String url})>? _invite;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.prewarm) _prewarm();
+  }
+
+  Future<void> _prewarm() async {
+    try {
+      await _resolveInvite();
+    } catch (_) {
+      // Nothing is on screen to report this to yet, and the first tap
+      // retries properly — but the rejection still has to be caught here
+      // or it surfaces as an uncaught exception in the zone.
+      _invite = null;
+    }
+  }
+
+  Future<({String linkId, String url})> _resolveInvite() {
+    final pending = _invite ??=
+        _inviteService.createInvite(competitionId: widget.competitionId);
+    return pending;
+  }
+
   Future<void> _shareLink() async {
     setState(() => _isCreatingLink = true);
     try {
-      final invite = await _inviteService.createInvite(
-        competitionId: widget.competitionId,
-      );
+      final invite = await _resolveInvite();
 
       if (!mounted) return;
       await SharePlus.instance.share(
@@ -46,6 +82,9 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
         InviteLinkShared(competitionId: widget.competitionId, method: 'share'),
       );
     } catch (e) {
+      // Drop the cached failure so the next tap genuinely retries rather
+      // than replaying the same rejected future forever.
+      _invite = null;
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -58,9 +97,7 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
   Future<void> _copyLink() async {
     setState(() => _isCreatingLink = true);
     try {
-      final invite = await _inviteService.createInvite(
-        competitionId: widget.competitionId,
-      );
+      final invite = await _resolveInvite();
       await Clipboard.setData(ClipboardData(text: invite.url));
       AppSignals.instance.emit(
         InviteLinkShared(competitionId: widget.competitionId, method: 'copy'),
@@ -70,6 +107,7 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
         context,
       ).showSnackBar(const SnackBar(content: Text('Invite link copied')));
     } catch (e) {
+      _invite = null;
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

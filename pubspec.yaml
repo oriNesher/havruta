@@ -47,6 +47,9 @@ dependencies:
   share_plus: ^11.0.0
   app_links: ^6.3.3
   shared_preferences: ^2.3.3
+  # Browser APIs (Blob/anchor download) used only by the web-side
+  # conditional import in lib/services/file_download_web.dart.
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

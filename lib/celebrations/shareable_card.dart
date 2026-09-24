@@ -1,11 +1,13 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../app_theme.dart';
+import '../services/platform_web.dart';
 
 const Color _cardBase = Color(0xFF181824);
 const Color _screenBase = Color(0xFF0F0F17);
@@ -29,7 +31,11 @@ class ShareableCard extends StatelessWidget {
   final Widget child;
   final Color accentColor;
 
-  const ShareableCard({super.key, required this.child, required this.accentColor});
+  const ShareableCard({
+    super.key,
+    required this.child,
+    required this.accentColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -75,11 +81,16 @@ class ShareableCard extends StatelessWidget {
 }
 
 /// Rasterizes the [RepaintBoundary] identified by [boundaryKey] to PNG bytes
-/// and opens the native share sheet with them alongside [shareText].
+/// and hands them to the user alongside [shareText].
 ///
-/// Returns whether the share sheet was actually presented (false if the
-/// card couldn't be captured). Resolves once the sheet is dismissed; what,
-/// if anything, the user shared is not knowable.
+/// On Android and iOS this opens the native share sheet. Browsers only
+/// expose a share sheet through the Web Share API, and most desktop ones
+/// refuse file payloads outright, so web degrades to downloading the card
+/// and copying the text — the user still ends up with both pieces.
+///
+/// Returns whether anything was actually presented to the user (false if
+/// the card couldn't be captured). Resolves once the sheet is dismissed;
+/// what, if anything, the user shared is not knowable.
 Future<bool> captureAndShareCard({
   required GlobalKey boundaryKey,
   required String shareText,
@@ -93,18 +104,27 @@ Future<bool> captureAndShareCard({
   if (byteData == null) return false;
   final Uint8List bytes = byteData.buffer.asUint8List();
 
-  await SharePlus.instance.share(
-    ShareParams(
-      text: shareText,
-      subject: subject,
-      files: [
-        XFile.fromData(
-          bytes,
-          mimeType: 'image/png',
-          name: 'havruta-celebration.png',
-        ),
-      ],
-    ),
+  const filename = 'havruta-celebration.png';
+
+  final params = ShareParams(
+    text: shareText,
+    subject: subject,
+    files: [XFile.fromData(bytes, mimeType: 'image/png', name: filename)],
   );
+
+  if (!kIsWeb) {
+    await SharePlus.instance.share(params);
+    return true;
+  }
+
+  try {
+    final result = await SharePlus.instance.share(params);
+    if (result.status != ShareResultStatus.unavailable) return true;
+  } catch (_) {
+    // Browser has no Web Share API, or refuses file payloads. Fall through.
+  }
+
+  await Clipboard.setData(ClipboardData(text: shareText));
+  await downloadBytes(bytes: bytes, filename: filename, mimeType: 'image/png');
   return true;
 }

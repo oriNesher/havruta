@@ -8,12 +8,14 @@ class AppTheme {
     FontWeight? fontWeight,
     Color? color,
     double? letterSpacing,
+    double? height,
   }) =>
       GoogleFonts.barlowCondensed(
         fontSize: fontSize,
         fontWeight: fontWeight,
         color: color,
         letterSpacing: letterSpacing,
+        height: height,
       );
 
   // Use these helpers wherever numbers / stats / percentages appear inline

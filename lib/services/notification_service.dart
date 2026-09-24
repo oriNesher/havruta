@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 
 class NotificationService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -8,6 +9,17 @@ class NotificationService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Future<void> initNotifications() async {
+    // Web push is deliberately off: it needs a service worker
+    // (web/firebase-messaging-sw.js) plus a Web Push VAPID key, and
+    // getToken() throws without them. Returning early also spares web
+    // users a browser notification prompt the moment they sign in.
+    // To enable later: register the service worker, then pass the VAPID
+    // key to getToken(vapidKey: ...) below.
+    if (kIsWeb) {
+      debugPrint('Push notifications are not enabled on web; skipping.');
+      return;
+    }
+
     final user = _auth.currentUser;
     if (user == null) return;
 

@@ -49,17 +49,23 @@
     }
   ],
   "hosting": {
-    "public": "web",
+    "_comment_public": "The BUILT app, not the web/ source folder. Deploying web/ ships an index.html whose flutter_bootstrap.js was never generated, i.e. a blank page. Always run `flutter build web` immediately before deploying.",
+    "public": "build/web",
     "ignore": [
       "firebase.json",
       "**/.*",
       "!/.well-known/**",
       "**/node_modules/**"
     ],
+    "_comment_rewrites": "ORDER MATTERS: Firebase takes the first match. /i/** must stay above the SPA catch-all, or invite links stop reaching inviteLanding and the link-preview cards that messaging apps scrape go with them. Real files (privacy.html, .well-known/*) are served before any rewrite is considered.",
     "rewrites": [
       {
         "source": "/i/**",
         "function": "inviteLanding"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
       }
     ],
     "headers": [
@@ -67,6 +73,34 @@
         "source": "/.well-known/apple-app-site-association",
         "headers": [
           { "key": "Content-Type", "value": "application/json" }
+        ]
+      },
+      {
+        "_comment": "Flutter does not content-hash main.dart.js, so a cached shell pointing at a previous deploy's assets is the failure mode to avoid. These three decide what everything else resolves to, so they must never be stale. Other assets keep Firebase's safe 1-hour default. Listed separately rather than as one extglob, which silently matched nothing.",
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/flutter_service_worker.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/version.json",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
         ]
       }
     ]

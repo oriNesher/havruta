@@ -8,6 +8,7 @@ import '../services/app_signals.dart';
 import 'celebration_types.dart';
 import 'celebration_visuals.dart';
 import 'shareable_card.dart';
+import 'swipe_up_to_dismiss.dart';
 import 'trash_talk_copy.dart';
 
 /// Shown after the actor confirms a celebration (possibly for several
@@ -84,97 +85,100 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
     final accentColor = Theme.of(context).colorScheme.secondary;
     final screenColor = screenTintColor(accentColor);
 
-    return Scaffold(
+    return SwipeUpToDismiss(
       backgroundColor: screenColor,
-      appBar: AppBar(
+      child: Scaffold(
         backgroundColor: screenColor,
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(),
-          tooltip: 'Dismiss',
+        appBar: AppBar(
+          backgroundColor: screenColor,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+            tooltip: 'Dismiss',
+          ),
+          title: Text(
+            'Trash Talk',
+            style: AppTheme.display(fontWeight: FontWeight.w700),
+          ),
         ),
-        title: Text(
-          'Trash Talk',
-          style: AppTheme.display(fontWeight: FontWeight.w700),
-        ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    child: OnboardingAnchor(
-                      id: OnboardingAnchorIds.trashTalkCard(_batchId),
-                      child: RepaintBoundary(
-                        key: _cardKey,
-                        child: ShareableCard(
-                          accentColor: accentColor,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              AnimatedBuilder(
-                                animation: _messageController,
-                                builder: (context, _) => Text(
-                                  _messageController.text.isEmpty
-                                      ? ' '
-                                      : _messageController.text,
-                                  style: AppTheme.display(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      child: OnboardingAnchor(
+                        id: OnboardingAnchorIds.trashTalkCard(_batchId),
+                        child: RepaintBoundary(
+                          key: _cardKey,
+                          child: ShareableCard(
+                            accentColor: accentColor,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _messageController,
+                                  builder: (context, _) => Text(
+                                    _messageController.text.isEmpty
+                                        ? ' '
+                                        : _messageController.text,
+                                    style: AppTheme.display(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 16),
-                              for (final event in _sortedEvents)
-                                CelebrationEventRow(event: event),
-                            ],
+                                const SizedBox(height: 16),
+                                for (final event in _sortedEvents)
+                                  CelebrationEventRow(event: event),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _messageController,
-                maxLines: 4,
-                minLines: 2,
-                decoration: const InputDecoration(labelText: 'Your message'),
-              ),
-              const SizedBox(height: 16),
-              OnboardingAnchor(
-                id: OnboardingAnchorIds.trashTalkShareButton(_batchId),
-                child: ElevatedButton(
-                  onPressed: _isSharing ? null : _share,
-                  style: ElevatedButton.styleFrom(backgroundColor: accentColor),
-                  child: _isSharing
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.ios_share, size: 18),
-                            SizedBox(width: 8),
-                            Text('SHARE'),
-                          ],
-                        ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _messageController,
+                  maxLines: 4,
+                  minLines: 2,
+                  decoration: const InputDecoration(labelText: 'Your message'),
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                OnboardingAnchor(
+                  id: OnboardingAnchorIds.trashTalkShareButton(_batchId),
+                  child: ElevatedButton(
+                    onPressed: _isSharing ? null : _share,
+                    style: ElevatedButton.styleFrom(backgroundColor: accentColor),
+                    child: _isSharing
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.ios_share, size: 18),
+                              SizedBox(width: 8),
+                              Text('SHARE'),
+                            ],
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

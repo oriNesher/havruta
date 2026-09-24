@@ -10,6 +10,7 @@ import '../competitions/competition_event.dart';
 import '../onboarding/onboarding_anchor.dart';
 import '../onboarding/onboarding_ids.dart';
 import '../services/firestore_service.dart';
+import '../services/hold_statement_store.dart';
 import '../services/last_progress_amount_store.dart';
 import '../services/progress_snapshot_cache.dart';
 import '../services/respect_service.dart';
@@ -421,6 +422,7 @@ class _ParticipantsList extends StatefulWidget {
 class _ParticipantsListState extends State<_ParticipantsList> {
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
   final _lastAmountStore = LastProgressAmountStore();
+  final _holdStatementStore = HoldStatementStore();
   Map<String, int>? _lastSeenProgress;
   bool _loggingProgress = false;
 
@@ -451,12 +453,14 @@ class _ParticipantsListState extends State<_ParticipantsList> {
       widget.currentUid,
       widget.competitionId,
     );
+    final holdStatement = await _holdStatementStore.currentStatement();
     if (!mounted) return;
 
     final amount = await showAddProgressDialog(
       context,
       competitionId: widget.competitionId,
       initialAmount: lastAmount ?? 1,
+      holdStatement: holdStatement,
     );
     if (amount == null) return;
 
@@ -466,6 +470,7 @@ class _ParticipantsListState extends State<_ParticipantsList> {
       widget.competitionId,
       amount,
     );
+    await _holdStatementStore.advance();
   }
 
   Future<void> _submitProgress(int amount) async {
@@ -1471,18 +1476,21 @@ class _AddProgressButton extends StatelessWidget {
 const List<int> _quickAddAmounts = [1, 5, 25];
 
 /// Shows the add-progress popup for [competitionId], prefilled with
-/// [initialAmount]. Returns the submitted amount once the user completes the
-/// hold-to-submit gesture, or null if they cancelled.
+/// [initialAmount] and showing [holdStatement] in the gap above the submit
+/// button while the hold runs. Returns the submitted amount once the user
+/// completes the hold-to-submit gesture, or null if they cancelled.
 Future<int?> showAddProgressDialog(
   BuildContext context, {
   required String competitionId,
   required int initialAmount,
+  required String holdStatement,
 }) {
   return showDialog<int>(
     context: context,
     builder: (dialogContext) => _AddProgressDialog(
       competitionId: competitionId,
       initialAmount: initialAmount,
+      holdStatement: holdStatement,
     ),
   );
 }
@@ -1490,10 +1498,12 @@ Future<int?> showAddProgressDialog(
 class _AddProgressDialog extends StatefulWidget {
   final String competitionId;
   final int initialAmount;
+  final String holdStatement;
 
   const _AddProgressDialog({
     required this.competitionId,
     required this.initialAmount,
+    required this.holdStatement,
   });
 
   @override
@@ -1509,6 +1519,8 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
   // while the field could still touch it, crashing mid-frame.
   late final TextEditingController _controller =
       TextEditingController(text: '${widget.initialAmount}');
+
+  bool _isHolding = false;
 
   @override
   void dispose() {
@@ -1567,10 +1579,41 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
                     )
                     .toList(),
               ),
-              const SizedBox(height: 20),
+              // Deliberate breathing room between the quick-add chips and
+              // the submit button: the hold's encouragement lives here, and
+              // reserving the space unconditionally keeps the button from
+              // jumping under a finger that's already pressing it.
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 44,
+                child: AnimatedOpacity(
+                  opacity: _isHolding ? 1 : 0,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOut,
+                  child: Center(
+                    child: Text(
+                      widget.holdStatement,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      style: AppTheme.display(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                        color: green,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               _HoldToSubmitButton(
                 enabled: _currentAmount() > 0,
                 color: green,
+                onHoldChanged: (holding) {
+                  if (_isHolding != holding) {
+                    setState(() => _isHolding = holding);
+                  }
+                },
                 onConfirmed: () => Navigator.of(context).pop(_currentAmount()),
               ),
             ],
@@ -1598,11 +1641,17 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
 class _HoldToSubmitButton extends StatefulWidget {
   final bool enabled;
   final Color color;
+
+  /// Fired with true the moment a hold starts and false once it's released
+  /// or confirmed, so the dialog can reveal its encouragement above the
+  /// button for exactly as long as the finger is down.
+  final ValueChanged<bool> onHoldChanged;
   final VoidCallback onConfirmed;
 
   const _HoldToSubmitButton({
     required this.enabled,
     required this.color,
+    required this.onHoldChanged,
     required this.onConfirmed,
   });
 
@@ -1635,12 +1684,14 @@ class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
     // confirmation — a release partway through animates back to 0 instead
     // of completing, so this only ever fires for a genuine full-length hold.
     if (status == AnimationStatus.completed) {
+      widget.onHoldChanged(false);
       widget.onConfirmed();
     }
   }
 
   void _startHold() {
     if (!mounted || !widget.enabled) return;
+    widget.onHoldChanged(true);
     _controller.forward(from: 0);
   }
 
@@ -1648,7 +1699,12 @@ class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
     // The dialog closes as soon as a hold completes (see _onStatusChanged),
     // which can leave a pointer-up still in flight for the pointer that
     // completed it — guard against acting on a disposed controller.
-    if (!mounted || _controller.value == 0) return;
+    if (!mounted) return;
+    // Reported before the value guard below: a tap released within the same
+    // frame it started never moves the controller off 0, and skipping the
+    // report there would leave the statement showing with no hold running.
+    widget.onHoldChanged(false);
+    if (_controller.value == 0) return;
     _controller.animateBack(0, duration: const Duration(milliseconds: 200));
   }
 
