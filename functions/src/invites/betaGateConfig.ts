@@ -3,6 +3,11 @@
  * beta gate needs lives here — the invite schema, callables, and App Links
  * setup never reference this file directly, only landingHandler.ts does.
  *
+ * Since the web app shipped this is the secondary route, not the only one:
+ * the landing page offers "Open in browser" above this section, which needs
+ * no install and no testers-group membership. The copy below is written to
+ * read as "if you'd rather have the native app", not as a toll gate.
+ *
  * To retire the beta gate once Havruta is publicly available: set
  * `enabled` to false (or delete this file and the one `if` block in
  * landingHandler.ts that reads it). No other file needs to change.
@@ -14,6 +19,7 @@ export const BETA_GATE_CONFIG = {
   googleGroupUrl: "https://groups.google.com/g/havruta-beta-testers",
   playListingUrl: "https://play.google.com/store/apps/details?id=com.orinesher.havruta&pli=1",
   instructions:
-    "Havruta is in closed testing right now. Join our testers group, " +
-    "then open the Play Store link below to install the beta.",
+    "Prefer the Android app? It's still in closed testing — join our " +
+    "testers group, then install it from Google Play. The browser " +
+    "version above needs none of this.",
 };

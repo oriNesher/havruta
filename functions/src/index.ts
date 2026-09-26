@@ -217,17 +217,17 @@ export const onParticipantProgressUpdate = onDocumentUpdated(
   },
 );
 
-// minInstances: 1 — this trigger sits directly between "user logs
-// progress" and "celebration screen appears", so its cold start (a few
-// seconds of loading firebase-admin before a single line of rule code
-// runs) was the whole perceived delay. One warm instance removes it; the
-// other progress triggers are background work nobody is waiting on, so
-// they stay cold.
+// This trigger sits directly between "user logs progress" and
+// "celebration screen appears", so its cold start (a few seconds of
+// loading firebase-admin before a single line of rule code runs) is the
+// whole perceived delay. A reserved warm instance would remove it, but
+// minInstances bills continuously whether or not anyone is using the app
+// — not worth it at the current user count. Revisit once traffic makes a
+// warm instance cheaper than the wait.
 export const onParticipantProgressCreateEvents = onDocumentUpdated(
   {
     document: "competitions/{competitionId}/participants/{participantId}",
     maxInstances: 5,
-    minInstances: 1,
     concurrency: 1,
   },
   async (event) => {

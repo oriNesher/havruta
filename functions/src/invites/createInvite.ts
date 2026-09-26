@@ -12,10 +12,12 @@ interface CreateInviteRequest {
 // fixed window instead.
 const DEFAULT_EXPIRY_DAYS = 30;
 
-// minInstances: 1 — the user is staring at a spinner on the Share button
-// until this returns, so a cold start here is felt directly.
+// The user is staring at a spinner on the Share button until this
+// returns, so a cold start here is felt directly — but a reserved warm
+// instance bills around the clock, so the batched reads below carry the
+// latency work instead and the cold start is accepted for now.
 export const createInvite = onCall<CreateInviteRequest>(
-  {maxInstances: 5, minInstances: 1},
+  {maxInstances: 5},
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
