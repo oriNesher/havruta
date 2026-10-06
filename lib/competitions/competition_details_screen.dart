@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_theme.dart';
 import '../services/firestore_service.dart';
 import 'competition_invite_section.dart';
+import 'widgets/challenge_activity_graph.dart';
 import 'widgets/invite_link_card.dart';
 
 class CompetitionDetailsScreen extends StatefulWidget {
@@ -370,32 +371,52 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 const SizedBox(height: 32),
               ],
 
-              Text(
-                'Participants',
-                style: theme.textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
-
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: firestoreService.getCompetitionParticipants(
                   widget.competitionId,
                 ),
                 builder: (context, snapshot) {
+                  final participantsHeading = [
+                    Text(
+                      'Participants',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 12),
+                  ];
+
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Center(child: CircularProgressIndicator()),
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ...participantsHeading,
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      ],
                     );
                   }
 
                   if (snapshot.hasError) {
-                    return Text('Error: ${snapshot.error}');
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ...participantsHeading,
+                        Text('Error: ${snapshot.error}'),
+                      ],
+                    );
                   }
 
                   final docs = snapshot.data?.docs ?? [];
 
                   if (docs.isEmpty) {
-                    return const Text('No participants yet');
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ...participantsHeading,
+                        const Text('No participants yet'),
+                      ],
+                    );
                   }
 
                   final participants = docs.map((doc) => doc.data()).toList();
@@ -415,7 +436,16 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                   });
 
                   return Column(
-                    children: participants.map((participant) {
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ChallengeActivityGraph(
+                        competitionId: widget.competitionId,
+                        participants: participants,
+                        currentUserUid: user?.uid,
+                      ),
+                      const SizedBox(height: 28),
+                      ...participantsHeading,
+                      ...participants.map((participant) {
                       final username = participant['username'] ?? '';
                       final uid = participant['uid'] ?? '';
                       final progress = participant['progress'] ?? 0;
@@ -547,7 +577,8 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                           ],
                         ),
                       );
-                    }).toList(),
+                    }),
+                    ],
                   );
                 },
               ),

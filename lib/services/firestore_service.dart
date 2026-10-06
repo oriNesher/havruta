@@ -540,6 +540,24 @@ class FirestoreService {
         .snapshots();
   }
 
+  /// Every event created in a competition since [since], oldest first.
+  /// Backs the Challenge Details activity graph, which picks the
+  /// progress-report events out client-side — filtering on type here
+  /// would need a composite (type, createdAt) index for no real saving.
+  Stream<QuerySnapshot<Map<String, dynamic>>> getCompetitionActivitySince(
+    String competitionId,
+    DateTime since,
+  ) {
+    return _db
+        .collection('competitions')
+        .doc(competitionId)
+        .collection('events')
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .orderBy('createdAt')
+        .limit(1000)
+        .snapshots();
+  }
+
   /// After showing an event, we want to mark it as seen
   Future<void> dismissEventsForUser(
     List<DocumentReference<Map<String, dynamic>>> eventRefs,
