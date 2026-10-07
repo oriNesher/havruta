@@ -122,8 +122,8 @@ export const inviteLanding = onRequest(
         <a class="btn btn-secondary" href="${BETA_GATE_CONFIG.googleGroupUrl}">
           1. Join the testers group
         </a>
-        <a class="btn btn-secondary" href="${BETA_GATE_CONFIG.playListingUrl}">
-          2. Install from Google Play
+        <a class="btn btn-secondary" href="${BETA_GATE_CONFIG.playOptInUrl}">
+          2. Become a tester &amp; install
         </a>
         <p class="muted">Then tap this link again to jump back in.</p>
       `;

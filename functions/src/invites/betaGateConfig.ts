@@ -17,9 +17,13 @@
 export const BETA_GATE_CONFIG = {
   enabled: true,
   googleGroupUrl: "https://groups.google.com/g/havruta-beta-testers",
-  playListingUrl: "https://play.google.com/store/apps/details?id=com.orinesher.havruta&pli=1",
+  // The opt-in page, not the Store listing: in closed testing the listing
+  // stays hidden until the tester taps "Become a tester" here, and the Play
+  // Store app reports that as a misleading "No connection" error.
+  playOptInUrl: "https://play.google.com/apps/testing/com.orinesher.havruta",
   instructions:
     "Prefer the Android app? It's still in closed testing — join our " +
-    "testers group, then install it from Google Play. The browser " +
+    "testers group, then tap \"Become a tester\" and install it from " +
+    "Google Play, signed in with that same Google account. The browser " +
     "version above needs none of this.",
 };
