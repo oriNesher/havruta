@@ -7,6 +7,14 @@
         { "fieldPath": "actorUid", "order": "ASCENDING" },
         { "fieldPath": "actorCelebrated", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "competitions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "endsAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

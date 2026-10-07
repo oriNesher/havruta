@@ -11,13 +11,15 @@ const NEAR_COMPLETION_THRESHOLD = 90;
  * progress only crosses the target once); "nearCompletion" when the actor
  * enters the final stretch without completing; "milestone" for the highest
  * newly-crossed threshold, excluding 90 whenever nearCompletion also fired
- * for the same crossing.
+ * for the same crossing. Races only: the other win conditions have no
+ * target to progress toward, and are decided by settleChallenges instead.
  * @param {EventsContext} context Shared context for this participant update.
  * @return {EventDraft[]} The progression event drafts to persist.
  */
 export function detectProgressionEvents(context: EventsContext): EventDraft[] {
   const {
     competitionTitle,
+    challenge,
     actorUid,
     actorUsername,
     actorTargetValue,
@@ -26,6 +28,10 @@ export function detectProgressionEvents(context: EventsContext): EventDraft[] {
     participantUids,
     completionsCount,
   } = context;
+
+  if (challenge.winCondition !== "firstToTarget") {
+    return [];
+  }
 
   if (typeof actorTargetValue !== "number" || actorTargetValue <= 0) {
     return [];

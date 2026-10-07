@@ -1,6 +1,8 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
+import {parseChallenge} from "../challenges/model";
+import {joinClosedReason, sharedGoalFields} from "../challenges/joining";
 
 interface RedeemInviteRequest {
   linkId: string;
@@ -74,11 +76,10 @@ export const redeemInvite = onCall<RedeemInviteRequest>(
       }
 
       const competitionData = competitionSnap.data() || {};
-      if (competitionData.status !== "active") {
-        throw new HttpsError(
-          "failed-precondition",
-          "This challenge is no longer active."
-        );
+      const challenge = parseChallenge(competitionData);
+      const closedReason = joinClosedReason(challenge, Date.now());
+      if (closedReason) {
+        throw new HttpsError("failed-precondition", closedReason);
       }
 
       const participantRef = competitionRef
@@ -101,16 +102,13 @@ export const redeemInvite = onCall<RedeemInviteRequest>(
       const userSnap = await tx.get(db.collection("users").doc(uid));
       const username = userSnap.data()?.username ?? "Someone";
 
-      const competitionType = competitionData.type as string;
-      let goalTitle: string;
-      let targetValue: number;
-      let unit: string;
+      let goalFields: {goalTitle: string; unit: string; targetValue?: number};
 
-      if (competitionType === "sharedGoalChallenge") {
-        goalTitle = competitionData.sharedGoalTitle ?? "";
-        targetValue = competitionData.sharedTargetValue ?? 0;
-        unit = competitionData.sharedUnit ?? "";
+      if (!challenge.isLegacyPersonal) {
+        goalFields = sharedGoalFields(challenge);
       } else {
+        // Pre-redesign Personal Goal challenges: each joiner brings their
+        // own goal. Kept only until those challenges are done.
         const {goalTitle: g, targetValue: t, unit: u} = request.data;
         if (!g || !t || t <= 0) {
           throw new HttpsError(
@@ -119,11 +117,9 @@ export const redeemInvite = onCall<RedeemInviteRequest>(
               "are required to join."
           );
         }
-        goalTitle = g;
-        targetValue = t;
         // Unit is an optional detail; the join dialog no longer asks for
         // it, and every display path already handles an empty unit.
-        unit = u ?? "";
+        goalFields = {goalTitle: g, targetValue: t, unit: u ?? ""};
       }
 
       tx.update(competitionRef, {
@@ -133,9 +129,7 @@ export const redeemInvite = onCall<RedeemInviteRequest>(
       tx.set(participantRef, {
         uid,
         username,
-        goalTitle,
-        targetValue,
-        unit,
+        ...goalFields,
         progress: 0,
         joinedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -145,9 +139,7 @@ export const redeemInvite = onCall<RedeemInviteRequest>(
         uid,
         username,
         redeemedAt: admin.firestore.FieldValue.serverTimestamp(),
-        ...(competitionType !== "sharedGoalChallenge" ?
-          {goalTitle, targetValue, unit} :
-          {}),
+        ...(challenge.isLegacyPersonal ? goalFields : {}),
       });
 
       tx.update(linkRef, {

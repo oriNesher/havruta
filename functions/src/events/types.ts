@@ -1,8 +1,13 @@
+import {ChallengeConfig} from "../challenges/model";
+
 export interface ParticipantData {
   uid: string;
   username?: string;
   progress?: number;
   targetValue?: number;
+  updatedAt?: FirebaseFirestore.Timestamp;
+  dailyProgress?: Record<string, number>;
+  eliminatedOnDay?: string;
 }
 
 export interface ExistingOpenEvent {
@@ -13,6 +18,7 @@ export interface ExistingOpenEvent {
 export interface EventsContext {
   competitionId: string;
   competitionTitle: string;
+  challenge: ChallengeConfig;
   actorUid: string;
   actorUsername: string;
   actorTargetValue: number;

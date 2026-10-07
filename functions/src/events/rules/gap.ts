@@ -28,12 +28,14 @@ function topTwo(wholePercents: number[]): {leader: number; second: number} {
  * enters a close range behind someone, "pullingAhead" when the actor (as
  * leader) newly opens a meaningful gap over 2nd place, and "closeRace" when
  * the leader crosses a checkpoint while still in a close race for 1st.
+ * Races only: the thresholds are percentage points of a target.
  * @param {EventsContext} context Shared context for this participant update.
  * @return {EventDraft[]} The gap event drafts to persist.
  */
 export function detectGapEvents(context: EventsContext): EventDraft[] {
   const {
     competitionTitle,
+    challenge,
     actorUid,
     actorUsername,
     actorTargetValue,
@@ -43,6 +45,10 @@ export function detectGapEvents(context: EventsContext): EventDraft[] {
     participantUids,
     firedCloseRaceCheckpoints,
   } = context;
+
+  if (challenge.winCondition !== "firstToTarget") {
+    return [];
+  }
 
   if (typeof actorTargetValue !== "number" || actorTargetValue <= 0) {
     return [];

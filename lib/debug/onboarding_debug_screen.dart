@@ -20,6 +20,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../app_theme.dart';
+import '../competitions/challenge.dart';
 import '../onboarding/modules/create_challenge_module.dart';
 import '../onboarding/modules/invite_people_module.dart';
 import '../onboarding/onboarding_controller.dart';
@@ -651,14 +652,15 @@ class _OnboardingDebugScreenState extends State<OnboardingDebugScreen> {
   Future<void> _p3AddUnrelatedChallenge() => _guard(() async {
         _header('P3 — add unrelated challenge (same title as A)');
         final user = await _db.collection('users').doc(_uid).get();
-        final id = await FirestoreService().createSharedGoalCompetition(
+        final id = await FirestoreService().createChallenge(
           title: _unrelatedChallengeTitle,
           description: 'TEMPORARY debug fixture — not an onboarding record.',
           createdBy: _uid,
           creatorUsername: user.data()?['username'] as String? ?? 'debug',
-          sharedGoalTitle: 'Debug unrelated goal',
-          sharedTargetValue: 2,
-          sharedUnit: 'invitations',
+          winCondition: WinCondition.firstToTarget,
+          goalTitle: 'Debug unrelated goal',
+          targetValue: 2,
+          unit: 'invitations',
         );
         _pass('created competitions/$id with Challenge A\'s title');
         _log('Its ADD PROGRESS must never be highlighted.');

@@ -2,6 +2,11 @@ import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import {buildInviteUrl} from "./config";
+import {parseChallenge} from "../challenges/model";
+import {
+  joinClosedReason,
+  joinClosesAtMillis,
+} from "../challenges/joining";
 
 interface CreateInviteRequest {
   competitionId: string;
@@ -66,6 +71,11 @@ export const createInvite = onCall<CreateInviteRequest>(
     }
 
     const now = Date.now();
+    const challenge = parseChallenge(competitionData);
+    const closedReason = joinClosedReason(challenge, now);
+    if (closedReason) {
+      throw new HttpsError("failed-precondition", closedReason);
+    }
     const stillValid = existingSnap.docs.find((doc) => {
       const expiresAt = doc.data().expiresAt as
         | admin.firestore.Timestamp
@@ -81,33 +91,40 @@ export const createInvite = onCall<CreateInviteRequest>(
       return {linkId: stillValid.id, url: buildInviteUrl(stillValid.id)};
     }
 
-    const competitionType =
-      (competitionData.type as string) ?? "personalGoalChallenge";
+    // Older app builds branch on this, so it stays the legacy type name.
+    const competitionType = challenge.isLegacyPersonal ?
+      "personalGoalChallenge" :
+      "sharedGoalChallenge";
 
-    const expiresAt = admin.firestore.Timestamp.fromMillis(
-      now + DEFAULT_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-    );
+    // A link never outlives the moment joining closes (the challenge's
+    // end, or for Last One Standing the end of day 1).
+    const expiresAt = admin.firestore.Timestamp.fromMillis(Math.min(
+      now + DEFAULT_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+      joinClosesAtMillis(challenge)
+    ));
 
-    // personalGoalChallenge stores each participant's own goal on their
-    // participants/{uid} subdoc, not on the competition doc itself — read
-    // the creator's own goal there for the invite's "for reference" preview.
-    // Fetched alongside the username rather than after it: both are just
-    // display fields for the link, with no dependency between them.
+    // Legacy personal challenges store each participant's own goal on
+    // their participants/{uid} subdoc, not on the competition doc itself —
+    // read the creator's own goal there for the invite's "for reference"
+    // preview. Fetched alongside the username rather than after it: both
+    // are just display fields for the link, with no dependency between them.
     const [userSnap, creatorParticipantSnap] = await Promise.all([
       db.collection("users").doc(uid).get(),
-      competitionType === "sharedGoalChallenge" ?
-        Promise.resolve(null) :
-        competitionRef.collection("participants").doc(uid).get(),
+      challenge.isLegacyPersonal ?
+        competitionRef.collection("participants").doc(uid).get() :
+        Promise.resolve(null),
     ]);
 
     const createdByUsername = userSnap.data()?.username ?? "Someone";
 
     let goalPreviewFields: Record<string, unknown> = {};
-    if (competitionType === "sharedGoalChallenge") {
+    if (!challenge.isLegacyPersonal) {
       goalPreviewFields = {
-        sharedGoalTitle: competitionData.sharedGoalTitle ?? null,
-        sharedTargetValue: competitionData.sharedTargetValue ?? null,
-        sharedUnit: competitionData.sharedUnit ?? null,
+        winCondition: challenge.winCondition,
+        sharedGoalTitle: challenge.goalTitle,
+        sharedTargetValue: challenge.targetValue,
+        sharedUnit: challenge.unit,
+        dailyMinimum: challenge.rules.dailyMinimum,
       };
     } else {
       const creatorParticipantData = creatorParticipantSnap?.data() || {};

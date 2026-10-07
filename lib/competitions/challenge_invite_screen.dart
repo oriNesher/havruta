@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../onboarding/onboarding_anchor.dart';
 import '../onboarding/onboarding_ids.dart';
 import '../services/app_signals.dart';
+import 'challenge.dart';
 import 'competition_invite_section.dart';
 import 'widgets/challenge_creation_stepper.dart';
 import 'widgets/invite_link_card.dart';
@@ -11,29 +12,13 @@ import 'widgets/invite_link_card.dart';
 /// Deliberately contains only two things: a shareable link and a search
 /// field — no locked-out form fields left over from the previous screen.
 class ChallengeInviteScreen extends StatefulWidget {
-  final String competitionId;
-  final String competitionTitle;
-  final String competitionType;
+  final Challenge challenge;
   final String currentUserUid;
-  final String? sharedGoalTitle;
-  final int? sharedTargetValue;
-  final String? sharedUnit;
-  final String? creatorGoalTitle;
-  final int? creatorTargetValue;
-  final String? creatorUnit;
 
   const ChallengeInviteScreen({
     super.key,
-    required this.competitionId,
-    required this.competitionTitle,
-    required this.competitionType,
+    required this.challenge,
     required this.currentUserUid,
-    this.sharedGoalTitle,
-    this.sharedTargetValue,
-    this.sharedUnit,
-    this.creatorGoalTitle,
-    this.creatorTargetValue,
-    this.creatorUnit,
   });
 
   @override
@@ -48,7 +33,7 @@ class _ChallengeInviteScreenState extends State<ChallengeInviteScreen> {
   @override
   void dispose() {
     AppSignals.instance.emit(
-      ChallengeInviteStepClosed(competitionId: widget.competitionId),
+      ChallengeInviteStepClosed(competitionId: widget.challenge.id),
     );
     super.dispose();
   }
@@ -66,7 +51,7 @@ class _ChallengeInviteScreenState extends State<ChallengeInviteScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '"${widget.competitionTitle}" is ready',
+              '"${widget.challenge.title}" is ready',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -83,28 +68,20 @@ class _ChallengeInviteScreenState extends State<ChallengeInviteScreen> {
             // Primary action: share invite link — lowest friction, works
             // through the OS share sheet for 1:1 chat sharing.
             InviteLinkCard(
-              competitionId: widget.competitionId,
-              competitionTitle: widget.competitionTitle,
+              competitionId: widget.challenge.id,
+              competitionTitle: widget.challenge.title,
               prewarm: true,
             ),
             const SizedBox(height: 24),
 
             // Secondary action: search for someone already on Havruta.
             CompetitionInviteSection(
-              competitionId: widget.competitionId,
-              competitionTitle: widget.competitionTitle,
+              challenge: widget.challenge,
               currentUserUid: widget.currentUserUid,
-              competitionType: widget.competitionType,
-              sharedGoalTitle: widget.sharedGoalTitle,
-              sharedTargetValue: widget.sharedTargetValue,
-              sharedUnit: widget.sharedUnit,
-              creatorGoalTitle: widget.creatorGoalTitle,
-              creatorTargetValue: widget.creatorTargetValue,
-              creatorUnit: widget.creatorUnit,
             ),
             const SizedBox(height: 24),
             OnboardingAnchor(
-              id: OnboardingAnchorIds.challengeInviteDone(widget.competitionId),
+              id: OnboardingAnchorIds.challengeInviteDone(widget.challenge.id),
               child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(

@@ -7,6 +7,8 @@ export interface InviteLookupResult {
   competitionId?: string;
   competitionTitle?: string;
   competitionType?: string;
+  winCondition?: string;
+  dailyMinimum?: number;
   createdBy?: string;
   createdByUsername?: string;
   sharedGoalTitle?: string;
@@ -61,6 +63,8 @@ export async function lookupInvite(
     competitionId: data.competitionId,
     competitionTitle: data.competitionTitle,
     competitionType: data.competitionType,
+    winCondition: data.winCondition,
+    dailyMinimum: data.dailyMinimum,
     createdBy: data.createdBy,
     createdByUsername: data.createdByUsername,
     sharedGoalTitle: data.sharedGoalTitle,

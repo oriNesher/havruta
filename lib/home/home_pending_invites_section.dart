@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_theme.dart';
+import '../competitions/challenge.dart';
 import '../services/firestore_service.dart';
 import '../competitions/widgets/personal_goal_input_dialog.dart';
 import '../onboarding/onboarding_anchor.dart';
@@ -12,7 +13,8 @@ class HomePendingInvitesSection extends StatelessWidget {
 
   HomePendingInvitesSection({super.key, required this.uid});
 
-  // ── Personal Goal accept dialog ────────────────────────────────────────────
+  // ── Legacy Personal Goal accept dialog ─────────────────────────────────────
+  // Only for invites sent before win conditions; remove once answered.
 
   Future<void> _showPersonalGoalAcceptDialog({
     required BuildContext outerContext,
@@ -56,16 +58,12 @@ class HomePendingInvitesSection extends StatelessWidget {
     }
   }
 
-  // ── Shared Goal accept dialog ──────────────────────────────────────────────
+  // ── Challenge accept dialog ────────────────────────────────────────────────
 
-  Future<void> _showSharedGoalAcceptDialog({
+  Future<void> _showChallengeAcceptDialog({
     required BuildContext outerContext,
     required String inviteId,
-    required String competitionId,
-    required String competitionTitle,
-    required String sharedGoalTitle,
-    required int sharedTargetValue,
-    required String sharedUnit,
+    required Challenge challenge,
   }) async {
     bool isSubmitting = false;
 
@@ -95,14 +93,14 @@ class HomePendingInvitesSection extends StatelessWidget {
                   return;
                 }
 
-                await _firestoreService.acceptSharedGoalCompetitionInvite(
+                await _firestoreService.acceptChallengeInvite(
                   inviteId: inviteId,
-                  competitionId: competitionId,
+                  competitionId: challenge.id,
                   uid: uid,
                   username: username,
-                  sharedGoalTitle: sharedGoalTitle,
-                  sharedTargetValue: sharedTargetValue,
-                  sharedUnit: sharedUnit,
+                  goalTitle: challenge.goalTitle,
+                  targetValue: challenge.targetValue,
+                  unit: challenge.unit,
                 );
 
                 acceptedSuccessfully = true;
@@ -127,21 +125,15 @@ class HomePendingInvitesSection extends StatelessWidget {
               }
             }
 
-            final goalDisplay = sharedUnit.isNotEmpty
-                ? '$sharedGoalTitle — $sharedTargetValue $sharedUnit'
-                : '$sharedGoalTitle — $sharedTargetValue';
-
             return AlertDialog(
-              title: Text('Join "$competitionTitle"'),
+              title: Text('Join "${challenge.title}"'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('This is a Shared Goal Challenge.'),
+                  Text('This is a ${challenge.winCondition.label} challenge.'),
                   const SizedBox(height: 4),
-                  const Text(
-                    'Everyone works toward the same goal:',
-                  ),
+                  Text(challenge.winCondition.tagline),
                   const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
@@ -153,13 +145,13 @@ class HomePendingInvitesSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      goalDisplay,
+                      challenge.goalSummary,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    "You'll each log your own progress toward this shared target.",
+                    "You'll each log your own progress toward this shared goal.",
                     style: Theme.of(dialogContext).textTheme.bodySmall,
                   ),
                 ],
@@ -221,15 +213,13 @@ class HomePendingInvitesSection extends StatelessWidget {
             final competitionId = invite['competitionId'] ?? '';
             final competitionTitle = invite['competitionTitle'] ?? '';
             final fromUid = invite['fromUid'] ?? '';
-            final competitionType =
-                invite['competitionType'] as String? ?? 'personalGoalChallenge';
-            final isShared = competitionType == 'sharedGoalChallenge';
-
-            final sharedGoalTitle =
-                invite['sharedGoalTitle'] as String? ?? '';
-            final sharedTargetValue =
-                (invite['sharedTargetValue'] as num?)?.toInt() ?? 0;
-            final sharedUnit = invite['sharedUnit'] as String? ?? '';
+            // An invite carries the challenge's definition (see
+            // sendCompetitionInvite), so it reads like the challenge itself.
+            final challenge = Challenge.fromDoc(competitionId, {
+              ...invite,
+              'title': competitionTitle,
+              'type': invite['competitionType'],
+            });
 
             final creatorGoalTitle = invite['creatorGoalTitle'] as String?;
             final creatorTargetValue =
@@ -268,9 +258,7 @@ class HomePendingInvitesSection extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        isShared
-                            ? 'Shared Goal Challenge'
-                            : 'Personal Goal Challenge',
+                        challenge.modeLabel,
                         style: TextStyle(
                           fontSize: 11,
                           color: Theme.of(
@@ -280,12 +268,11 @@ class HomePendingInvitesSection extends StatelessWidget {
                       ),
                     ),
                     // Shared goal preview
-                    if (isShared && sharedGoalTitle.isNotEmpty) ...[
+                    if (!challenge.isLegacyPersonal &&
+                        challenge.goalTitle.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(
-                        sharedUnit.isNotEmpty
-                            ? 'Goal: $sharedGoalTitle — $sharedTargetValue $sharedUnit'
-                            : 'Goal: $sharedGoalTitle — $sharedTargetValue',
+                        'Goal: ${challenge.goalSummary}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(
                             context,
@@ -313,15 +300,11 @@ class HomePendingInvitesSection extends StatelessWidget {
                         Expanded(
                           child: ElevatedButton(
                               onPressed: () async {
-                                if (isShared) {
-                                  await _showSharedGoalAcceptDialog(
+                                if (!challenge.isLegacyPersonal) {
+                                  await _showChallengeAcceptDialog(
                                     outerContext: context,
                                     inviteId: inviteId,
-                                    competitionId: competitionId,
-                                    competitionTitle: competitionTitle,
-                                    sharedGoalTitle: sharedGoalTitle,
-                                    sharedTargetValue: sharedTargetValue,
-                                    sharedUnit: sharedUnit,
+                                    challenge: challenge,
                                   );
                                 } else {
                                   await _showPersonalGoalAcceptDialog(

@@ -13,9 +13,9 @@ import 'onboarding_module.dart';
 /// Steps (all in memory — a relaunch starts again from the Home button,
 /// which is harmless because nothing is created until the form submits):
 ///   1. Home's Create Challenge button.
-///   2. Type selector — held back until the user's first touch on the
-///      form, then "choose a type" + the Shared/Personal explanation. The
-///      selector stays live; either type is fine.
+///   2. Mode selector — held back until the user's first touch on the
+///      form, then "choose how it's won" + the three modes explained. The
+///      selector stays live; any mode is fine.
 ///   3. Required details — non-modal, so "Add more details" stays fully
 ///      usable.
 ///   4. Once the form reports its required details complete
@@ -41,12 +41,12 @@ class CreateChallengeModule extends OnboardingModule {
       "You've seen how a Challenge works. Now it's time to create one of "
       'your own.';
   static const typeMessage =
-      'First, choose the kind of Challenge you want to create.';
+      'First, choose how your Challenge is won.';
   static const typeExplainedMessage =
-      'Shared Goal means everyone competes toward the same target. Personal '
-      'Goal lets each person define their own target while competing '
-      "together. We recommend starting with Shared Goal — it's the simplest "
-      'way to get going.';
+      'Race: first to reach the target wins. Last One Standing: hit a daily '
+      "minimum every day — miss one and you're out. Most Progress: whoever "
+      "does the most by the end date wins. We recommend starting with Race — "
+      "it's the simplest way to get going.";
   static const essentialsMessage =
       'Start with the essentials. The main Challenge details are required; '
       'everything under "Add more details" is optional, there when you want '

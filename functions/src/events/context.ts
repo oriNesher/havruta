@@ -3,6 +3,7 @@ import * as logger from "firebase-functions/logger";
 import {EventsContext, ParticipantData} from "./types";
 import {countEvents, fetchFiredValues} from "./guards";
 import {isNextCalendarDay, toDateString} from "./streakDate";
+import {parseChallenge} from "../challenges/model";
 
 export interface BuildContextParams {
   competitionId: string;
@@ -122,12 +123,20 @@ export async function buildEventsContext(
 
   const competitionData = competitionSnap.data() || {};
   const competitionTitle = competitionData.title ?? "Competition";
-  const competitionStatus = competitionData.status ?? "active";
+  const challenge = parseChallenge(competitionData);
 
-  if (competitionStatus !== "active") {
+  if (challenge.status !== "active") {
     logger.info("Competition is not active, skipping event creation", {
       competitionId,
-      competitionStatus,
+      competitionStatus: challenge.status,
+    });
+    return null;
+  }
+
+  if (after.eliminatedOnDay) {
+    logger.info("Participant is eliminated, skipping event creation", {
+      competitionId,
+      participantId,
     });
     return null;
   }
@@ -191,6 +200,7 @@ export async function buildEventsContext(
   return {
     competitionId,
     competitionTitle,
+    challenge,
     actorUid,
     actorUsername,
     actorTargetValue,

@@ -1,38 +1,42 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../app_theme.dart';
 import '../services/firestore_service.dart';
+import 'challenge.dart';
+import 'challenge_standings.dart';
 import 'competition_invite_section.dart';
 import 'widgets/challenge_activity_graph.dart';
 import 'widgets/invite_link_card.dart';
 
-class CompetitionDetailsScreen extends StatefulWidget {
-  final String competitionId;
-  final String title;
-  final String description;
-  final String status;
-  final String createdBy;
-  final String? deadline;
-  final String type;
-  final String? sharedGoalTitle;
-  final int? sharedTargetValue;
-  final String? sharedUnit;
+const List<String> _monthNames = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
 
-  const CompetitionDetailsScreen({
-    super.key,
-    required this.competitionId,
-    required this.title,
-    required this.description,
-    required this.status,
-    required this.createdBy,
-    this.deadline,
-    this.type = 'personalGoalChallenge',
-    this.sharedGoalTitle,
-    this.sharedTargetValue,
-    this.sharedUnit,
-  });
+String _formatDate(DateTime date) =>
+    '${_monthNames[date.month - 1]} ${date.day}, ${date.year}';
+
+/// 1-based challenge day number of [dayKey] (YYYY-MM-DD), counting from
+/// [challenge]'s first day.
+int? _dayNumber(Challenge challenge, String dayKey) {
+  final startsAt = challenge.startsAt;
+  if (startsAt == null) return null;
+  final start = DateTime.parse(challenge.dayKey(startsAt));
+  final day = DateTime.tryParse(dayKey);
+  if (day == null) return null;
+  return day.difference(start).inDays + 1;
+}
+
+class CompetitionDetailsScreen extends StatefulWidget {
+  /// The challenge as the opener last saw it — shown immediately, then
+  /// replaced by the live document.
+  final Challenge challenge;
+
+  const CompetitionDetailsScreen({super.key, required this.challenge});
 
   @override
   State<CompetitionDetailsScreen> createState() =>
@@ -41,14 +45,9 @@ class CompetitionDetailsScreen extends StatefulWidget {
 
 class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   final FirestoreService firestoreService = FirestoreService();
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _challengeStream =
+      firestoreService.getCompetitionDoc(widget.challenge.id);
   bool _isDeleting = false;
-
-  bool get _isShared => widget.type == 'sharedGoalChallenge';
-
-  static const List<String> _monthNames = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
 
   String _formatLastUpdate(Timestamp? updatedAt) {
     if (updatedAt == null) return '';
@@ -65,12 +64,30 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   }
 
   Future<void> _showEditProgressDialog({
-    required String competitionId,
+    required Challenge challenge,
     required String uid,
     required int currentProgress,
-    required int targetValue,
+    required int todayProgress,
     required String unit,
   }) async {
+    // Last One Standing has already judged past days, so only today's
+    // progress can be taken back there; elsewhere any amount can.
+    final judgesDays = challenge.winCondition == WinCondition.lastStanding;
+    final maxReduction = judgesDays
+        ? todayProgress.clamp(0, currentProgress)
+        : currentProgress;
+    final minProgress = currentProgress - maxReduction;
+    final unitSuffix = unit.isNotEmpty ? ' $unit' : '';
+
+    if (maxReduction <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only progress logged today can be taken back'),
+        ),
+      );
+      return;
+    }
+
     final controller = TextEditingController(text: currentProgress.toString());
 
     final newValue = await showDialog<int>(
@@ -86,9 +103,11 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    unit.isNotEmpty
-                        ? 'You can only reduce your progress (max: $currentProgress $unit)'
-                        : 'You can only reduce your progress (max: $currentProgress)',
+                    judgesDays
+                        ? 'You can only take back today\'s progress '
+                              '(down to $minProgress$unitSuffix)'
+                        : 'You can only reduce your progress '
+                              '(max: $currentProgress$unitSuffix)',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
@@ -105,8 +124,10 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                       setDialogState(() {
                         if (parsed == null) {
                           errorText = 'Enter a valid number';
-                        } else if (parsed < 0) {
-                          errorText = 'Cannot be negative';
+                        } else if (parsed < minProgress) {
+                          errorText = minProgress == 0
+                              ? 'Cannot be negative'
+                              : 'Cannot go below $minProgress';
                         } else if (parsed > currentProgress) {
                           errorText =
                               'Cannot exceed current progress ($currentProgress)';
@@ -142,11 +163,14 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
     // not disposed: dialog exit animation keeps the TextField mounted past showDialog's return
     if (newValue == null || !mounted) return;
 
+    final reduction = currentProgress - newValue;
     try {
       await firestoreService.updateProgress(
-        competitionId: competitionId,
+        competitionId: challenge.id,
         uid: uid,
         progress: newValue,
+        dayKey: challenge.dayKey(DateTime.now()),
+        todayReduction: math.max(0, math.min(reduction, todayProgress)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -186,7 +210,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
     });
 
     try {
-      await firestoreService.deleteCompetition(widget.competitionId);
+      await firestoreService.deleteCompetition(widget.challenge.id);
 
       if (!mounted) return;
 
@@ -208,13 +232,44 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
     }
   }
 
+  /// Whether new people can still join: not once it's over, and not once a
+  /// Last One Standing challenge is past day 1 (everyone must be judged
+  /// from day 1). Mirrors joinClosedReason in functions/src/challenges/
+  /// joining.ts.
+  bool _acceptsJoins(Challenge challenge) {
+    if (!challenge.isActive) return false;
+    final now = DateTime.now();
+    final endsAt = challenge.endsAt;
+    if (endsAt != null && !now.isBefore(endsAt)) return false;
+    final startsAt = challenge.startsAt;
+    if (challenge.winCondition == WinCondition.lastStanding &&
+        startsAt != null &&
+        challenge.dayKey(now).compareTo(challenge.dayKey(startsAt)) > 0) {
+      return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final isCreator = user != null && user.uid == widget.createdBy;
-    final theme = Theme.of(context);
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _challengeStream,
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        final challenge = data != null
+            ? Challenge.fromDoc(widget.challenge.id, data)
+            : widget.challenge;
+        return _buildScreen(context, challenge);
+      },
+    );
+  }
 
-    final badgeLabel = _isShared ? 'Shared Goal Challenge' : 'Personal Goal Challenge';
+  Widget _buildScreen(BuildContext context, Challenge challenge) {
+    final user = FirebaseAuth.instance.currentUser;
+    final isCreator = user != null && user.uid == challenge.createdBy;
+    final theme = Theme.of(context);
+    final startsAt = challenge.startsAt;
+    final endsAt = challenge.endsAt;
 
     return Scaffold(
       appBar: AppBar(
@@ -241,12 +296,12 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                widget.title,
+                challenge.title,
                 style: theme.textTheme.headlineMedium,
               ),
               const SizedBox(height: 10),
 
-              // Format badge
+              // Mode badge
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -257,7 +312,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  badgeLabel,
+                  challenge.modeLabel,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.onSecondaryContainer,
                   ),
@@ -265,48 +320,70 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Shared goal section
-              if (_isShared &&
-                  widget.sharedGoalTitle != null &&
-                  widget.sharedGoalTitle!.isNotEmpty) ...[
-                Text('Shared Goal', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 6),
-                Text(
-                  widget.sharedUnit != null && widget.sharedUnit!.isNotEmpty
-                      ? '${widget.sharedGoalTitle} — ${widget.sharedTargetValue} ${widget.sharedUnit}'
-                      : '${widget.sharedGoalTitle} — ${widget.sharedTargetValue}',
+              if (challenge.isCompleted) ...[
+                _ResultsBanner(
+                  winnerUids: challenge.winnerUids,
+                  firestoreService: firestoreService,
                 ),
                 const SizedBox(height: 20),
               ],
 
-              // Deadline (if set)
-              if (widget.deadline != null &&
-                  widget.deadline!.isNotEmpty) ...[
-                Text(
-                  'Deadline',
-                  style: theme.textTheme.titleMedium,
-                ),
+              // Goal — legacy personal challenges show each participant's
+              // own goal on their row instead.
+              if (!challenge.isLegacyPersonal &&
+                  challenge.goalTitle.isNotEmpty) ...[
+                Text('Goal', style: theme.textTheme.titleMedium),
                 const SizedBox(height: 6),
-                Text(widget.deadline!),
+                Text(challenge.goalSummary),
+                const SizedBox(height: 6),
+                Text(
+                  challenge.winCondition.tagline,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              if (challenge.winCondition == WinCondition.lastStanding &&
+                  startsAt != null) ...[
+                Text('Day 1', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(_formatDate(startsAt)),
+                const SizedBox(height: 20),
+              ],
+
+              // End date, or the free-text deadline of older challenges.
+              if (endsAt != null) ...[
+                Text('Ends', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(
+                  'After ${_formatDate(endsAt.subtract(const Duration(days: 1)))}',
+                ),
+                const SizedBox(height: 20),
+              ] else if (challenge.legacyDeadline?.isNotEmpty == true) ...[
+                Text('Deadline', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(challenge.legacyDeadline!),
                 const SizedBox(height: 20),
               ],
 
               // Rules & Notes
-              if (widget.description.isNotEmpty) ...[
+              if (challenge.description.isNotEmpty) ...[
                 Text(
                   'Rules & Notes',
                   style: theme.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
-                Text(widget.description),
+                Text(challenge.description),
                 const SizedBox(height: 20),
               ],
 
               Text('Status', style: theme.textTheme.titleMedium),
               const SizedBox(height: 6),
-              Text(widget.status.isNotEmpty
-                  ? '${widget.status[0].toUpperCase()}${widget.status.substring(1)}'
-                  : widget.status),
+              Text(challenge.status.isNotEmpty
+                  ? '${challenge.status[0].toUpperCase()}${challenge.status.substring(1)}'
+                  : challenge.status),
               const SizedBox(height: 20),
 
               Text(
@@ -315,19 +392,19 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
               ),
               const SizedBox(height: 6),
               FutureBuilder<String?>(
-                future: firestoreService.getUsernameByUid(widget.createdBy),
+                future: firestoreService.getUsernameByUid(challenge.createdBy),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Text('Loading...');
                   }
                   if (snapshot.hasError) {
-                    return Text(widget.createdBy);
+                    return Text(challenge.createdBy);
                   }
                   final username = snapshot.data;
                   return Text(
                     username != null && username.isNotEmpty
                         ? username
-                        : widget.createdBy,
+                        : challenge.createdBy,
                   );
                 },
               ),
@@ -353,27 +430,22 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 const SizedBox(height: 24),
               ],
 
-              if (user != null) ...[
+              if (user != null && _acceptsJoins(challenge)) ...[
                 InviteLinkCard(
-                  competitionId: widget.competitionId,
-                  competitionTitle: widget.title,
+                  competitionId: challenge.id,
+                  competitionTitle: challenge.title,
                 ),
                 const SizedBox(height: 16),
                 CompetitionInviteSection(
-                  competitionId: widget.competitionId,
-                  competitionTitle: widget.title,
+                  challenge: challenge,
                   currentUserUid: user.uid,
-                  competitionType: widget.type,
-                  sharedGoalTitle: widget.sharedGoalTitle,
-                  sharedTargetValue: widget.sharedTargetValue,
-                  sharedUnit: widget.sharedUnit,
                 ),
                 const SizedBox(height: 32),
               ],
 
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: firestoreService.getCompetitionParticipants(
-                  widget.competitionId,
+                  challenge.id,
                 ),
                 builder: (context, snapshot) {
                   final participantsHeading = [
@@ -419,171 +491,344 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                     );
                   }
 
-                  final participants = docs.map((doc) => doc.data()).toList();
-
-                  participants.sort((a, b) {
-                    final progressA = a['progress'] ?? 0;
-                    final progressB = b['progress'] ?? 0;
-                    final targetA = a['targetValue'] ?? 0;
-                    final targetB = b['targetValue'] ?? 0;
-
-                    final percentA =
-                        targetA > 0 ? progressA / targetA : 0.0;
-                    final percentB =
-                        targetB > 0 ? progressB / targetB : 0.0;
-
-                    return percentB.compareTo(percentA);
-                  });
+                  final participants = rankParticipants(
+                    challenge,
+                    docs.map((doc) => doc.data()),
+                  );
+                  final todayKey = challenge.dayKey(DateTime.now());
+                  final leaderProgress = participants
+                      .map((p) => (p['progress'] as num? ?? 0).toInt())
+                      .fold<int>(0, (a, b) => a > b ? a : b);
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       ChallengeActivityGraph(
-                        competitionId: widget.competitionId,
+                        competitionId: challenge.id,
                         participants: participants,
                         currentUserUid: user?.uid,
                       ),
                       const SizedBox(height: 28),
                       ...participantsHeading,
                       ...participants.map((participant) {
-                      final username = participant['username'] ?? '';
-                      final uid = participant['uid'] ?? '';
-                      final progress = participant['progress'] ?? 0;
-                      final goalTitle = participant['goalTitle'] ?? '';
-                      final targetValue = participant['targetValue'] ?? 0;
-                      final unit = participant['unit'] ?? '';
-                      final linkedGoalTitle =
-                          participant['linkedGoalTitle'] as String?;
-                      final updatedAt =
-                          participant['updatedAt'] as Timestamp?;
+                        final uid = participant['uid'] as String? ?? '';
+                        final isMe = user != null && uid == user.uid;
+                        final progress =
+                            (participant['progress'] as num? ?? 0).toInt();
+                        final todayProgress =
+                            ((participant['dailyProgress']
+                                        as Map<String, dynamic>?)?[todayKey]
+                                    as num? ??
+                                0)
+                            .toInt();
+                        final eliminated =
+                            participant['eliminatedOnDay'] != null;
+                        final canEdit = isMe &&
+                            challenge.isActive &&
+                            !eliminated &&
+                            progress > 0;
 
-                      final displayName = username.toString().isNotEmpty
-                          ? username
-                          : uid;
-                      final isMe = user != null && uid == user.uid;
-
-                      final progressRatio = targetValue > 0
-                          ? (progress / targetValue)
-                          : 0.0;
-                      final progressBarValue =
-                          progressRatio.clamp(0.0, 1.0);
-                      final percentText = targetValue > 0
-                          ? '${(progressRatio * 100).toStringAsFixed(0)}%'
-                          : '0%';
-
-                      final progressText = unit.toString().isNotEmpty
-                          ? '$progress / $targetValue $unit'
-                          : '$progress / $targetValue completed';
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isMe
-                              ? theme.colorScheme.primary
-                                  .withValues(alpha: 0.08)
-                              : theme.colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    isMe
-                                        ? '$displayName (You)'
-                                        : displayName,
-                                    style: TextStyle(
-                                      fontWeight: isMe
-                                          ? FontWeight.bold
-                                          : FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  percentText,
-                                  style: AppTheme.mono(fontWeight: FontWeight.w600),
-                                ),
-                                if (isMe)
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined),
-                                    iconSize: 18,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    tooltip: 'Edit progress',
-                                    onPressed: () =>
-                                        _showEditProgressDialog(
-                                      competitionId: widget.competitionId,
-                                      uid: user.uid,
-                                      currentProgress: progress,
-                                      targetValue: targetValue,
-                                      unit: unit.toString(),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            // For personal goal challenges, show each participant's individual goal.
-                            // For shared challenges, the goal is shown once above — skip it here.
-                            if (!_isShared &&
-                                goalTitle.toString().isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text(goalTitle),
-                            ],
-                            if (linkedGoalTitle != null &&
-                                linkedGoalTitle.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.arrow_outward,
-                                    size: 12,
-                                    color: theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.45),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Connected to: $linkedGoalTitle',
-                                    style:
-                                        theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurface
-                                          .withValues(alpha: 0.45),
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                            const SizedBox(height: 6),
-                            Text(
-                              progressText,
-                              style: AppTheme.mono(fontWeight: FontWeight.w500),
-                            ),
-                            const SizedBox(height: 8),
-                            LinearProgressIndicator(
-                              value: progressBarValue,
-                            ),
-                            if (updatedAt != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                _formatLastUpdate(updatedAt),
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurface
-                                      .withValues(alpha: 0.45),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-                    }),
+                        return _ParticipantCard(
+                          challenge: challenge,
+                          participant: participant,
+                          isMe: isMe,
+                          todayProgress: todayProgress,
+                          leaderProgress: leaderProgress,
+                          lastUpdateText: _formatLastUpdate(
+                            participant['updatedAt'] as Timestamp?,
+                          ),
+                          onEdit: canEdit
+                              ? () => _showEditProgressDialog(
+                                  challenge: challenge,
+                                  uid: user.uid,
+                                  currentProgress: progress,
+                                  todayProgress: todayProgress,
+                                  unit: (participant['unit'] ?? '').toString(),
+                                )
+                              : null,
+                        );
+                      }),
                     ],
                   );
                 },
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Final results
+// ─────────────────────────────────────────────
+
+class _ResultsBanner extends StatelessWidget {
+  final List<String> winnerUids;
+  final FirestoreService firestoreService;
+
+  const _ResultsBanner({
+    required this.winnerUids,
+    required this.firestoreService,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.emoji_events_outlined,
+            color: theme.colorScheme.onTertiaryContainer,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: winnerUids.isEmpty
+                ? Text(
+                    'Challenge over — no winner this time.',
+                    style: AppTheme.display(
+                      color: theme.colorScheme.onTertiaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                : FutureBuilder<List<String?>>(
+                    future: Future.wait(
+                      winnerUids.map(firestoreService.getUsernameByUid),
+                    ),
+                    builder: (context, snapshot) {
+                      final names = [
+                        for (final (i, name)
+                            in (snapshot.data ?? const []).indexed)
+                          name?.isNotEmpty == true ? name! : winnerUids[i],
+                      ];
+                      final who = names.isEmpty ? '…' : names.join(' & ');
+                      return Text(
+                        winnerUids.length > 1
+                            ? 'Challenge over — $who share the win!'
+                            : 'Challenge over — $who won!',
+                        style: AppTheme.display(
+                          color: theme.colorScheme.onTertiaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Participant row, per win condition
+// ─────────────────────────────────────────────
+
+class _ParticipantCard extends StatelessWidget {
+  final Challenge challenge;
+  final Map<String, dynamic> participant;
+  final bool isMe;
+  final int todayProgress;
+  final int leaderProgress;
+  final String lastUpdateText;
+  final VoidCallback? onEdit;
+
+  const _ParticipantCard({
+    required this.challenge,
+    required this.participant,
+    required this.isMe,
+    required this.todayProgress,
+    required this.leaderProgress,
+    required this.lastUpdateText,
+    required this.onEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final uid = participant['uid'] as String? ?? '';
+    final username = (participant['username'] ?? '').toString();
+    final displayName = username.isNotEmpty ? username : uid;
+    final progress = (participant['progress'] as num? ?? 0).toInt();
+    final unit = (participant['unit'] ?? '').toString();
+    final unitSuffix = unit.isNotEmpty ? ' $unit' : '';
+    final goalTitle = (participant['goalTitle'] ?? '').toString();
+    final linkedGoalTitle = participant['linkedGoalTitle'] as String?;
+    final eliminatedOnDay = participant['eliminatedOnDay'] as String?;
+    final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.45);
+
+    final (trailing, detail, barValue) = _modeStats(
+      theme: theme,
+      progress: progress,
+      unitSuffix: unitSuffix,
+      eliminatedOnDay: eliminatedOnDay,
+    );
+
+    return Opacity(
+      opacity: eliminatedOnDay != null ? 0.6 : 1,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isMe
+              ? theme.colorScheme.primary.withValues(alpha: 0.08)
+              : theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    isMe ? '$displayName (You)' : displayName,
+                    style: TextStyle(
+                      fontWeight: isMe ? FontWeight.bold : FontWeight.w500,
+                    ),
+                  ),
+                ),
+                trailing,
+                if (onEdit != null)
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    iconSize: 18,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: 'Edit progress',
+                    onPressed: onEdit,
+                  ),
+              ],
+            ),
+            // Legacy personal goal challenges: each participant's own goal.
+            if (challenge.isLegacyPersonal && goalTitle.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(goalTitle),
+            ],
+            if (linkedGoalTitle != null && linkedGoalTitle.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.arrow_outward, size: 12, color: mutedColor),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Connected to: $linkedGoalTitle',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: mutedColor,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 6),
+            Text(
+              detail,
+              style: AppTheme.mono(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: barValue),
+            if (lastUpdateText.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                lastUpdateText,
+                style: theme.textTheme.bodySmall?.copyWith(color: mutedColor),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The row's trailing stat, detail line and bar fill for this mode.
+  (Widget, String, double) _modeStats({
+    required ThemeData theme,
+    required int progress,
+    required String unitSuffix,
+    required String? eliminatedOnDay,
+  }) {
+    final stat = AppTheme.mono(fontWeight: FontWeight.w600);
+
+    switch (challenge.winCondition) {
+      case WinCondition.firstToTarget:
+        final target = challenge.targetFor(participant) ?? 0;
+        final ratio = target > 0 ? progress / target : 0.0;
+        return (
+          Text('${(ratio * 100).toStringAsFixed(0)}%', style: stat),
+          unitSuffix.isNotEmpty
+              ? '$progress / $target$unitSuffix'
+              : '$progress / $target completed',
+          ratio.clamp(0.0, 1.0),
+        );
+      case WinCondition.mostProgress:
+        return (
+          Text('$progress$unitSuffix', style: stat),
+          'Total: $progress$unitSuffix',
+          leaderProgress > 0 ? progress / leaderProgress : 0.0,
+        );
+      case WinCondition.lastStanding:
+        final minimum = challenge.rules.dailyMinimum ?? 0;
+        if (eliminatedOnDay != null) {
+          final day = _dayNumber(challenge, eliminatedOnDay);
+          return (
+            _StatusChip(label: 'Out', color: theme.colorScheme.error),
+            day != null
+                ? 'Missed day $day · total $progress$unitSuffix'
+                : 'Out · total $progress$unitSuffix',
+            0.0,
+          );
+        }
+        final startsAt = challenge.startsAt;
+        if (startsAt != null && DateTime.now().isBefore(startsAt)) {
+          return (
+            _StatusChip(label: 'In', color: theme.colorScheme.primary),
+            'Starts ${_formatDate(startsAt)}',
+            0.0,
+          );
+        }
+        final safe = minimum > 0 && todayProgress >= minimum;
+        return (
+          _StatusChip(
+            label: safe ? 'Safe today' : 'In',
+            color: safe ? theme.colorScheme.tertiary : theme.colorScheme.primary,
+          ),
+          'Today: $todayProgress / $minimum$unitSuffix',
+          minimum > 0 ? (todayProgress / minimum).clamp(0.0, 1.0) : 0.0,
+        );
+    }
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _StatusChip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: AppTheme.display(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

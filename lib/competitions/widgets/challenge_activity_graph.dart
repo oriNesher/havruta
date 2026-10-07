@@ -57,8 +57,9 @@ class DayContribution {
   final String unit;
 
   /// [amount] as a fraction of the participant's own target, so days can be
-  /// compared across participants tracking different units (personal goal
-  /// challenges). 0 when the target is unknown.
+  /// compared across participants tracking different units (legacy personal
+  /// goal challenges). The raw amount when there's no target (Most
+  /// Progress, Last One Standing) — everyone shares one unit there.
   final double score;
 
   const DayContribution({
@@ -98,7 +99,7 @@ Map<DateTime, List<DayContribution>> buildDailyActivity({
       name: participant?.name ?? (event['actorUsername'] as String?) ?? 'Someone',
       amount: total,
       unit: participant?.unit ?? '',
-      score: target > 0 ? total / target : 0,
+      score: target > 0 ? total / target : total.toDouble(),
     );
   }
 

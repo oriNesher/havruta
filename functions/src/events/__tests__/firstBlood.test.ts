@@ -1,5 +1,6 @@
 import * as assert from "node:assert/strict";
 import {test} from "node:test";
+import {parseChallenge} from "../../challenges/model";
 import {detectFirstBloodEvents} from "../rules/firstBlood";
 import {EventsContext} from "../types";
 
@@ -14,6 +15,7 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
   return {
     competitionId: "comp1",
     competitionTitle: "Reading Challenge",
+    challenge: parseChallenge({}),
     actorUid: "alice",
     actorUsername: "Alice",
     actorTargetValue: 100,

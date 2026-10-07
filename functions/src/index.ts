@@ -17,6 +17,8 @@ import {
   shouldCreateLeftEvent,
 } from "./events/rules/lifecycle";
 import {EventDraft} from "./events/types";
+import {settleRaceFinish} from "./challenges/finish";
+import {settleChallenges} from "./challenges/settleChallenges";
 import {persistEventDrafts} from "./events/persist";
 import {createInvite} from "./invites/createInvite";
 import {getInvite} from "./invites/getInvite";
@@ -48,7 +50,7 @@ export {createInvite, getInvite, redeemInvite, revokeInvite,
   onCompetitionDeletedCleanupInviteLinks,
   grantDailyRespect, giveRespect,
   startOnboarding, ensureOnboardingSystemProgress, ensureOnboardingRespect,
-  resetOnboardingForTesting};
+  resetOnboardingForTesting, settleChallenges};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {
@@ -111,7 +113,7 @@ export const onParticipantProgressUpdate = onDocumentUpdated(
     }
 
     const competitionData = competitionSnap.data() || {};
-    const competitionTitle = competitionData.title ?? "Competition";
+    const competitionTitle = competitionData.title ?? "Challenge";
 
     const participantsSnap = await competitionRef
       .collection("participants").get();
@@ -161,7 +163,7 @@ export const onParticipantProgressUpdate = onDocumentUpdated(
     const message: admin.messaging.MulticastMessage = {
       tokens: uniqueTokens,
       notification: {
-        title: "Competition update",
+        title: "Challenge update",
         body: `${updaterUsername} updated progress in ${competitionTitle}`,
       },
       data: {
@@ -256,14 +258,14 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
     const streakDrafts = detectStreakEvents(context);
     const firstBloodDrafts = detectFirstBloodEvents(context);
 
-    const drafts = [
+    const drafts = await settleRaceFinish(context, [
       ...detectProgressEvents(context),
       ...rankingDrafts,
       ...gapDrafts,
       ...progressionDrafts,
       ...streakDrafts,
       ...firstBloodDrafts,
-    ];
+    ]);
 
     await persistEventDrafts(context.competitionId, drafts);
 

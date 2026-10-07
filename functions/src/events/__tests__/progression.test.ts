@@ -1,5 +1,6 @@
 import * as assert from "node:assert/strict";
 import {test} from "node:test";
+import {parseChallenge} from "../../challenges/model";
 import {detectProgressionEvents} from "../rules/progression";
 import {EventsContext} from "../types";
 
@@ -12,6 +13,7 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
   return {
     competitionId: "comp1",
     competitionTitle: "Reading Challenge",
+    challenge: parseChallenge({}),
     actorUid: "alice",
     actorUsername: "Alice",
     actorTargetValue: 100,
@@ -137,4 +139,16 @@ test("skips progression detection when actor target value is invalid", () => {
   );
 
   assert.equal(drafts.length, 0);
+});
+
+test("only races have progression events", () => {
+  for (const winCondition of ["mostProgress", "lastStanding"]) {
+    const drafts = detectProgressionEvents(baseContext({
+      challenge: parseChallenge({winCondition}),
+      beforeProgress: 90,
+      afterProgress: 100,
+    }));
+
+    assert.deepEqual(drafts, [], winCondition);
+  }
 });

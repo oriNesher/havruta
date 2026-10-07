@@ -1,5 +1,6 @@
 import * as assert from "node:assert/strict";
 import {test} from "node:test";
+import {parseChallenge} from "../../challenges/model";
 import {detectRankingEvents} from "../rules/ranking";
 import {EventsContext} from "../types";
 
@@ -12,6 +13,7 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
   return {
     competitionId: "comp1",
     competitionTitle: "Reading Challenge",
+    challenge: parseChallenge({}),
     actorUid: "alice",
     actorUsername: "Alice",
     actorTargetValue: 100,
@@ -175,4 +177,45 @@ test("creates tookTheLead when breaking a tie for first place", () => {
   const tookTheLead = drafts.find((d) => d.type === "tookTheLead");
 
   assert.ok(tookTheLead);
+});
+
+test("Most Progress ranks by raw totals, without targets", () => {
+  const drafts = detectRankingEvents(baseContext({
+    challenge: parseChallenge({winCondition: "mostProgress"}),
+    actorTargetValue: 0,
+    beforeProgress: 40,
+    afterProgress: 55,
+    participants: [
+      {uid: "alice", username: "Alice", progress: 55},
+      {uid: "bob", username: "Bob", progress: 50},
+    ],
+  }));
+
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0].type, "overtook");
+  const metadata = drafts[0].payload.metadata as Record<string, unknown>;
+  assert.equal(metadata.actorPercentAfter, null);
+});
+
+test("Most Progress ties on exactly equal totals", () => {
+  const drafts = detectRankingEvents(baseContext({
+    challenge: parseChallenge({winCondition: "mostProgress"}),
+    actorTargetValue: 0,
+    beforeProgress: 40,
+    afterProgress: 50,
+    participants: [
+      {uid: "alice", username: "Alice", progress: 50},
+      {uid: "bob", username: "Bob", progress: 50},
+    ],
+  }));
+
+  assert.deepEqual(drafts.map((d) => d.type), ["tied"]);
+});
+
+test("Last One Standing has no ranking events", () => {
+  const drafts = detectRankingEvents(baseContext({
+    challenge: parseChallenge({winCondition: "lastStanding"}),
+  }));
+
+  assert.deepEqual(drafts, []);
 });

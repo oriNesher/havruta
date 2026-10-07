@@ -1,5 +1,6 @@
 import * as assert from "node:assert/strict";
 import {test} from "node:test";
+import {parseChallenge} from "../../challenges/model";
 import {detectGapEvents} from "../rules/gap";
 import {EventsContext} from "../types";
 
@@ -12,6 +13,7 @@ function baseContext(overrides: Partial<EventsContext> = {}): EventsContext {
   return {
     competitionId: "comp1",
     competitionTitle: "Reading Challenge",
+    challenge: parseChallenge({}),
     actorUid: "alice",
     actorUsername: "Alice",
     actorTargetValue: 100,
@@ -151,4 +153,20 @@ test("skips gap detection when actor target value is invalid", () => {
   const drafts = detectGapEvents(baseContext({actorTargetValue: 0}));
 
   assert.equal(drafts.length, 0);
+});
+
+test("only races have gap events", () => {
+  for (const winCondition of ["mostProgress", "lastStanding"]) {
+    const drafts = detectGapEvents(baseContext({
+      challenge: parseChallenge({winCondition}),
+      beforeProgress: 0,
+      afterProgress: 95,
+      participants: [
+        {uid: "alice", username: "Alice", progress: 95, targetValue: 100},
+        {uid: "bob", username: "Bob", progress: 10, targetValue: 100},
+      ],
+    }));
+
+    assert.deepEqual(drafts, [], winCondition);
+  }
 });

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../competitions/challenge.dart';
+
 /// A notable moment in the product that leaves no Firestore trace of its
 /// own, published so other parts of the app (e.g. onboarding) can react
 /// without the screen that caused it knowing who is listening.
@@ -33,11 +35,11 @@ class ChallengeDraftChanged extends AppSignal {
 /// flow has moved on to its Invite step.
 class ChallengeCreated extends AppSignal {
   final String competitionId;
-  final String competitionType;
+  final WinCondition winCondition;
 
   const ChallengeCreated({
     required this.competitionId,
-    required this.competitionType,
+    required this.winCondition,
   });
 }
 

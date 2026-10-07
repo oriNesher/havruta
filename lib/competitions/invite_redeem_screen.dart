@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/firestore_service.dart';
 import '../services/invite_service.dart';
+import 'challenge.dart';
 import 'competition_details_screen.dart';
 import 'widgets/personal_goal_input_dialog.dart';
 
@@ -83,16 +84,7 @@ class _InviteRedeemScreenState extends State<InviteRedeemScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CompetitionDetailsScreen(
-          competitionId: competitionId,
-          title: data['title'] ?? '',
-          description: data['description'] ?? '',
-          status: data['status'] ?? '',
-          createdBy: data['createdBy'] ?? '',
-          deadline: data['deadline'] as String?,
-          type: data['type'] as String? ?? 'personalGoalChallenge',
-          sharedGoalTitle: data['sharedGoalTitle'] as String?,
-          sharedTargetValue: (data['sharedTargetValue'] as num?)?.toInt(),
-          sharedUnit: data['sharedUnit'] as String?,
+          challenge: Challenge.fromDoc(competitionId, data),
         ),
       ),
     );
@@ -143,7 +135,7 @@ class _InviteRedeemScreenState extends State<InviteRedeemScreen> {
     final preview = _preview;
     if (preview == null || !preview.valid) return;
 
-    if (preview.competitionType == 'personalGoalChallenge') {
+    if (preview.isLegacyPersonal) {
       await _joinPersonal(preview);
     } else {
       await _joinShared(preview);
@@ -219,19 +211,21 @@ class _InviteRedeemScreenState extends State<InviteRedeemScreen> {
       );
     }
 
-    final isShared = preview.competitionType == 'sharedGoalChallenge';
-    final goalTitle = isShared
-        ? preview.sharedGoalTitle
-        : preview.creatorGoalTitle;
-    final targetValue = isShared
-        ? preview.sharedTargetValue
-        : preview.creatorTargetValue;
-    final unit = isShared ? preview.sharedUnit : preview.creatorUnit;
-    final goalDisplay = (goalTitle != null && goalTitle.isNotEmpty)
-        ? (unit != null && unit.isNotEmpty
-              ? '$goalTitle — $targetValue $unit'
-              : '$goalTitle — $targetValue')
-        : null;
+    final challenge = preview.challenge;
+    final String? goalDisplay;
+    if (challenge.isLegacyPersonal) {
+      final goalTitle = preview.creatorGoalTitle;
+      final unit = preview.creatorUnit;
+      goalDisplay = (goalTitle != null && goalTitle.isNotEmpty)
+          ? (unit != null && unit.isNotEmpty
+                ? '$goalTitle — ${preview.creatorTargetValue} $unit'
+                : '$goalTitle — ${preview.creatorTargetValue}')
+          : null;
+    } else {
+      goalDisplay = challenge.goalTitle.isNotEmpty
+          ? challenge.goalSummary
+          : null;
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -247,10 +241,15 @@ class _InviteRedeemScreenState extends State<InviteRedeemScreen> {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
-        Text(
-          isShared ? 'Shared Goal Challenge' : 'Personal Goal Challenge',
-          style: theme.textTheme.bodySmall,
-        ),
+        Text(challenge.modeLabel, style: theme.textTheme.bodySmall),
+        if (!challenge.isLegacyPersonal) ...[
+          const SizedBox(height: 4),
+          Text(
+            challenge.winCondition.tagline,
+            style: theme.textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+        ],
         if (goalDisplay != null) ...[
           const SizedBox(height: 16),
           Container(

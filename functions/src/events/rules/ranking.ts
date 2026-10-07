@@ -1,5 +1,6 @@
 import {EventDraft, EventsContext, ExistingOpenEvent} from "../types";
 import {toWholePercent} from "../percent";
+import {ChallengeConfig} from "../../challenges/model";
 
 const TOOK_THE_LEAD_MIN_PARTICIPANTS = 3;
 
@@ -28,17 +29,54 @@ function findOpenTiedEvent(
 }
 
 /**
+ * What participants are ranked by: whole percent of target in a race (so
+ * participants with different targets compare fairly), the raw total in
+ * Most Progress. Null when it can't be scored (a race participant with no
+ * target).
+ * @param {ChallengeConfig} challenge The challenge.
+ * @param {number} progress The participant's progress.
+ * @param {number | undefined} targetValue The participant's target.
+ * @return {number | null} The comparable score.
+ */
+function rankingScore(
+  challenge: ChallengeConfig,
+  progress: number,
+  targetValue: number | undefined
+): number | null {
+  if (challenge.winCondition === "mostProgress") return progress;
+  if (typeof targetValue !== "number" || targetValue <= 0) return null;
+  return toWholePercent(progress / targetValue);
+}
+
+/**
+ * progress / target, or null without a target (Most Progress).
+ * @param {number} progress A progress value.
+ * @param {number | undefined} targetValue The matching target.
+ * @return {number | null} The fraction.
+ */
+function fractionOrNull(
+  progress: number,
+  targetValue: number | undefined
+): number | null {
+  return typeof targetValue === "number" && targetValue > 0 ?
+    progress / targetValue :
+    null;
+}
+
+/**
  * Creates ranking events for one participant update: "overtook" for each
  * participant just passed, "tied" for each participant just matched, and
  * "tookTheLead" if the actor just became the competition's sole leader.
- * All comparisons use whole-percent rounding so overtook/tied stay mutually
- * exclusive for the same pair.
+ * Races compare whole-percent rounding so overtook/tied stay mutually
+ * exclusive for the same pair; Most Progress compares raw totals. Last One
+ * Standing has no ranking to speak of — surviving is what counts.
  * @param {EventsContext} context Shared context for this participant update.
  * @return {EventDraft[]} The ranking event drafts to persist.
  */
 export function detectRankingEvents(context: EventsContext): EventDraft[] {
   const {
     competitionTitle,
+    challenge,
     actorUid,
     actorUsername,
     actorTargetValue,
@@ -49,14 +87,21 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
     openTiedEvents,
   } = context;
 
-  if (typeof actorTargetValue !== "number" || actorTargetValue <= 0) {
+  if (challenge.winCondition === "lastStanding") {
     return [];
   }
 
-  const actorPercentBefore = beforeProgress / actorTargetValue;
-  const actorPercentAfter = afterProgress / actorTargetValue;
-  const actorWholeBefore = toWholePercent(actorPercentBefore);
-  const actorWholeAfter = toWholePercent(actorPercentAfter);
+  const actorWholeBefore =
+    rankingScore(challenge, beforeProgress, actorTargetValue);
+  const actorWholeAfter =
+    rankingScore(challenge, afterProgress, actorTargetValue);
+
+  if (actorWholeBefore === null || actorWholeAfter === null) {
+    return [];
+  }
+
+  const actorPercentBefore = fractionOrNull(beforeProgress, actorTargetValue);
+  const actorPercentAfter = fractionOrNull(afterProgress, actorTargetValue);
 
   const drafts: EventDraft[] = [];
   let maxOtherWhole = -Infinity;
@@ -70,14 +115,15 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
 
     const otherUsername = participant.username ?? "Someone";
     const otherProgress = participant.progress ?? 0;
-    const otherTargetValue = participant.targetValue ?? 0;
+    const otherTargetValue = participant.targetValue;
 
-    if (typeof otherTargetValue !== "number" || otherTargetValue <= 0) {
+    const otherWhole =
+      rankingScore(challenge, otherProgress, otherTargetValue);
+    if (otherWhole === null) {
       continue;
     }
 
-    const otherPercent = otherProgress / otherTargetValue;
-    const otherWhole = toWholePercent(otherPercent);
+    const otherPercent = fractionOrNull(otherProgress, otherTargetValue);
     maxOtherWhole = Math.max(maxOtherWhole, otherWhole);
 
     // Overtook only if the actor was not ahead before and is ahead now.

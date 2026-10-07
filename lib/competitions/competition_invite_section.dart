@@ -6,31 +6,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../onboarding/onboarding_anchor.dart';
 import '../onboarding/onboarding_ids.dart';
 import '../services/firestore_service.dart';
+import 'challenge.dart';
 
 class CompetitionInviteSection extends StatefulWidget {
-  final String competitionId;
-  final String competitionTitle;
+  final Challenge challenge;
   final String currentUserUid;
-  final String competitionType;
-  final String? sharedGoalTitle;
-  final int? sharedTargetValue;
-  final String? sharedUnit;
-  final String? creatorGoalTitle;
-  final int? creatorTargetValue;
-  final String? creatorUnit;
 
   const CompetitionInviteSection({
     super.key,
-    required this.competitionId,
-    required this.competitionTitle,
+    required this.challenge,
     required this.currentUserUid,
-    this.competitionType = 'personalGoalChallenge',
-    this.sharedGoalTitle,
-    this.sharedTargetValue,
-    this.sharedUnit,
-    this.creatorGoalTitle,
-    this.creatorTargetValue,
-    this.creatorUnit,
   });
 
   @override
@@ -140,7 +125,7 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
       }
 
       final alreadyParticipant = await firestoreService.isAlreadyParticipant(
-        competitionId: widget.competitionId,
+        competitionId: widget.challenge.id,
         uid: toUid,
       );
 
@@ -153,7 +138,7 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
       }
 
       final exists = await firestoreService.inviteAlreadyExists(
-        competitionId: widget.competitionId,
+        competitionId: widget.challenge.id,
         toUid: toUid,
       );
 
@@ -166,18 +151,10 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
       }
 
       await firestoreService.sendCompetitionInvite(
-        competitionId: widget.competitionId,
-        competitionTitle: widget.competitionTitle,
+        challenge: widget.challenge,
         fromUid: widget.currentUserUid,
         toUid: toUid,
         toUsername: toUsername,
-        competitionType: widget.competitionType,
-        sharedGoalTitle: widget.sharedGoalTitle,
-        sharedTargetValue: widget.sharedTargetValue,
-        sharedUnit: widget.sharedUnit,
-        creatorGoalTitle: widget.creatorGoalTitle,
-        creatorTargetValue: widget.creatorTargetValue,
-        creatorUnit: widget.creatorUnit,
       );
 
       usernameController.clear();
@@ -217,7 +194,7 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
         ),
         const SizedBox(height: 12),
         OnboardingAnchor(
-          id: OnboardingAnchorIds.inviteSearch(widget.competitionId),
+          id: OnboardingAnchorIds.inviteSearch(widget.challenge.id),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -288,7 +265,7 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
         const SizedBox(height: 8),
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: firestoreService.getCompetitionPendingInvites(
-            widget.competitionId,
+            widget.challenge.id,
           ),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {

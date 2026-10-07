@@ -5,9 +5,22 @@ measurable target, invites friends, and everyone logs their own progress
 toward it. The core loop is progress → activity event → celebration/Respect
 — the social payoff is the point, not a bolt-on.
 
-Two challenge types exist, referred to internally as `personalGoalChallenge`
-(each participant tracks their own goal/target/unit) and
-`sharedGoalChallenge` (everyone races toward one shared goal/target/unit).
+Every challenge has one shared goal (`sharedGoalTitle`/`sharedUnit`) and a
+`winCondition` deciding how it's won: `firstToTarget` (Race — first to
+`sharedTargetValue`), `lastStanding` (Last One Standing — meet
+`rules.dailyMinimum` every challenge day or you're eliminated), or
+`mostProgress` (most total by `endsAt`). Extra constraints live in the
+`rules` map; a new mode is a new win condition plus a module in
+`functions/src/challenges/winConditions/`, not a new challenge system.
+Interpret a competition doc only through `parseChallenge`
+(`functions/src/challenges/model.ts`) / `Challenge.fromDoc`
+(`lib/competitions/challenge.dart`) — hand-synced mirrors, like the
+standings and day-key logic next to them. Docs without `winCondition` are
+legacy races; `type: 'personalGoalChallenge'` ones are legacy per-participant
+races (no new ones are created; `type` is still written only for old
+builds). Outcomes (`winnerUids`, `status: completed`, eliminations) are
+server-written: race finishes in the progress trigger, everything
+time-based in the hourly `settleChallenges` job.
 **User-facing copy should consistently say "Challenge"**, even though
 internal identifiers (collection names, `CompetitionDetailsScreen`,
 `competitionId`, etc.) still say "competition" — that's legacy naming, not

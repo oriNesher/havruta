@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../competitions/challenge.dart';
+
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -47,19 +49,27 @@ class FirestoreService {
     return data?['username'];
   }
 
-  /// Create a new personal goal challenge competition
-  /// Returns the new competition ID
-  Future<String> createCompetition({
+  /// Create a new challenge. Everyone shares one goal; [winCondition]
+  /// decides how it's won. [targetValue] is the race's finish line (races
+  /// only); [rules] carries the daily minimum for Last One Standing.
+  /// Returns the new competition ID.
+  Future<String> createChallenge({
     required String title,
     required String description,
     required String createdBy,
     required String creatorUsername,
+    required WinCondition winCondition,
     required String goalTitle,
-    required int targetValue,
     required String unit,
-    String? deadline,
+    int? targetValue,
+    ChallengeRules rules = const ChallengeRules(),
+    String? timeZone,
+    DateTime? startsAt,
+    DateTime? endsAt,
     String? linkedGoalTitle,
   }) async {
+    final isRace = winCondition == WinCondition.firstToTarget;
+
     final competitionRef = await _db.collection('competitions').add({
       'title': title,
       'description': description,
@@ -67,67 +77,34 @@ class FirestoreService {
       'participantUids': [createdBy],
       'status': 'active',
       'winnerUid': null,
-      'type': 'personalGoalChallenge',
+      'winCondition': winCondition.name,
+      // Still written so installed builds from before win conditions read
+      // every new challenge as the shared-goal challenge it most resembles.
+      'type': 'sharedGoalChallenge',
+      'sharedGoalTitle': goalTitle,
+      if (isRace && targetValue != null) 'sharedTargetValue': targetValue,
+      'sharedUnit': unit,
+      if (rules.toMap().isNotEmpty) 'rules': rules.toMap(),
+      'timeZone': ?timeZone,
+      if (startsAt != null) 'startsAt': Timestamp.fromDate(startsAt),
+      if (endsAt != null) ...{
+        'endsAt': Timestamp.fromDate(endsAt),
+        // Legacy display field; older builds' "Nd left" chip parses it.
+        'deadline': endsAt.toIso8601String().substring(0, 10),
+      },
       'createdAt': FieldValue.serverTimestamp(),
-      if (deadline != null && deadline.isNotEmpty) 'deadline': deadline,
     });
 
     await competitionRef.collection('participants').doc(createdBy).set({
       'uid': createdBy,
       'username': creatorUsername,
       'goalTitle': goalTitle,
-      'targetValue': targetValue,
+      if (isRace && targetValue != null) 'targetValue': targetValue,
       'unit': unit,
       'progress': 0,
       'joinedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
-      if (linkedGoalTitle != null) 'linkedGoalTitle': linkedGoalTitle,
-    });
-
-    await _db.collection('users').doc(createdBy).update({
-      'lastCompetitionCreatedAt': FieldValue.serverTimestamp(),
-    });
-
-    return competitionRef.id;
-  }
-
-  /// Create a new shared goal challenge competition.
-  /// All participants work toward the same goal, target, and unit.
-  /// Returns the new competition ID.
-  Future<String> createSharedGoalCompetition({
-    required String title,
-    required String description,
-    required String createdBy,
-    required String creatorUsername,
-    required String sharedGoalTitle,
-    required int sharedTargetValue,
-    required String sharedUnit,
-    String? deadline,
-  }) async {
-    final competitionRef = await _db.collection('competitions').add({
-      'title': title,
-      'description': description,
-      'createdBy': createdBy,
-      'participantUids': [createdBy],
-      'status': 'active',
-      'winnerUid': null,
-      'type': 'sharedGoalChallenge',
-      'sharedGoalTitle': sharedGoalTitle,
-      'sharedTargetValue': sharedTargetValue,
-      'sharedUnit': sharedUnit,
-      'createdAt': FieldValue.serverTimestamp(),
-      if (deadline != null && deadline.isNotEmpty) 'deadline': deadline,
-    });
-
-    await competitionRef.collection('participants').doc(createdBy).set({
-      'uid': createdBy,
-      'username': creatorUsername,
-      'goalTitle': sharedGoalTitle,
-      'targetValue': sharedTargetValue,
-      'unit': sharedUnit,
-      'progress': 0,
-      'joinedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+      'linkedGoalTitle': ?linkedGoalTitle,
     });
 
     await _db.collection('users').doc(createdBy).update({
@@ -155,6 +132,14 @@ class FirestoreService {
     String competitionId,
   ) {
     return _db.collection('competitions').doc(competitionId).get();
+  }
+
+  /// Live competition doc — backs Challenge Details, which must reflect a
+  /// challenge completing (or its winner being decided) while it's open.
+  Stream<DocumentSnapshot<Map<String, dynamic>>> getCompetitionDoc(
+    String competitionId,
+  ) {
+    return _db.collection('competitions').doc(competitionId).snapshots();
   }
 
   /// Get participants of a competition
@@ -195,11 +180,16 @@ class FirestoreService {
     });
   }
 
-  /// Update progress of participant by given number
+  /// Lower a participant's progress to [progress] (the edit dialog only
+  /// ever reduces it). [todayReduction] is how much of the cut comes off
+  /// today's dailyProgress bucket ([dayKey]) — past days are never
+  /// rewritten, since a daily-minimum rule may already have judged them.
   Future<void> updateProgress({
     required String competitionId,
     required String uid,
     required int progress,
+    required String dayKey,
+    int todayReduction = 0,
   }) async {
     await _db
         .collection('competitions')
@@ -209,6 +199,9 @@ class FirestoreService {
         .update({
           'progress': progress,
           'updatedAt': FieldValue.serverTimestamp(),
+          if (todayReduction > 0)
+            FieldPath(['dailyProgress', dayKey]):
+                FieldValue.increment(-todayReduction),
         });
   }
 
@@ -216,11 +209,14 @@ class FirestoreService {
   /// so a report of +30 (whether from a bulk action or several rapid taps
   /// batched together client-side) reaches the backend as one document
   /// update — the event triggers evaluate milestones, overtakes, and
-  /// completion off that single before/after change.
+  /// completion off that single before/after change. The same write
+  /// credits the challenge-calendar day [dayKey] (Challenge.dayKey), which
+  /// daily-minimum rules judge from.
   Future<void> addProgress({
     required String competitionId,
     required String uid,
     required int amount,
+    required String dayKey,
   }) async {
     await _db
         .collection('competitions')
@@ -230,6 +226,9 @@ class FirestoreService {
         .update({
           'progress': FieldValue.increment(amount),
           'updatedAt': FieldValue.serverTimestamp(),
+          // A FieldPath, not 'dailyProgress.$dayKey': the dashes in the
+          // date aren't valid in a dotted field-path string.
+          FieldPath(['dailyProgress', dayKey]): FieldValue.increment(amount),
         });
   }
 
@@ -316,36 +315,33 @@ class FirestoreService {
     return result.docs.isNotEmpty;
   }
 
-  /// Send an invite
+  /// Send an invite. Copies the challenge's definition onto the invite so
+  /// the recipient's accept card can describe it without another read.
   Future<void> sendCompetitionInvite({
-    required String competitionId,
-    required String competitionTitle,
+    required Challenge challenge,
     required String fromUid,
     required String toUid,
     required String toUsername,
-    String competitionType = 'personalGoalChallenge',
-    String? sharedGoalTitle,
-    int? sharedTargetValue,
-    String? sharedUnit,
-    String? creatorGoalTitle,
-    int? creatorTargetValue,
-    String? creatorUnit,
   }) async {
     await _db.collection('competition_invites').add({
-      'competitionId': competitionId,
-      'competitionTitle': competitionTitle,
-      'competitionType': competitionType,
+      'competitionId': challenge.id,
+      'competitionTitle': challenge.title,
+      'competitionType': challenge.isLegacyPersonal
+          ? 'personalGoalChallenge'
+          : 'sharedGoalChallenge',
+      if (!challenge.isLegacyPersonal) ...{
+        'winCondition': challenge.winCondition.name,
+        'sharedGoalTitle': challenge.goalTitle,
+        'sharedTargetValue': ?challenge.targetValue,
+        'sharedUnit': challenge.unit,
+        if (challenge.rules.toMap().isNotEmpty)
+          'rules': challenge.rules.toMap(),
+      },
       'fromUid': fromUid,
       'toUid': toUid,
       'toUsername': toUsername,
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
-      if (sharedGoalTitle != null) 'sharedGoalTitle': sharedGoalTitle,
-      if (sharedTargetValue != null) 'sharedTargetValue': sharedTargetValue,
-      if (sharedUnit != null) 'sharedUnit': sharedUnit,
-      if (creatorGoalTitle != null) 'creatorGoalTitle': creatorGoalTitle,
-      if (creatorTargetValue != null) 'creatorTargetValue': creatorTargetValue,
-      if (creatorUnit != null) 'creatorUnit': creatorUnit,
     });
   }
 
@@ -369,7 +365,9 @@ class FirestoreService {
         .snapshots();
   }
 
-  /// Accept an invite and define personal goal for this competition
+  /// Accept an invite to a legacy Personal Goal challenge, defining the
+  /// joiner's own goal. Only reachable from invites sent before win
+  /// conditions; remove once those have all been answered.
   Future<void> acceptCompetitionInvite({
     required String inviteId,
     required String competitionId,
@@ -411,16 +409,17 @@ class FirestoreService {
     }
   }
 
-  /// Accept a shared goal challenge invite.
-  /// The participant is added with the shared goal values from the invite.
-  Future<void> acceptSharedGoalCompetitionInvite({
+  /// Accept a challenge invite. The participant is added with the
+  /// challenge's shared goal; [targetValue] is the race finish line, null
+  /// for modes without one.
+  Future<void> acceptChallengeInvite({
     required String inviteId,
     required String competitionId,
     required String uid,
     required String username,
-    required String sharedGoalTitle,
-    required int sharedTargetValue,
-    required String sharedUnit,
+    required String goalTitle,
+    required int? targetValue,
+    required String unit,
   }) async {
     final competitionRef = _db.collection('competitions').doc(competitionId);
     final participantRef = competitionRef.collection('participants').doc(uid);
@@ -435,9 +434,9 @@ class FirestoreService {
     batch.set(participantRef, {
       'uid': uid,
       'username': username,
-      'goalTitle': sharedGoalTitle,
-      'targetValue': sharedTargetValue,
-      'unit': sharedUnit,
+      'goalTitle': goalTitle,
+      'targetValue': ?targetValue,
+      'unit': unit,
       'progress': 0,
       'joinedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

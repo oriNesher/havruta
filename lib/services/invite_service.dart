@@ -1,5 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
+import '../competitions/challenge.dart';
+
 /// Preview data for an invite link, as returned by the `getInvite` callable.
 class InvitePreview {
   final bool valid;
@@ -7,6 +9,8 @@ class InvitePreview {
   final String? competitionId;
   final String? competitionTitle;
   final String? competitionType;
+  final String? winCondition;
+  final int? dailyMinimum;
   final String? createdByUsername;
   final String? sharedGoalTitle;
   final int? sharedTargetValue;
@@ -21,6 +25,8 @@ class InvitePreview {
     this.competitionId,
     this.competitionTitle,
     this.competitionType,
+    this.winCondition,
+    this.dailyMinimum,
     this.createdByUsername,
     this.sharedGoalTitle,
     this.sharedTargetValue,
@@ -30,6 +36,20 @@ class InvitePreview {
     this.creatorUnit,
   });
 
+  /// The linked challenge as far as the preview describes it — enough to
+  /// say how it's won and what the goal is.
+  Challenge get challenge => Challenge.fromDoc(competitionId ?? '', {
+    'title': competitionTitle,
+    'type': competitionType,
+    'winCondition': ?winCondition,
+    'sharedGoalTitle': sharedGoalTitle,
+    'sharedTargetValue': sharedTargetValue,
+    'sharedUnit': sharedUnit,
+    'rules': {'dailyMinimum': ?dailyMinimum},
+  });
+
+  bool get isLegacyPersonal => challenge.isLegacyPersonal;
+
   factory InvitePreview.fromMap(Map<String, dynamic> data) {
     return InvitePreview(
       valid: data['valid'] == true,
@@ -37,6 +57,8 @@ class InvitePreview {
       competitionId: data['competitionId'] as String?,
       competitionTitle: data['competitionTitle'] as String?,
       competitionType: data['competitionType'] as String?,
+      winCondition: data['winCondition'] as String?,
+      dailyMinimum: (data['dailyMinimum'] as num?)?.toInt(),
       createdByUsername: data['createdByUsername'] as String?,
       sharedGoalTitle: data['sharedGoalTitle'] as String?,
       sharedTargetValue: (data['sharedTargetValue'] as num?)?.toInt(),

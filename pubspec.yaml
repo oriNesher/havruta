@@ -50,6 +50,8 @@ dependencies:
   # Browser APIs (Blob/anchor download) used only by the web-side
   # conditional import in lib/services/file_download_web.dart.
   web: ^1.1.1
+  flutter_timezone: ^5.1.1
+  timezone: ^0.11.1
 
 dev_dependencies:
   flutter_test:

@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../app_theme.dart';
+import '../competitions/challenge.dart';
+import '../competitions/challenge_standings.dart';
 import '../competitions/competition_event.dart';
 import '../onboarding/onboarding_anchor.dart';
 import '../onboarding/onboarding_ids.dart';
@@ -210,11 +212,30 @@ class _CompetitionCard extends StatelessWidget {
     required this.firestoreService,
   });
 
-  String? _daysLeft(String? deadline) {
+  String? _daysLeft(Challenge challenge) {
+    final now = DateTime.now();
+    final startsAt = challenge.startsAt;
+    if (startsAt != null && now.isBefore(startsAt)) {
+      final days = DateTime(startsAt.year, startsAt.month, startsAt.day)
+          .difference(DateTime(now.year, now.month, now.day))
+          .inDays;
+      return days <= 1 ? 'Starts tomorrow' : 'Starts in ${days}d';
+    }
+
+    final endsAt = challenge.endsAt;
+    if (endsAt != null) {
+      final remaining = endsAt.difference(now);
+      if (remaining.isNegative) return 'Ended';
+      if (remaining.inHours < 24) return 'Last day';
+      return '${remaining.inDays}d left';
+    }
+
+    // Older challenges' free-text deadline, when it happens to be a date.
+    final deadline = challenge.legacyDeadline;
     if (deadline == null) return null;
     try {
       final d = DateTime.parse(deadline);
-      final diff = d.difference(DateTime.now()).inDays;
+      final diff = d.difference(now).inDays;
       if (diff > 0) return '${diff}d left';
       if (diff == 0) return 'Today';
       return 'Ended';
@@ -223,22 +244,25 @@ class _CompetitionCard extends StatelessWidget {
     }
   }
 
-  void _openDetails(BuildContext context) {
+  /// The goal chip: the race's finish line or the daily minimum.
+  String? _goalChipLabel(Challenge challenge) {
+    final unitSuffix = challenge.unit.isNotEmpty ? ' ${challenge.unit}' : '';
+    final minimum = challenge.rules.dailyMinimum;
+    return switch (challenge.winCondition) {
+      WinCondition.firstToTarget
+          when challenge.targetValue != null && challenge.unit.isNotEmpty =>
+        challenge.targetLabel,
+      WinCondition.lastStanding when minimum != null =>
+        '$minimum$unitSuffix / day',
+      _ => null,
+    };
+  }
+
+  void _openDetails(BuildContext context, Challenge challenge) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CompetitionDetailsScreen(
-          competitionId: competitionId,
-          title: competition['title'] ?? '',
-          description: competition['description'] ?? '',
-          status: competition['status'] ?? '',
-          createdBy: competition['createdBy'] ?? '',
-          deadline: competition['deadline'] as String?,
-          type: competition['type'] as String? ?? 'personalGoalChallenge',
-          sharedGoalTitle: competition['sharedGoalTitle'] as String?,
-          sharedTargetValue: (competition['sharedTargetValue'] as num?)?.toInt(),
-          sharedUnit: competition['sharedUnit'] as String?,
-        ),
+        builder: (_) => CompetitionDetailsScreen(challenge: challenge),
       ),
     );
   }
@@ -247,19 +271,16 @@ class _CompetitionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final title = competition['title'] as String? ?? '';
-    final status = competition['status'] as String? ?? '';
-    final deadline = competition['deadline'] as String?;
-    final type = competition['type'] as String? ?? 'personalGoalChallenge';
-    final sharedTargetValue = (competition['sharedTargetValue'] as num?)?.toInt();
-    final sharedUnit = competition['sharedUnit'] as String?;
+    final challenge = Challenge.fromDoc(competitionId, competition);
+    final title = challenge.title;
+    final status = challenge.status;
 
-    final isActive = status == 'active';
-    final isShared = type == 'sharedGoalChallenge';
-    final daysLeft = _daysLeft(deadline);
+    final isActive = challenge.isActive;
+    final daysLeft = _daysLeft(challenge);
+    final goalChip = _goalChipLabel(challenge);
 
     return GestureDetector(
-      onTap: () => _openDetails(context),
+      onTap: () => _openDetails(context, challenge),
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
@@ -316,22 +337,25 @@ class _CompetitionCard extends StatelessWidget {
                 ),
               ),
               // ── Metadata chips ───────────────────────
-              if (daysLeft != null || (isShared && sharedTargetValue != null && sharedUnit != null)) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    if (daysLeft != null)
-                      _MetaChip(icon: Icons.calendar_today_outlined, label: daysLeft),
-                    if (isShared && sharedTargetValue != null && sharedUnit != null) ...[
-                      if (daysLeft != null) const SizedBox(width: 8),
-                      _MetaChip(
-                        icon: Icons.track_changes_outlined,
-                        label: '$sharedTargetValue $sharedUnit',
-                      ),
-                    ],
-                  ],
-                ),
-              ],
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  if (!challenge.isLegacyPersonal)
+                    _MetaChip(
+                      icon: Icons.sports_score_outlined,
+                      label: challenge.winCondition.label,
+                    ),
+                  if (daysLeft != null)
+                    _MetaChip(icon: Icons.calendar_today_outlined, label: daysLeft),
+                  if (goalChip != null)
+                    _MetaChip(
+                      icon: Icons.track_changes_outlined,
+                      label: goalChip,
+                    ),
+                ],
+              ),
               const SizedBox(height: 12),
               Divider(
                 height: 1,
@@ -348,11 +372,9 @@ class _CompetitionCard extends StatelessWidget {
               ),
               // ── Participants ─────────────────────────
               _ParticipantsList(
-                competitionId: competitionId,
+                challenge: challenge,
                 currentUid: currentUid,
                 firestoreService: firestoreService,
-                isActive: isActive,
-                sharedTargetValue: sharedTargetValue,
               ),
             ],
           ),
@@ -401,22 +423,111 @@ class _MetaChip extends StatelessWidget {
 // ─────────────────────────────────────────────
 
 class _ParticipantsList extends StatefulWidget {
-  final String competitionId;
+  final Challenge challenge;
   final String currentUid;
   final FirestoreService firestoreService;
-  final bool isActive;
-  final int? sharedTargetValue;
 
   const _ParticipantsList({
-    required this.competitionId,
+    required this.challenge,
     required this.currentUid,
     required this.firestoreService,
-    required this.isActive,
-    this.sharedTargetValue,
   });
+
+  String get competitionId => challenge.id;
 
   @override
   State<_ParticipantsList> createState() => _ParticipantsListState();
+}
+
+/// One participant row's numbers for the card's win condition.
+class _RowStats {
+  /// Where the bar sits now, and how much of that is new since last visit
+  /// (both 0..1 of the bar).
+  final double baseFraction;
+  final double deltaFraction;
+
+  /// Shown inside the bar, e.g. "64%", "42", "20/30" or "OUT".
+  final String barText;
+
+  /// Shown top-right, e.g. "64 / 100 km".
+  final String label;
+
+  const _RowStats({
+    required this.baseFraction,
+    required this.deltaFraction,
+    required this.barText,
+    required this.label,
+  });
+
+  /// [value] / [scale] split into the part already seen and the part new
+  /// since the viewer's last visit ([newAmount]).
+  static (double, double) _split(num value, num newAmount, num scale) {
+    if (scale <= 0) return (0, 0);
+    final base = ((value - newAmount) / scale).clamp(0.0, 1.0);
+    final delta = (newAmount / scale).clamp(0.0, 1.0 - base);
+    return (base, delta);
+  }
+
+  factory _RowStats.of(
+    Challenge challenge,
+    Map<String, dynamic> participant, {
+    required int lastSeen,
+    required int leaderProgress,
+  }) {
+    final progress = (participant['progress'] as num? ?? 0).toInt();
+    final unit = participant['unit'] as String? ?? challenge.unit;
+    final unitSuffix = unit.isNotEmpty ? ' $unit' : '';
+    final newAmount = (progress - lastSeen).clamp(0, progress);
+
+    switch (challenge.winCondition) {
+      case WinCondition.firstToTarget:
+        final target = challenge.targetFor(participant) ?? 0;
+        final (base, delta) = _split(progress, newAmount, target);
+        return _RowStats(
+          baseFraction: base,
+          deltaFraction: delta,
+          barText: target > 0
+              ? '${((progress / target) * 100).toStringAsFixed(0)}%'
+              : '0%',
+          label: '$progress / $target$unitSuffix',
+        );
+      case WinCondition.mostProgress:
+        final (base, delta) = _split(progress, newAmount, leaderProgress);
+        return _RowStats(
+          baseFraction: base,
+          deltaFraction: delta,
+          barText: '$progress',
+          label: '$progress$unitSuffix',
+        );
+      case WinCondition.lastStanding:
+        if (participant['eliminatedOnDay'] != null) {
+          return _RowStats(
+            baseFraction: 0,
+            deltaFraction: 0,
+            barText: 'OUT',
+            label: '$progress$unitSuffix total',
+          );
+        }
+        final minimum = challenge.rules.dailyMinimum ?? 0;
+        final today =
+            ((participant['dailyProgress'] as Map<String, dynamic>?)?[challenge
+                        .dayKey(DateTime.now())]
+                    as num? ??
+                0)
+            .toInt();
+        final (base, delta) = _split(
+          today,
+          newAmount.clamp(0, today),
+          minimum,
+        );
+        return _RowStats(
+          baseFraction: base,
+          deltaFraction: delta,
+          barText: today >= minimum && minimum > 0 ? 'SAFE' : '$today/$minimum',
+          label: 'today$unitSuffix',
+        );
+    }
+  }
 }
 
 class _ParticipantsListState extends State<_ParticipantsList> {
@@ -481,6 +592,7 @@ class _ParticipantsListState extends State<_ParticipantsList> {
         competitionId: widget.competitionId,
         uid: widget.currentUid,
         amount: amount,
+        dayKey: widget.challenge.dayKey(DateTime.now()),
       );
     } catch (e) {
       if (!mounted) return;
@@ -489,6 +601,29 @@ class _ParticipantsListState extends State<_ParticipantsList> {
       );
     } finally {
       if (mounted) setState(() => _loggingProgress = false);
+    }
+  }
+
+  /// Whether the viewer can log progress right now: the challenge is
+  /// running (started, not past its end), and for their mode they're still
+  /// in it — a race finisher is done, an eliminated player is out.
+  bool _canLog(Challenge challenge, Map<String, dynamic> me) {
+    if (!challenge.isActive) return false;
+    final now = DateTime.now();
+    final endsAt = challenge.endsAt;
+    if (endsAt != null && !now.isBefore(endsAt)) return false;
+
+    switch (challenge.winCondition) {
+      case WinCondition.firstToTarget:
+        final target = challenge.targetFor(me);
+        final progress = (me['progress'] as num? ?? 0).toInt();
+        return target != null && progress < target;
+      case WinCondition.mostProgress:
+        return true;
+      case WinCondition.lastStanding:
+        final startsAt = challenge.startsAt;
+        if (startsAt != null && now.isBefore(startsAt)) return false;
+        return me['eliminatedOnDay'] == null;
     }
   }
 
@@ -515,15 +650,14 @@ class _ParticipantsListState extends State<_ParticipantsList> {
         final docs = snap.data?.docs ?? [];
         if (docs.isEmpty) return const Text('No participants yet');
 
-        final participants = docs.map((d) => d.data()).toList();
-
-        participants.sort((a, b) {
-          final pA = (a['progress'] as num? ?? 0).toDouble();
-          final pB = (b['progress'] as num? ?? 0).toDouble();
-          final tA = (a['targetValue'] as num? ?? widget.sharedTargetValue ?? 1).toDouble();
-          final tB = (b['targetValue'] as num? ?? widget.sharedTargetValue ?? 1).toDouble();
-          return (tB > 0 ? pB / tB : 0.0).compareTo(tA > 0 ? pA / tA : 0.0);
-        });
+        final challenge = widget.challenge;
+        final participants = rankParticipants(
+          challenge,
+          docs.map((d) => d.data()),
+        );
+        final leaderProgress = participants
+            .map((p) => (p['progress'] as num? ?? 0).toInt())
+            .fold<int>(0, (a, b) => a > b ? a : b);
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           ProgressSnapshotCache.instance.updateCurrent(
@@ -536,9 +670,7 @@ class _ParticipantsListState extends State<_ParticipantsList> {
           (p) => (p['uid'] as String?) == widget.currentUid,
           orElse: () => {},
         );
-        final myProgress = (myData['progress'] as num? ?? 0).toInt();
-        final myTarget = (myData['targetValue'] as num? ?? widget.sharedTargetValue ?? 0).toInt();
-        final canLog = widget.isActive && myData.isNotEmpty && myProgress < myTarget;
+        final canLog = myData.isNotEmpty && _canLog(challenge, myData);
 
         return Column(
           children: [
@@ -549,31 +681,25 @@ class _ParticipantsListState extends State<_ParticipantsList> {
               final pUid = p['uid'] as String? ?? '';
               final username = p['username'] as String? ?? pUid;
               final progress = (p['progress'] as num? ?? 0).toInt();
-              final target = (p['targetValue'] as num? ?? widget.sharedTargetValue ?? 0).toInt();
               final goalTitle = p['goalTitle'] as String? ?? '';
-              final unit = p['unit'] as String? ?? '';
 
               final isMe = pUid == widget.currentUid;
-              final lastSeen = _lastSeenProgress?[pUid] ?? progress;
-
-              final baseFraction = target > 0 ? (lastSeen / target).clamp(0.0, 1.0) : 0.0;
-              final deltaFraction = target > 0
-                  ? ((progress - lastSeen) / target).clamp(0.0, 1.0 - baseFraction)
-                  : 0.0;
-              final pct = target > 0
-                  ? '${((progress / target) * 100).toStringAsFixed(0)}%'
-                  : '0%';
-              final progressLabel = unit.isNotEmpty ? '$progress / $target $unit' : '$progress / $target';
+              final stats = _RowStats.of(
+                challenge,
+                p,
+                lastSeen: _lastSeenProgress?[pUid] ?? progress,
+                leaderProgress: leaderProgress,
+              );
 
               return _ParticipantRow(
                 rank: rank,
                 username: username,
                 goalTitle: goalTitle,
-                progressLabel: progressLabel,
-                percentText: pct,
+                progressLabel: stats.label,
+                percentText: stats.barText,
                 isMe: isMe,
-                baseFraction: baseFraction,
-                deltaFraction: deltaFraction,
+                baseFraction: stats.baseFraction,
+                deltaFraction: stats.deltaFraction,
               );
             }),
             // Pinned below the (re-orderable) rows instead of on "my" row
@@ -1024,6 +1150,8 @@ class _CompetitionEventRow extends StatelessWidget {
         return Icons.person_add;
       case 'left':
         return Icons.person_remove;
+      case 'eliminated':
+        return Icons.heart_broken;
       default:
         return Icons.notifications_none;
     }
@@ -1082,7 +1210,7 @@ class _CompetitionEventRow extends StatelessWidget {
           text(pct != null ? ' hit $pct%' : ' hit a milestone'),
         ];
       case 'won':
-        return [name(actor), text(' won the competition')];
+        return [name(actor), text(' won the challenge')];
       case 'finishedInPosition':
         final position = (event.metadata?['position'] as num?)?.toInt();
         return [
@@ -1090,7 +1218,7 @@ class _CompetitionEventRow extends StatelessWidget {
           text(
             position != null
                 ? ' finished ${_ordinal(position)}'
-                : ' finished the competition',
+                : ' finished the challenge',
           ),
         ];
       case 'activityStreak':
@@ -1104,9 +1232,15 @@ class _CompetitionEventRow extends StatelessWidget {
           ),
         ];
       case 'joined':
-        return [name(actor), text(' joined the competition')];
+        return [name(actor), text(' joined the challenge')];
       case 'left':
-        return [name(actor), text(' left the competition')];
+        return [name(actor), text(' left the challenge')];
+      case 'eliminated':
+        final day = (event.metadata?['dayNumber'] as num?)?.toInt();
+        return [
+          name(actor),
+          text(day != null ? ' missed day $day and is out' : ' is out'),
+        ];
       default:
         return [text('New activity')];
     }
