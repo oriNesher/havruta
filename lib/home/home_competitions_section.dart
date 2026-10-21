@@ -336,6 +336,10 @@ class _CompetitionCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (challenge.prize != null) ...[
+                const SizedBox(height: 6),
+                _PrizeBadge(prize: challenge.prize!),
+              ],
               // ── Metadata chips ───────────────────────
               const SizedBox(height: 8),
               Wrap(
@@ -411,6 +415,49 @@ class _MetaChip extends StatelessWidget {
           Text(
             label,
             style: AppTheme.mono(fontSize: 12, color: colorScheme.onSurface.withValues(alpha: 0.8)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Prize badge — what the winner gets, under the title
+// ─────────────────────────────────────────────
+
+class _PrizeBadge extends StatelessWidget {
+  final String prize;
+
+  const _PrizeBadge({required this.prize});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.secondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.card_giftcard, size: 13, color: color),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              prize,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTheme.display(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: color,
+              ),
+            ),
           ),
         ],
       ),
@@ -559,7 +606,17 @@ class _ParticipantsListState extends State<_ParticipantsList> {
     }
   }
 
-  Future<void> _openAddProgressPopup() async {
+  /// How much more the viewer can log before overshooting their goal — only
+  /// a race has a finish line to cap at; the other modes have no ceiling.
+  int? _remainingToGoal(Challenge challenge, Map<String, dynamic> me) {
+    if (challenge.winCondition != WinCondition.firstToTarget) return null;
+    final target = challenge.targetFor(me);
+    if (target == null) return null;
+    final progress = (me['progress'] as num? ?? 0).toInt();
+    return (target - progress).clamp(0, target);
+  }
+
+  Future<void> _openAddProgressPopup(Map<String, dynamic> me) async {
     final lastAmount = await _lastAmountStore.getLastAmount(
       widget.currentUid,
       widget.competitionId,
@@ -567,11 +624,20 @@ class _ParticipantsListState extends State<_ParticipantsList> {
     final holdStatement = await _holdStatementStore.currentStatement();
     if (!mounted) return;
 
+    final maxAmount = _remainingToGoal(widget.challenge, me);
+    final unit = me['unit'] as String? ?? widget.challenge.unit;
+    var initialAmount = lastAmount ?? 1;
+    if (maxAmount != null && initialAmount > maxAmount) {
+      initialAmount = maxAmount;
+    }
+
     final amount = await showAddProgressDialog(
       context,
       competitionId: widget.competitionId,
-      initialAmount: lastAmount ?? 1,
+      initialAmount: initialAmount,
       holdStatement: holdStatement,
+      maxAmount: maxAmount,
+      unit: unit,
     );
     if (amount == null) return;
 
@@ -709,7 +775,7 @@ class _ParticipantsListState extends State<_ParticipantsList> {
             if (canLog) _AddProgressButton(
               competitionId: widget.competitionId,
               isLoggingProgress: _loggingProgress,
-              onTap: _openAddProgressPopup,
+              onTap: () => _openAddProgressPopup(myData),
             ),
           ],
         );
@@ -1613,11 +1679,15 @@ const List<int> _quickAddAmounts = [1, 5, 25];
 /// [initialAmount] and showing [holdStatement] in the gap above the submit
 /// button while the hold runs. Returns the submitted amount once the user
 /// completes the hold-to-submit gesture, or null if they cancelled.
+/// [maxAmount] caps the amount at what's left to reach the goal (null for
+/// modes with no finish line); anything above it is refused with a message.
 Future<int?> showAddProgressDialog(
   BuildContext context, {
   required String competitionId,
   required int initialAmount,
   required String holdStatement,
+  int? maxAmount,
+  String unit = '',
 }) {
   return showDialog<int>(
     context: context,
@@ -1625,6 +1695,8 @@ Future<int?> showAddProgressDialog(
       competitionId: competitionId,
       initialAmount: initialAmount,
       holdStatement: holdStatement,
+      maxAmount: maxAmount,
+      unit: unit,
     ),
   );
 }
@@ -1633,11 +1705,15 @@ class _AddProgressDialog extends StatefulWidget {
   final String competitionId;
   final int initialAmount;
   final String holdStatement;
+  final int? maxAmount;
+  final String unit;
 
   const _AddProgressDialog({
     required this.competitionId,
     required this.initialAmount,
     required this.holdStatement,
+    required this.maxAmount,
+    required this.unit,
   });
 
   @override
@@ -1663,6 +1739,17 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
   }
 
   int _currentAmount() => int.tryParse(_controller.text.trim()) ?? 0;
+
+  bool get _isOverGoal {
+    final max = widget.maxAmount;
+    return max != null && _currentAmount() > max;
+  }
+
+  String get _overGoalMessage {
+    final max = widget.maxAmount ?? 0;
+    final unitSuffix = widget.unit.isNotEmpty ? ' ${widget.unit}' : '';
+    return "That's too much — only $max$unitSuffix left to hit the goal";
+  }
 
   void _applyQuickAdd(int delta) {
     final next = _currentAmount() + delta;
@@ -1692,6 +1779,10 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
                 textAlign: TextAlign.center,
                 autofocus: true,
                 style: AppTheme.mono(fontSize: 34, fontWeight: FontWeight.w700),
+                decoration: InputDecoration(
+                  errorText: _isOverGoal ? _overGoalMessage : null,
+                  errorMaxLines: 2,
+                ),
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 16),
@@ -1741,7 +1832,7 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
               ),
               const SizedBox(height: 12),
               _HoldToSubmitButton(
-                enabled: _currentAmount() > 0,
+                enabled: _currentAmount() > 0 && !_isOverGoal,
                 color: green,
                 onHoldChanged: (holding) {
                   if (_isHolding != holding) {

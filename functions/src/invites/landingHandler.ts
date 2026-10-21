@@ -53,6 +53,7 @@ function renderPage(opts: {
   .btn-primary { background: #8B5CF6; color: #fff; }
   .btn-secondary { background: #f2f2f7; color: #1a1a2e; }
   .muted { color: #6b6b80; font-size: 14px; }
+  .step-hint { margin: 6px 0 0; text-align: center; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -117,14 +118,15 @@ export const inviteLanding = onRequest(
 
     let betaSectionHtml = "";
     if (BETA_GATE_CONFIG.enabled) {
+      const stepsHtml = BETA_GATE_CONFIG.steps.map((step, i) => `
+        <a class="btn btn-secondary" href="${step.url}">
+          ${i + 1}. ${escapeHtml(step.label)}
+        </a>
+        <p class="muted step-hint">${escapeHtml(step.hint)}</p>
+      `).join("");
       betaSectionHtml = `
         <p class="muted">${escapeHtml(BETA_GATE_CONFIG.instructions)}</p>
-        <a class="btn btn-secondary" href="${BETA_GATE_CONFIG.googleGroupUrl}">
-          1. Join the testers group
-        </a>
-        <a class="btn btn-secondary" href="${BETA_GATE_CONFIG.playOptInUrl}">
-          2. Become a tester &amp; install
-        </a>
+        ${stepsHtml}
         <p class="muted">Then tap this link again to jump back in.</p>
       `;
     }

@@ -89,6 +89,10 @@ class Challenge {
 
   final ChallengeRules rules;
 
+  /// What the winner gets, free text (e.g. "Loser buys pizza"); null when
+  /// the creator didn't set one. Display only.
+  final String? prize;
+
   /// IANA zone whose calendar defines challenge days; null means UTC.
   final String? timeZone;
   final DateTime? startsAt;
@@ -111,6 +115,7 @@ class Challenge {
     this.unit = '',
     this.targetValue,
     this.rules = const ChallengeRules(),
+    this.prize,
     this.timeZone,
     this.startsAt,
     this.endsAt,
@@ -144,6 +149,9 @@ class Challenge {
           ? _positiveIntOrNull(data['sharedTargetValue'])
           : null,
       rules: ChallengeRules.fromMap(data['rules'] as Map<String, dynamic>?),
+      prize: (data['prize'] as String?)?.trim().isNotEmpty == true
+          ? (data['prize'] as String).trim()
+          : null,
       timeZone: (data['timeZone'] as String?)?.isNotEmpty == true
           ? data['timeZone'] as String
           : null,

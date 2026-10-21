@@ -63,6 +63,7 @@ class FirestoreService {
     required String unit,
     int? targetValue,
     ChallengeRules rules = const ChallengeRules(),
+    String? prize,
     String? timeZone,
     DateTime? startsAt,
     DateTime? endsAt,
@@ -85,6 +86,7 @@ class FirestoreService {
       if (isRace && targetValue != null) 'sharedTargetValue': targetValue,
       'sharedUnit': unit,
       if (rules.toMap().isNotEmpty) 'rules': rules.toMap(),
+      'prize': ?prize,
       'timeZone': ?timeZone,
       if (startsAt != null) 'startsAt': Timestamp.fromDate(startsAt),
       if (endsAt != null) ...{

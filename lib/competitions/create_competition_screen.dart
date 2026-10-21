@@ -36,6 +36,7 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   final _dailyMinimumController = TextEditingController();
   final _unitController = TextEditingController();
   final _rulesController = TextEditingController();
+  final _prizeController = TextEditingController();
 
   /// Last calendar day of the challenge (inclusive), in the creator's
   /// local calendar. Required for Most Progress, optional otherwise.
@@ -197,6 +198,8 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
     final titleText = _titleController.text.trim();
     final challengeName = titleText.isEmpty ? goalText : titleText;
     final unit = _unitController.text.trim();
+    final prizeText = _prizeController.text.trim();
+    final prize = prizeText.isEmpty ? null : prizeText;
     final now = DateTime.now();
     final endDate = _endDate;
 
@@ -249,6 +252,7 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
         unit: unit,
         targetValue: targetValue,
         rules: rules,
+        prize: prize,
         timeZone: _timeZone,
         startsAt: startsAt,
         endsAt: endsAt,
@@ -264,6 +268,7 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
         unit: unit,
         targetValue: targetValue,
         rules: rules,
+        prize: prize,
         timeZone: _timeZone,
         startsAt: startsAt,
         endsAt: endsAt,
@@ -307,6 +312,7 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
     _dailyMinimumController.dispose();
     _unitController.dispose();
     _rulesController.dispose();
+    _prizeController.dispose();
     super.dispose();
   }
 
@@ -549,6 +555,22 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
                 controller: _titleController,
                 decoration: const InputDecoration(
                   hintText: 'Family Health Challenge',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Prize
+            _fieldSection(
+              'Prize',
+              'What the winner gets — shown on the challenge card. '
+              'e.g. "Loser buys pizza" or "Bragging rights".',
+              TextField(
+                controller: _prizeController,
+                maxLength: 40,
+                decoration: const InputDecoration(
+                  hintText: 'Loser buys pizza',
                   border: OutlineInputBorder(),
                 ),
               ),

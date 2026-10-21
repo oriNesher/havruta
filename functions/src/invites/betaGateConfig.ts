@@ -11,19 +11,34 @@
  * To retire the beta gate once Havruta is publicly available: set
  * `enabled` to false (or delete this file and the one `if` block in
  * landingHandler.ts that reads it). No other file needs to change.
- *
- * TODO(you): fill in the real URLs below before deploying.
  */
 export const BETA_GATE_CONFIG = {
   enabled: true,
-  googleGroupUrl: "https://groups.google.com/g/havruta-beta-testers",
-  // The opt-in page, not the Store listing: in closed testing the listing
-  // stays hidden until the tester taps "Become a tester" here, and the Play
-  // Store app reports that as a misleading "No connection" error.
-  playOptInUrl: "https://play.google.com/apps/testing/com.orinesher.havruta",
   instructions:
-    "Prefer the Android app? It's still in closed testing — join our " +
-    "testers group, then tap \"Become a tester\" and install it from " +
-    "Google Play, signed in with that same Google account. The browser " +
-    "version above needs none of this.",
+    "Prefer the Android app? It's still in closed testing, so it takes " +
+    "three quick steps — do all three with the same Google account your " +
+    "phone's Play Store uses. The browser version above needs none of this.",
+  // In order. Each `hint` names the exact button the tester will see on
+  // the page the step opens, so the two must stay in sync with Google's UI.
+  steps: [
+    {
+      label: "Join the Google Group",
+      url: "https://groups.google.com/g/havruta-beta-testers",
+      hint: "Tap “Join group”.",
+    },
+    {
+      // The opt-in page, not the Store listing: in closed testing the
+      // listing stays hidden until the tester taps "Become a tester" here,
+      // and the Play Store app reports that as a misleading "No connection"
+      // error.
+      label: "Become a tester",
+      url: "https://play.google.com/apps/testing/com.orinesher.havruta",
+      hint: "Tap “Become a tester”.",
+    },
+    {
+      label: "Download the app",
+      url: "https://play.google.com/store/apps/details?id=com.orinesher.havruta",
+      hint: "Tap “Install”.",
+    },
+  ],
 };
