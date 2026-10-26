@@ -9,8 +9,12 @@ import '../services/firestore_service.dart';
 import 'challenge.dart';
 import 'challenge_standings.dart';
 import 'competition_invite_section.dart';
+import 'personal_progress.dart';
+import 'progress_reporting.dart';
+import 'widgets/add_progress.dart';
 import 'widgets/challenge_activity_graph.dart';
 import 'widgets/invite_link_card.dart';
+import 'widgets/personal_progress_panel.dart';
 
 const List<String> _monthNames = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -19,6 +23,29 @@ const List<String> _monthNames = [
 
 String _formatDate(DateTime date) =>
     '${_monthNames[date.month - 1]} ${date.day}, ${date.year}';
+
+String _formatLastUpdate(Timestamp? updatedAt) {
+  if (updatedAt == null) return '';
+
+  final date = updatedAt.toDate();
+  final diff = DateTime.now().difference(date);
+
+  if (diff.inSeconds < 60) return 'Updated just now';
+  if (diff.inMinutes < 60) return 'Updated ${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return 'Updated ${diff.inHours}h ago';
+  if (diff.inDays < 7) return 'Updated ${diff.inDays}d ago';
+
+  return 'Updated ${_monthNames[date.month - 1]} ${date.day}';
+}
+
+/// What [participant] has logged on the current challenge day.
+int _todayProgressOf(Challenge challenge, Map<String, dynamic> participant) =>
+    ((participant['dailyProgress'] as Map<String, dynamic>?)?[challenge.dayKey(
+                  DateTime.now(),
+                )]
+                as num? ??
+            0)
+        .toInt();
 
 /// 1-based challenge day number of [dayKey] (YYYY-MM-DD), counting from
 /// [challenge]'s first day.
@@ -47,21 +74,12 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   final FirestoreService firestoreService = FirestoreService();
   late final Stream<DocumentSnapshot<Map<String, dynamic>>> _challengeStream =
       firestoreService.getCompetitionDoc(widget.challenge.id);
+  // Created once: the activity graph, progress actions, Your progress and
+  // the leaderboard all read this one stream.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _participantsStream =
+      firestoreService.getCompetitionParticipants(widget.challenge.id);
   bool _isDeleting = false;
-
-  String _formatLastUpdate(Timestamp? updatedAt) {
-    if (updatedAt == null) return '';
-
-    final date = updatedAt.toDate();
-    final diff = DateTime.now().difference(date);
-
-    if (diff.inSeconds < 60) return 'Updated just now';
-    if (diff.inMinutes < 60) return 'Updated ${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return 'Updated ${diff.inHours}h ago';
-    if (diff.inDays < 7) return 'Updated ${diff.inDays}d ago';
-
-    return 'Updated ${_monthNames[date.month - 1]} ${date.day}';
-  }
+  bool _loggingProgress = false;
 
   Future<void> _showEditProgressDialog({
     required Challenge challenge,
@@ -444,61 +462,39 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
               ],
 
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: firestoreService.getCompetitionParticipants(
-                  challenge.id,
-                ),
+                stream: _participantsStream,
                 builder: (context, snapshot) {
-                  final participantsHeading = [
-                    Text(
-                      'Participants',
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 12),
-                  ];
-
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ...participantsHeading,
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 20),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                      ],
+                    return const SizedBox(
+                      height: 240,
+                      child: Center(child: CircularProgressIndicator()),
                     );
                   }
 
                   if (snapshot.hasError) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ...participantsHeading,
-                        Text('Error: ${snapshot.error}'),
-                      ],
-                    );
+                    return Text('Error: ${snapshot.error}');
                   }
 
                   final docs = snapshot.data?.docs ?? [];
 
                   if (docs.isEmpty) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ...participantsHeading,
-                        const Text('No participants yet'),
-                      ],
-                    );
+                    return const _Leaderboard.empty();
                   }
 
                   final participants = rankParticipants(
                     challenge,
                     docs.map((doc) => doc.data()),
                   );
-                  final todayKey = challenge.dayKey(DateTime.now());
-                  final leaderProgress = participants
-                      .map((p) => (p['progress'] as num? ?? 0).toInt())
-                      .fold<int>(0, (a, b) => a > b ? a : b);
+                  final me = user == null
+                      ? null
+                      : participants
+                            .where((p) => p['uid'] == user.uid)
+                            .firstOrNull;
+                  final leaderboard = _Leaderboard(
+                    challenge: challenge,
+                    participants: participants,
+                    currentUid: user?.uid,
+                  );
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -509,45 +505,36 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                         currentUserUid: user?.uid,
                       ),
                       const SizedBox(height: 28),
-                      ...participantsHeading,
-                      ...participants.map((participant) {
-                        final uid = participant['uid'] as String? ?? '';
-                        final isMe = user != null && uid == user.uid;
-                        final progress =
-                            (participant['progress'] as num? ?? 0).toInt();
-                        final todayProgress =
-                            ((participant['dailyProgress']
-                                        as Map<String, dynamic>?)?[todayKey]
-                                    as num? ??
-                                0)
-                            .toInt();
-                        final eliminated =
-                            participant['eliminatedOnDay'] != null;
-                        final canEdit = isMe &&
-                            challenge.isActive &&
-                            !eliminated &&
-                            progress > 0;
-
-                        return _ParticipantCard(
-                          challenge: challenge,
-                          participant: participant,
-                          isMe: isMe,
-                          todayProgress: todayProgress,
-                          leaderProgress: leaderProgress,
-                          lastUpdateText: _formatLastUpdate(
-                            participant['updatedAt'] as Timestamp?,
+                      // Reporting and editing are their own row, separate
+                      // from both progress views.
+                      if (me != null)
+                        _ProgressActions(
+                          canLog: canLogProgress(challenge, me),
+                          canEdit: canEditProgress(challenge, me),
+                          isLoggingProgress: _loggingProgress,
+                          onAdd: () => reportProgress(
+                            context,
+                            challenge: challenge,
+                            me: me,
+                            uid: user!.uid,
+                            onSubmitting: (submitting) => setState(
+                              () => _loggingProgress = submitting,
+                            ),
                           ),
-                          onEdit: canEdit
-                              ? () => _showEditProgressDialog(
-                                  challenge: challenge,
-                                  uid: user.uid,
-                                  currentProgress: progress,
-                                  todayProgress: todayProgress,
-                                  unit: (participant['unit'] ?? '').toString(),
-                                )
-                              : null,
-                        );
-                      }),
+                          onEdit: () => _showEditProgressDialog(
+                            challenge: challenge,
+                            uid: user!.uid,
+                            currentProgress:
+                                (me['progress'] as num? ?? 0).toInt(),
+                            todayProgress: _todayProgressOf(challenge, me),
+                            unit: (me['unit'] ?? '').toString(),
+                          ),
+                        ),
+                      if (me != null) ...[
+                        PersonalProgressPanel(challenge: challenge, me: me),
+                        const SizedBox(height: 28),
+                      ],
+                      leaderboard,
                     ],
                   );
                 },
@@ -630,6 +617,122 @@ class _ResultsBanner extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
+// Progress actions — reporting and editing, independent of the progress
+// views below them
+// ─────────────────────────────────────────────
+
+class _ProgressActions extends StatelessWidget {
+  final bool canLog;
+  final bool canEdit;
+  final bool isLoggingProgress;
+  final VoidCallback onAdd;
+  final VoidCallback onEdit;
+
+  const _ProgressActions({
+    required this.canLog,
+    required this.canEdit,
+    required this.isLoggingProgress,
+    required this.onAdd,
+    required this.onEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!canLog && !canEdit) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Deliberately no onboarding anchor: the home card's button is
+          // the one the report-progress guidance points at.
+          if (canLog)
+            AddProgressButton(
+              isLoggingProgress: isLoggingProgress,
+              onTap: onAdd,
+            ),
+          if (canLog && canEdit) const SizedBox(width: 12),
+          if (canEdit)
+            OutlinedButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('EDIT'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: AppTheme.display(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Leaderboard — every participant ranked, display only
+// ─────────────────────────────────────────────
+
+class _Leaderboard extends StatelessWidget {
+  final Challenge? challenge;
+  final List<Map<String, dynamic>> participants;
+  final String? currentUid;
+
+  const _Leaderboard({
+    required Challenge this.challenge,
+    required this.participants,
+    required this.currentUid,
+  });
+
+  const _Leaderboard.empty()
+    : challenge = null,
+      participants = const [],
+      currentUid = null;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final challenge = this.challenge;
+    final leaderProgress = participants
+        .map((p) => (p['progress'] as num? ?? 0).toInt())
+        .fold<int>(0, (a, b) => a > b ? a : b);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Leaderboard', style: theme.textTheme.titleLarge),
+        const SizedBox(height: 12),
+        if (challenge == null || participants.isEmpty)
+          const Text('No participants yet')
+        else
+          for (final participant in participants)
+            _ParticipantCard(
+              challenge: challenge,
+              participant: participant,
+              isMe: currentUid != null && participant['uid'] == currentUid,
+              todayProgress: _todayProgressOf(challenge, participant),
+              leaderProgress: leaderProgress,
+              lastUpdateText: _formatLastUpdate(
+                participant['updatedAt'] as Timestamp?,
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // Participant row, per win condition
 // ─────────────────────────────────────────────
 
@@ -640,7 +743,6 @@ class _ParticipantCard extends StatelessWidget {
   final int todayProgress;
   final int leaderProgress;
   final String lastUpdateText;
-  final VoidCallback? onEdit;
 
   const _ParticipantCard({
     required this.challenge,
@@ -649,7 +751,6 @@ class _ParticipantCard extends StatelessWidget {
     required this.todayProgress,
     required this.leaderProgress,
     required this.lastUpdateText,
-    required this.onEdit,
   });
 
   @override
@@ -698,15 +799,6 @@ class _ParticipantCard extends StatelessWidget {
                   ),
                 ),
                 trailing,
-                if (onEdit != null)
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    iconSize: 18,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    tooltip: 'Edit progress',
-                    onPressed: onEdit,
-                  ),
               ],
             ),
             // Legacy personal goal challenges: each participant's own goal.
@@ -764,7 +856,7 @@ class _ParticipantCard extends StatelessWidget {
         final target = challenge.targetFor(participant) ?? 0;
         final ratio = target > 0 ? progress / target : 0.0;
         return (
-          Text('${(ratio * 100).toStringAsFixed(0)}%', style: stat),
+          Text('${percentOf(progress, target)}%', style: stat),
           unitSuffix.isNotEmpty
               ? '$progress / $target$unitSuffix'
               : '$progress / $target completed',

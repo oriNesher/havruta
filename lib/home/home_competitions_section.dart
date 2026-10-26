@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -9,11 +8,12 @@ import '../app_theme.dart';
 import '../competitions/challenge.dart';
 import '../competitions/challenge_standings.dart';
 import '../competitions/competition_event.dart';
+import '../competitions/progress_reporting.dart';
+import '../competitions/widgets/add_progress.dart';
+import '../competitions/widgets/personal_progress_panel.dart';
 import '../onboarding/onboarding_anchor.dart';
 import '../onboarding/onboarding_ids.dart';
 import '../services/firestore_service.dart';
-import '../services/hold_statement_store.dart';
-import '../services/last_progress_amount_store.dart';
 import '../services/progress_snapshot_cache.dart';
 import '../services/respect_service.dart';
 import '../services/respect_store.dart';
@@ -579,8 +579,6 @@ class _RowStats {
 
 class _ParticipantsListState extends State<_ParticipantsList> {
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
-  final _lastAmountStore = LastProgressAmountStore();
-  final _holdStatementStore = HoldStatementStore();
   Map<String, int>? _lastSeenProgress;
   bool _loggingProgress = false;
 
@@ -606,92 +604,14 @@ class _ParticipantsListState extends State<_ParticipantsList> {
     }
   }
 
-  /// How much more the viewer can log before overshooting their goal — only
-  /// a race has a finish line to cap at; the other modes have no ceiling.
-  int? _remainingToGoal(Challenge challenge, Map<String, dynamic> me) {
-    if (challenge.winCondition != WinCondition.firstToTarget) return null;
-    final target = challenge.targetFor(me);
-    if (target == null) return null;
-    final progress = (me['progress'] as num? ?? 0).toInt();
-    return (target - progress).clamp(0, target);
-  }
-
-  Future<void> _openAddProgressPopup(Map<String, dynamic> me) async {
-    final lastAmount = await _lastAmountStore.getLastAmount(
-      widget.currentUid,
-      widget.competitionId,
-    );
-    final holdStatement = await _holdStatementStore.currentStatement();
-    if (!mounted) return;
-
-    final maxAmount = _remainingToGoal(widget.challenge, me);
-    final unit = me['unit'] as String? ?? widget.challenge.unit;
-    var initialAmount = lastAmount ?? 1;
-    if (maxAmount != null && initialAmount > maxAmount) {
-      initialAmount = maxAmount;
-    }
-
-    final amount = await showAddProgressDialog(
-      context,
-      competitionId: widget.competitionId,
-      initialAmount: initialAmount,
-      holdStatement: holdStatement,
-      maxAmount: maxAmount,
-      unit: unit,
-    );
-    if (amount == null) return;
-
-    await _submitProgress(amount);
-    await _lastAmountStore.saveLastAmount(
-      widget.currentUid,
-      widget.competitionId,
-      amount,
-    );
-    await _holdStatementStore.advance();
-  }
-
-  Future<void> _submitProgress(int amount) async {
-    if (amount <= 0) return;
-    setState(() => _loggingProgress = true);
-    try {
-      await widget.firestoreService.addProgress(
-        competitionId: widget.competitionId,
-        uid: widget.currentUid,
-        amount: amount,
-        dayKey: widget.challenge.dayKey(DateTime.now()),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating progress: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _loggingProgress = false);
-    }
-  }
-
-  /// Whether the viewer can log progress right now: the challenge is
-  /// running (started, not past its end), and for their mode they're still
-  /// in it — a race finisher is done, an eliminated player is out.
-  bool _canLog(Challenge challenge, Map<String, dynamic> me) {
-    if (!challenge.isActive) return false;
-    final now = DateTime.now();
-    final endsAt = challenge.endsAt;
-    if (endsAt != null && !now.isBefore(endsAt)) return false;
-
-    switch (challenge.winCondition) {
-      case WinCondition.firstToTarget:
-        final target = challenge.targetFor(me);
-        final progress = (me['progress'] as num? ?? 0).toInt();
-        return target != null && progress < target;
-      case WinCondition.mostProgress:
-        return true;
-      case WinCondition.lastStanding:
-        final startsAt = challenge.startsAt;
-        if (startsAt != null && now.isBefore(startsAt)) return false;
-        return me['eliminatedOnDay'] == null;
-    }
-  }
+  Future<void> _openAddProgressPopup(Map<String, dynamic> me) => reportProgress(
+    context,
+    challenge: widget.challenge,
+    me: me,
+    uid: widget.currentUid,
+    onSubmitting: (submitting) =>
+        setState(() => _loggingProgress = submitting),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -736,9 +656,9 @@ class _ParticipantsListState extends State<_ParticipantsList> {
           (p) => (p['uid'] as String?) == widget.currentUid,
           orElse: () => {},
         );
-        final canLog = myData.isNotEmpty && _canLog(challenge, myData);
+        final canLog = myData.isNotEmpty && canLogProgress(challenge, myData);
 
-        return Column(
+        final leaderboard = Column(
           children: [
             ...participants.asMap().entries.map((entry) {
               final rank = entry.key;
@@ -768,6 +688,24 @@ class _ParticipantsListState extends State<_ParticipantsList> {
                 deltaFraction: stats.deltaFraction,
               );
             }),
+          ],
+        );
+
+        return Column(
+          children: [
+            // A participant sees their own progress first, the leaderboard a
+            // swipe away; anyone else just the leaderboard.
+            if (myData.isNotEmpty)
+              _ProgressCarousel(
+                progress: PersonalProgressPanel(
+                  challenge: challenge,
+                  me: myData,
+                  compact: true,
+                ),
+                leaderboard: leaderboard,
+              )
+            else
+              leaderboard,
             // Pinned below the (re-orderable) rows instead of on "my" row
             // itself — otherwise overtaking someone reshuffles the
             // leaderboard mid-tap and a spammed tap can land on the card
@@ -780,6 +718,103 @@ class _ParticipantsListState extends State<_ParticipantsList> {
           ],
         );
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Progress carousel — your progress first, the leaderboard a swipe away
+// ─────────────────────────────────────────────
+
+/// Two pages exactly as tall as [progress]: the viewer's own progress, then
+/// [leaderboard], which scrolls inside that height when it's longer — so
+/// the card (and the Add Progress button under it) never changes size on a
+/// swipe. Always opens on the progress page. Taps anywhere but the dots
+/// fall through to the card, which opens Challenge Details.
+class _ProgressCarousel extends StatefulWidget {
+  final Widget progress;
+  final Widget leaderboard;
+
+  const _ProgressCarousel({required this.progress, required this.leaderboard});
+
+  @override
+  State<_ProgressCarousel> createState() => _ProgressCarouselState();
+}
+
+class _ProgressCarouselState extends State<_ProgressCarousel> {
+  final PageController _controller = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    const pageCount = 2;
+
+    return Column(
+      children: [
+        Stack(
+          children: [
+            // An invisible copy of the progress view sets the height of both
+            // pages.
+            SizedBox(
+              width: double.infinity,
+              child: Visibility(
+                visible: false,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: widget.progress,
+              ),
+            ),
+            Positioned.fill(
+              child: PageView(
+                controller: _controller,
+                onPageChanged: (page) => setState(() => _page = page),
+                children: [
+                  widget.progress,
+                  SingleChildScrollView(child: widget.leaderboard),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < pageCount; i++)
+              GestureDetector(
+                // Opaque, so tapping a dot never opens the card behind it.
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _controller.animateToPage(
+                  i,
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: i == _page ? 18 : 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: i == _page
+                          ? colorScheme.primary
+                          : colorScheme.onSurface.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -1635,31 +1670,9 @@ class _AddProgressButton extends StatelessWidget {
             onTap: () {},
             child: OnboardingAnchor(
               id: OnboardingAnchorIds.addProgressButton(competitionId),
-              child: ElevatedButton(
-                onPressed: isLoggingProgress ? null : onTap,
-                style: ElevatedButton.styleFrom(
-                  elevation: 0,
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  minimumSize: Size.zero,
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  textStyle: AppTheme.display(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 1.4),
-                ),
-                child: isLoggingProgress
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                      )
-                    : const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _CutoutPlusIcon(size: 18, color: Colors.white),
-                          SizedBox(width: 8),
-                          Text('ADD PROGRESS'),
-                        ],
-                      ),
+              child: AddProgressButton(
+                isLoggingProgress: isLoggingProgress,
+                onTap: onTap,
               ),
             ),
           ),
@@ -1667,379 +1680,6 @@ class _AddProgressButton extends StatelessWidget {
       ],
     );
   }
-}
-
-// ─────────────────────────────────────────────
-// Add-progress popup — numeric input, quick-add chips, hold-to-submit
-// ─────────────────────────────────────────────
-
-const List<int> _quickAddAmounts = [1, 5, 25];
-
-/// Shows the add-progress popup for [competitionId], prefilled with
-/// [initialAmount] and showing [holdStatement] in the gap above the submit
-/// button while the hold runs. Returns the submitted amount once the user
-/// completes the hold-to-submit gesture, or null if they cancelled.
-/// [maxAmount] caps the amount at what's left to reach the goal (null for
-/// modes with no finish line); anything above it is refused with a message.
-Future<int?> showAddProgressDialog(
-  BuildContext context, {
-  required String competitionId,
-  required int initialAmount,
-  required String holdStatement,
-  int? maxAmount,
-  String unit = '',
-}) {
-  return showDialog<int>(
-    context: context,
-    builder: (dialogContext) => _AddProgressDialog(
-      competitionId: competitionId,
-      initialAmount: initialAmount,
-      holdStatement: holdStatement,
-      maxAmount: maxAmount,
-      unit: unit,
-    ),
-  );
-}
-
-class _AddProgressDialog extends StatefulWidget {
-  final String competitionId;
-  final int initialAmount;
-  final String holdStatement;
-  final int? maxAmount;
-  final String unit;
-
-  const _AddProgressDialog({
-    required this.competitionId,
-    required this.initialAmount,
-    required this.holdStatement,
-    required this.maxAmount,
-    required this.unit,
-  });
-
-  @override
-  State<_AddProgressDialog> createState() => _AddProgressDialogState();
-}
-
-class _AddProgressDialogState extends State<_AddProgressDialog> {
-  // Owned by this State (not by the showDialog<int> Future) so it's disposed
-  // only once this widget is actually unmounted — the dialog route's exit
-  // transition keeps this TextField alive and reacting (losing focus,
-  // animating its label) for a bit after Navigator.pop() resolves that
-  // Future, so disposing on the Future's completion tore the controller down
-  // while the field could still touch it, crashing mid-frame.
-  late final TextEditingController _controller =
-      TextEditingController(text: '${widget.initialAmount}');
-
-  bool _isHolding = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  int _currentAmount() => int.tryParse(_controller.text.trim()) ?? 0;
-
-  bool get _isOverGoal {
-    final max = widget.maxAmount;
-    return max != null && _currentAmount() > max;
-  }
-
-  String get _overGoalMessage {
-    final max = widget.maxAmount ?? 0;
-    final unitSuffix = widget.unit.isNotEmpty ? ' ${widget.unit}' : '';
-    return "That's too much — only $max$unitSuffix left to hit the goal";
-  }
-
-  void _applyQuickAdd(int delta) {
-    final next = _currentAmount() + delta;
-    _controller.text = '$next';
-    _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
-    setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final green = colorScheme.tertiary;
-
-    return AlertDialog(
-      title: const Text('Add progress'),
-      content: OnboardingAnchor(
-        id: OnboardingAnchorIds.addProgressDialogInput(widget.competitionId),
-        child: SizedBox(
-          width: 260,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _controller,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                textAlign: TextAlign.center,
-                autofocus: true,
-                style: AppTheme.mono(fontSize: 34, fontWeight: FontWeight.w700),
-                decoration: InputDecoration(
-                  errorText: _isOverGoal ? _overGoalMessage : null,
-                  errorMaxLines: 2,
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: _quickAddAmounts
-                    .map(
-                      (amount) => OutlinedButton(
-                        onPressed: () => _applyQuickAdd(amount),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: green,
-                          side: BorderSide(color: green),
-                          minimumSize: Size.zero,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: Text('+$amount'),
-                      ),
-                    )
-                    .toList(),
-              ),
-              // Deliberate breathing room between the quick-add chips and
-              // the submit button: the hold's encouragement lives here, and
-              // reserving the space unconditionally keeps the button from
-              // jumping under a finger that's already pressing it.
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 44,
-                child: AnimatedOpacity(
-                  opacity: _isHolding ? 1 : 0,
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOut,
-                  child: Center(
-                    child: Text(
-                      widget.holdStatement,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      style: AppTheme.display(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.25,
-                        color: green,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _HoldToSubmitButton(
-                enabled: _currentAmount() > 0 && !_isOverGoal,
-                color: green,
-                onHoldChanged: (holding) {
-                  if (_isHolding != holding) {
-                    setState(() => _isHolding = holding);
-                  }
-                },
-                onConfirmed: () => Navigator.of(context).pop(_currentAmount()),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        OnboardingAnchor(
-          id: OnboardingAnchorIds.addProgressDialogCancel(widget.competitionId),
-          child: TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
-            child: const Text('Cancel'),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// A button that only fires [onConfirmed] after being pressed and held for
-/// the full [_holdDuration] — releasing early cancels the hold instead of
-/// submitting, giving a deliberate confirmation gesture for a write that
-/// (unlike the old +1 tap) can move progress by a large, hard-to-undo
-/// amount.
-class _HoldToSubmitButton extends StatefulWidget {
-  final bool enabled;
-  final Color color;
-
-  /// Fired with true the moment a hold starts and false once it's released
-  /// or confirmed, so the dialog can reveal its encouragement above the
-  /// button for exactly as long as the finger is down.
-  final ValueChanged<bool> onHoldChanged;
-  final VoidCallback onConfirmed;
-
-  const _HoldToSubmitButton({
-    required this.enabled,
-    required this.color,
-    required this.onHoldChanged,
-    required this.onConfirmed,
-  });
-
-  @override
-  State<_HoldToSubmitButton> createState() => _HoldToSubmitButtonState();
-}
-
-class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
-    with SingleTickerProviderStateMixin {
-  static const _holdDuration = Duration(seconds: 4);
-
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: _holdDuration)
-      ..addStatusListener(_onStatusChanged);
-  }
-
-  @override
-  void dispose() {
-    _controller.removeStatusListener(_onStatusChanged);
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onStatusChanged(AnimationStatus status) {
-    // Only a hold that runs the animation all the way to 1.0 counts as a
-    // confirmation — a release partway through animates back to 0 instead
-    // of completing, so this only ever fires for a genuine full-length hold.
-    if (status == AnimationStatus.completed) {
-      widget.onHoldChanged(false);
-      widget.onConfirmed();
-    }
-  }
-
-  void _startHold() {
-    if (!mounted || !widget.enabled) return;
-    widget.onHoldChanged(true);
-    _controller.forward(from: 0);
-  }
-
-  void _cancelHold() {
-    // The dialog closes as soon as a hold completes (see _onStatusChanged),
-    // which can leave a pointer-up still in flight for the pointer that
-    // completed it — guard against acting on a disposed controller.
-    if (!mounted) return;
-    // Reported before the value guard below: a tap released within the same
-    // frame it started never moves the controller off 0, and skipping the
-    // report there would leave the statement showing with no hold running.
-    widget.onHoldChanged(false);
-    if (_controller.value == 0) return;
-    _controller.animateBack(0, duration: const Duration(milliseconds: 200));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: widget.enabled ? 1 : 0.4,
-      child: GestureDetector(
-        // Without this, a tap only registers where a descendant actually
-        // paints (the small centered label, or the fill once it's already
-        // grown) — most of the button's surface would be dead space for
-        // hit-testing and the hold would never start.
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => _startHold(),
-        onTapUp: (_) => _cancelHold(),
-        onTapCancel: _cancelHold,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final progress = _controller.value;
-            final secondsLeft = (_holdDuration.inSeconds * (1 - progress)).ceil();
-
-            return Container(
-              height: 52,
-              width: double.infinity,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: widget.color, width: 2),
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: progress,
-                    child: Container(color: widget.color),
-                  ),
-                  Text(
-                    progress > 0 ? 'HOLD… ${secondsLeft}s' : 'HOLD TO SUBMIT',
-                    style: AppTheme.display(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                      color: progress > 0.5 ? Colors.white : widget.color,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-// A filled circle with a plus-shaped hole punched through the middle, so
-// whatever sits behind it (the button's background color) shows through the
-// plus instead of the plus being drawn on top in a solid color.
-class _CutoutPlusIcon extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _CutoutPlusIcon({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size.square(size),
-      painter: _CutoutPlusPainter(color: color),
-    );
-  }
-}
-
-class _CutoutPlusPainter extends CustomPainter {
-  final Color color;
-
-  _CutoutPlusPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final barLength = size.width * 0.6;
-    final barThickness = size.width * 0.22;
-
-    canvas.saveLayer(Offset.zero & size, Paint());
-    canvas.drawCircle(center, size.width / 2, Paint()..color = color);
-
-    final cutout = Paint()..blendMode = BlendMode.clear;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: center, width: barLength, height: barThickness),
-        Radius.circular(barThickness / 2),
-      ),
-      cutout,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: center, width: barThickness, height: barLength),
-        Radius.circular(barThickness / 2),
-      ),
-      cutout,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _CutoutPlusPainter oldDelegate) =>
-      oldDelegate.color != color;
 }
 
 // ─────────────────────────────────────────────

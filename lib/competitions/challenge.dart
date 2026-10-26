@@ -103,6 +103,10 @@ class Challenge {
 
   final List<String> winnerUids;
 
+  /// Last challenge day (YYYY-MM-DD) the server has judged a Last One
+  /// Standing challenge through; null until judging starts.
+  final String? lastEvaluatedDay;
+
   const Challenge({
     required this.id,
     required this.title,
@@ -121,6 +125,7 @@ class Challenge {
     this.endsAt,
     this.legacyDeadline,
     this.winnerUids = const [],
+    this.lastEvaluatedDay,
   });
 
   factory Challenge.fromDoc(String id, Map<String, dynamic> data) {
@@ -161,6 +166,7 @@ class Challenge {
       winnerUids: winnerUids != null && winnerUids.isNotEmpty
           ? winnerUids
           : [?legacyWinner],
+      lastEvaluatedDay: data['lastEvaluatedDay'] as String?,
     );
   }
 
@@ -249,6 +255,22 @@ class Challenge {
     }
   }
 }
+
+/// Shifts a YYYY-MM-DD challenge day by whole [days]. Pure date arithmetic,
+/// so DST never shifts it. Mirrors addDays in
+/// functions/src/challenges/calendar.ts.
+String addDaysToDayKey(String dayKey, int days) {
+  final shifted = DateTime.parse('${dayKey}T00:00:00Z').add(
+    Duration(days: days),
+  );
+  return shifted.toIso8601String().substring(0, 10);
+}
+
+/// Whole days from challenge day [a] to [b] (b - a). Mirrors daysBetween in
+/// functions/src/challenges/calendar.ts.
+int daysBetweenDayKeys(String a, String b) => DateTime.parse(
+  '${b}T00:00:00Z',
+).difference(DateTime.parse('${a}T00:00:00Z')).inDays;
 
 int? _positiveIntOrNull(Object? value) {
   final number = (value as num?)?.toInt();
