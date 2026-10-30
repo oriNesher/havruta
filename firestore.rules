@@ -44,11 +44,13 @@ service cloud.firestore {
     }
 
     // Challenge outcome state — who won, finish order, elimination
-    // progress — is socially visible, so only Cloud Functions (Admin SDK)
-    // ever write it. Clients can neither seed it at creation nor edit it.
+    // progress, the Aggressor Badge holder — is socially visible, so only
+    // Cloud Functions (Admin SDK) ever write it. Clients can neither seed
+    // it at creation nor edit it.
     function serverOwnedChallengeKeys() {
       return ['winnerUids', 'finisherUids', 'legacyFinisherCount',
-        'completedAt', 'lastEvaluatedDay', 'startingParticipantCount'];
+        'completedAt', 'lastEvaluatedDay', 'startingParticipantCount',
+        'aggressor'];
     }
 
     // Server-written participant fields (elimination; the streak fields

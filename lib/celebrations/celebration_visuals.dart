@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../app_theme.dart';
 import '../competitions/competition_event.dart';
+import '../competitions/widgets/aggressor_badge.dart';
 
 // Icon per celebration type — mirrors the mapping used by the inline event
 // carousel (home_competitions_section.dart's _CompetitionEventRow) so the
@@ -29,6 +30,8 @@ IconData celebrationIcon(String type) {
       return Icons.check_circle;
     case 'activityStreak':
       return Icons.whatshot;
+    case 'aggressorTakeover':
+      return kAggressorIcon;
     default:
       return Icons.celebration;
   }
@@ -86,6 +89,11 @@ String celebrationHeadline(CompetitionEvent event) {
     case 'progress':
       final delta = (metadata['progressDelta'] as num?)?.toInt();
       return delta != null ? 'Progress logged: +$delta!' : 'Progress logged!';
+    case 'aggressorTakeover':
+      final from = event.targetUsername;
+      return from != null
+          ? 'You seized the Aggressor Badge from $from!'
+          : 'You claimed the Aggressor Badge!';
     default:
       return 'Nice work!';
   }

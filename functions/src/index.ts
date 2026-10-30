@@ -1,3 +1,4 @@
+import {randomUUID} from "crypto";
 import {
   onDocumentCreated,
   onDocumentDeleted,
@@ -19,6 +20,8 @@ import {
 import {EventDraft} from "./events/types";
 import {settleRaceFinish} from "./challenges/finish";
 import {settleChallenges} from "./challenges/settleChallenges";
+import {settleAggressor} from "./challenges/settleAggressor";
+import {parseChallenge} from "./challenges/model";
 import {persistEventDrafts} from "./events/persist";
 import {createInvite} from "./invites/createInvite";
 import {getInvite} from "./invites/getInvite";
@@ -241,6 +244,29 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
       return;
     }
 
+    const batchId = randomUUID();
+    const beforeProgress = before.progress ?? 0;
+    const afterProgress = after.progress ?? 0;
+
+    // The badge settles first, and for decreases too (which skip every
+    // other event): a race finish below can complete the challenge, which
+    // freezes the badge, and taking progress back can pass it on.
+    if (beforeProgress !== afterProgress) {
+      try {
+        await settleAggressor(
+          event.params.competitionId,
+          afterProgress > beforeProgress ? "progress" : "progressRemoved",
+          after.uid ?? null,
+          batchId
+        );
+      } catch (error) {
+        logger.error("Settling the Aggressor Badge failed", {
+          competitionId: event.params.competitionId,
+          error,
+        });
+      }
+    }
+
     const context = await buildEventsContext({
       competitionId: event.params.competitionId,
       participantId: event.params.participantId,
@@ -267,7 +293,7 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
       ...firstBloodDrafts,
     ]);
 
-    await persistEventDrafts(context.competitionId, drafts);
+    await persistEventDrafts(context.competitionId, drafts, batchId);
 
     logger.info("Events processed", {
       competitionId: context.competitionId,
@@ -408,5 +434,10 @@ export const onParticipantLeaveCreateEvents = onDocumentDeleted(
     await persistEventDrafts(competitionId, [draft]);
 
     logger.info("Left event processed", {competitionId, participantUid});
+
+    // A departing holder's badge passes on (silently — nobody took it).
+    if (parseChallenge(competitionData).aggressor.uid === participantUid) {
+      await settleAggressor(competitionId, "holderLeft", null);
+    }
   },
 );

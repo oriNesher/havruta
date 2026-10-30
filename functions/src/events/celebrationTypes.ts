@@ -15,6 +15,7 @@ export const CELEBRATION_TYPES = [
   "won",
   "finishedInPosition",
   "progress",
+  "aggressorTakeover",
 ] as const;
 
 /**

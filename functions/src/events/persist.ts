@@ -53,19 +53,36 @@ export async function persistEventDrafts(
         return;
       }
 
-      await eventsRef.add({
-        type: draft.type,
-        status: "open",
-        competitionId,
-        batchId,
-        ...(isCelebrationType(draft.type) ? {actorCelebrated: false} : {}),
-        unseenByUserUids: draft.recipients,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        ...draft.payload,
-      });
+      await eventsRef.add(newEventFields(competitionId, draft, batchId));
     })
   );
+}
+
+/**
+ * The full document for a newly created event. Shared with writers that
+ * create events inside their own transaction (settleAggressor) rather
+ * than through persistEventDrafts, so every event has the same shape.
+ * @param {string} competitionId Competition the event belongs to.
+ * @param {EventDraft} draft A create-kind draft.
+ * @param {string} batchId Correlates events from one trigger invocation.
+ * @return {Record<string, unknown>} The event document's fields.
+ */
+export function newEventFields(
+  competitionId: string,
+  draft: EventDraft,
+  batchId: string
+): Record<string, unknown> {
+  return {
+    type: draft.type,
+    status: "open",
+    competitionId,
+    batchId,
+    ...(isCelebrationType(draft.type) ? {actorCelebrated: false} : {}),
+    unseenByUserUids: draft.recipients,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...draft.payload,
+  };
 }
 
 interface ProgressCursorData {

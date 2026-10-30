@@ -40,6 +40,11 @@ String _headlineLine(CompetitionEvent event) {
           : 'Finished strong. Not bad at all.';
     case 'progress':
       return 'Put in the work today.';
+    case 'aggressorTakeover':
+      final from = event.targetUsername;
+      return from != null
+          ? 'Badge is mine now, $from. Step it up.'
+          : "Aggressor Badge is mine. Who's taking it?";
     default:
       return 'Just made some noise.';
   }
@@ -77,6 +82,8 @@ String _secondaryFragment(CompetitionEvent event) {
       return position != null ? 'finished ${ordinalSuffix(position)}' : 'finished';
     case 'progress':
       return 'logged progress';
+    case 'aggressorTakeover':
+      return 'took the Aggressor Badge';
     default:
       return '';
   }

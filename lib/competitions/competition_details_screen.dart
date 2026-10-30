@@ -1,17 +1,17 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../app_theme.dart';
 import '../services/firestore_service.dart';
+import 'aggressor.dart';
 import 'challenge.dart';
 import 'challenge_standings.dart';
 import 'competition_invite_section.dart';
 import 'personal_progress.dart';
 import 'progress_reporting.dart';
 import 'widgets/add_progress.dart';
+import 'widgets/aggressor_badge.dart';
 import 'widgets/challenge_activity_graph.dart';
 import 'widgets/invite_link_card.dart';
 import 'widgets/personal_progress_panel.dart';
@@ -83,6 +83,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
 
   Future<void> _showEditProgressDialog({
     required Challenge challenge,
+    required Map<String, dynamic> me,
     required String uid,
     required int currentProgress,
     required int todayProgress,
@@ -187,8 +188,12 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
         competitionId: challenge.id,
         uid: uid,
         progress: newValue,
-        dayKey: challenge.dayKey(DateTime.now()),
-        todayReduction: math.max(0, math.min(reduction, todayProgress)),
+        dayReductions: windowDayReductions(
+          challenge,
+          me,
+          reduction,
+          DateTime.now(),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -523,6 +528,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                           ),
                           onEdit: () => _showEditProgressDialog(
                             challenge: challenge,
+                            me: me,
                             uid: user!.uid,
                             currentProgress:
                                 (me['progress'] as num? ?? 0).toInt(),
@@ -722,6 +728,11 @@ class _Leaderboard extends StatelessWidget {
               participant: participant,
               isMe: currentUid != null && participant['uid'] == currentUid,
               todayProgress: _todayProgressOf(challenge, participant),
+              windowTotal: aggressorWindowTotal(
+                challenge,
+                participant,
+                DateTime.now(),
+              ),
               leaderProgress: leaderProgress,
               lastUpdateText: _formatLastUpdate(
                 participant['updatedAt'] as Timestamp?,
@@ -741,6 +752,9 @@ class _ParticipantCard extends StatelessWidget {
   final Map<String, dynamic> participant;
   final bool isMe;
   final int todayProgress;
+
+  /// Progress over the Aggressor Badge's window (the last 3 days).
+  final int windowTotal;
   final int leaderProgress;
   final String lastUpdateText;
 
@@ -749,6 +763,7 @@ class _ParticipantCard extends StatelessWidget {
     required this.participant,
     required this.isMe,
     required this.todayProgress,
+    required this.windowTotal,
     required this.leaderProgress,
     required this.lastUpdateText,
   });
@@ -766,6 +781,7 @@ class _ParticipantCard extends StatelessWidget {
     final linkedGoalTitle = participant['linkedGoalTitle'] as String?;
     final eliminatedOnDay = participant['eliminatedOnDay'] as String?;
     final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.45);
+    final isAggressor = uid.isNotEmpty && uid == challenge.aggressorUid;
 
     final (trailing, detail, barValue) = _modeStats(
       theme: theme,
@@ -798,6 +814,10 @@ class _ParticipantCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (isAggressor) ...[
+                  AggressorBadge(challenge: challenge),
+                  const SizedBox(width: 8),
+                ],
                 trailing,
               ],
             ),
@@ -827,6 +847,16 @@ class _ParticipantCard extends StatelessWidget {
               detail,
               style: AppTheme.mono(fontWeight: FontWeight.w500),
             ),
+            // The figure the Aggressor Badge is decided on — only while
+            // the challenge runs; afterwards "the last 3 days" is just
+            // whatever happens to be recent.
+            if (challenge.isActive && eliminatedOnDay == null) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Last $kAggressorWindowDays days: $windowTotal$unitSuffix',
+                style: AppTheme.mono(fontSize: 12, color: mutedColor),
+              ),
+            ],
             const SizedBox(height: 8),
             LinearProgressIndicator(value: barValue),
             if (lastUpdateText.isNotEmpty) ...[

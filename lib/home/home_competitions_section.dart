@@ -10,6 +10,7 @@ import '../competitions/challenge_standings.dart';
 import '../competitions/competition_event.dart';
 import '../competitions/progress_reporting.dart';
 import '../competitions/widgets/add_progress.dart';
+import '../competitions/widgets/aggressor_badge.dart';
 import '../competitions/widgets/personal_progress_panel.dart';
 import '../onboarding/onboarding_anchor.dart';
 import '../onboarding/onboarding_ids.dart';
@@ -678,8 +679,10 @@ class _ParticipantsListState extends State<_ParticipantsList> {
               );
 
               return _ParticipantRow(
+                challenge: challenge,
                 rank: rank,
                 username: username,
+                isAggressor: pUid.isNotEmpty && pUid == challenge.aggressorUid,
                 goalTitle: goalTitle,
                 progressLabel: stats.label,
                 percentText: stats.barText,
@@ -1253,6 +1256,8 @@ class _CompetitionEventRow extends StatelessWidget {
         return Icons.person_remove;
       case 'eliminated':
         return Icons.heart_broken;
+      case 'aggressorTakeover':
+        return kAggressorIcon;
       default:
         return Icons.notifications_none;
     }
@@ -1341,6 +1346,20 @@ class _CompetitionEventRow extends StatelessWidget {
         return [
           name(actor),
           text(day != null ? ' missed day $day and is out' : ' is out'),
+        ];
+      case 'aggressorTakeover':
+        // No previous holder: a first claim, not a takeover.
+        if (event.targetUid == null) {
+          return [name(actor), text(' claimed the Aggressor Badge')];
+        }
+        return [
+          name(actor),
+          text(' took the Aggressor Badge from '),
+          // Mid-sentence, so "you" rather than _labelFor's "You".
+          if (event.targetUid == currentUid)
+            _name('you', base.copyWith(fontWeight: FontWeight.w800))
+          else
+            name(target),
         ];
       default:
         return [text('New activity')];
@@ -1510,8 +1529,10 @@ class _GiveRespectButtonState extends State<_GiveRespectButton> {
 // ─────────────────────────────────────────────
 
 class _ParticipantRow extends StatelessWidget {
+  final Challenge challenge;
   final int rank;
   final String username;
+  final bool isAggressor;
   final String goalTitle;
   final String progressLabel;
   final String percentText;
@@ -1520,8 +1541,10 @@ class _ParticipantRow extends StatelessWidget {
   final double deltaFraction;
 
   const _ParticipantRow({
+    required this.challenge,
     required this.rank,
     required this.username,
+    required this.isAggressor,
     required this.goalTitle,
     required this.progressLabel,
     required this.percentText,
@@ -1584,6 +1607,22 @@ class _ParticipantRow extends StatelessWidget {
                     fontSize: 14,
                     color: colorScheme.onSurface,
                   ),
+                ),
+                // Pops in on the new holder's row as the badge changes hands.
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  transitionBuilder: (child, animation) =>
+                      ScaleTransition(scale: animation, child: child),
+                  child: isAggressor
+                      ? Padding(
+                          key: const ValueKey('aggressor'),
+                          padding: const EdgeInsets.only(left: 6),
+                          child: AggressorBadge(
+                            challenge: challenge,
+                            compact: true,
+                          ),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('none')),
                 ),
                 if (goalTitle.isNotEmpty) ...[
                   const SizedBox(width: 14),

@@ -31,6 +31,23 @@ export interface ChallengeRules {
   lives: number;
 }
 
+/**
+ * Who holds the Aggressor Badge, as last decided by settleAggressor. Only
+ * the server writes it; it stays as it was once the challenge completes,
+ * which is what makes the last holder the "Final Aggressor".
+ */
+export interface AggressorState {
+  /** The holder; null while the badge is vacant. */
+  uid: string | null;
+  username: string | null;
+  /** When the current holder took it. */
+  since: FirebaseFirestore.Timestamp | null;
+  /** Times the holder has changed; keys each takeover event's doc id. */
+  transferCount: number;
+  /** The challenge day (YYYY-MM-DD) the badge was last decided on. */
+  evaluatedDay: string | null;
+}
+
 export interface ChallengeConfig {
   winCondition: WinCondition;
   /**
@@ -63,6 +80,7 @@ export interface ChallengeConfig {
    * is nobody to outlast, so no winner is declared. Null until then.
    */
   startingParticipantCount: number | null;
+  aggressor: AggressorState;
 }
 
 /**
@@ -127,6 +145,7 @@ export function parseChallenge(
   const legacyWinner = typeof data.winnerUid === "string" ?
     [data.winnerUid] :
     [];
+  const rawAggressor = (data.aggressor ?? {}) as Record<string, unknown>;
 
   return {
     winCondition,
@@ -160,5 +179,18 @@ export function parseChallenge(
       typeof data.startingParticipantCount === "number" ?
         data.startingParticipantCount :
         null,
+    aggressor: {
+      uid: typeof rawAggressor.uid === "string" ? rawAggressor.uid : null,
+      username: typeof rawAggressor.username === "string" ?
+        rawAggressor.username :
+        null,
+      since: timestampOrNull(rawAggressor.since),
+      transferCount: typeof rawAggressor.transferCount === "number" ?
+        rawAggressor.transferCount :
+        0,
+      evaluatedDay: typeof rawAggressor.evaluatedDay === "string" ?
+        rawAggressor.evaluatedDay :
+        null,
+    },
   };
 }

@@ -107,6 +107,13 @@ class Challenge {
   /// Standing challenge through; null until judging starts.
   final String? lastEvaluatedDay;
 
+  /// Who holds the Aggressor Badge (most progress per day over the last
+  /// few challenge days); null while it's vacant or the challenge has none.
+  /// Server-written (competition.aggressor) — once the challenge completes
+  /// it stays put, making this the Final Aggressor.
+  final String? aggressorUid;
+  final String? aggressorUsername;
+
   const Challenge({
     required this.id,
     required this.title,
@@ -126,6 +133,8 @@ class Challenge {
     this.legacyDeadline,
     this.winnerUids = const [],
     this.lastEvaluatedDay,
+    this.aggressorUid,
+    this.aggressorUsername,
   });
 
   factory Challenge.fromDoc(String id, Map<String, dynamic> data) {
@@ -135,6 +144,7 @@ class Challenge {
     final winnerUids = (data['winnerUids'] as List?)?.whereType<String>()
         .toList();
     final legacyWinner = data['winnerUid'] as String?;
+    final aggressor = data['aggressor'] as Map<String, dynamic>?;
 
     return Challenge(
       id: id,
@@ -167,6 +177,8 @@ class Challenge {
           ? winnerUids
           : [?legacyWinner],
       lastEvaluatedDay: data['lastEvaluatedDay'] as String?,
+      aggressorUid: aggressor?['uid'] as String?,
+      aggressorUsername: aggressor?['username'] as String?,
     );
   }
 

@@ -14,6 +14,7 @@ const List<String> kCelebrationTypes = [
   'won',
   'finishedInPosition',
   'progress',
+  'aggressorTakeover',
 ];
 
 // Highest-impact first. Drives which event in a batch becomes the Trash
@@ -26,6 +27,7 @@ const List<String> kCelebrationPriority = [
   'finishedInPosition',
   'milestone',
   'tookTheLead',
+  'aggressorTakeover',
   'pullingAhead',
   'nearCompletion',
   'backInRace',

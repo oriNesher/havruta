@@ -40,6 +40,9 @@ class _CelebrationGateState extends State<CelebrationGate> {
   final Map<String, List<CompetitionEvent>> _eventsByBatchId = {};
   final List<String> _queue = [];
   final Set<String> _queuedBatchIds = {};
+  // Events already put on screen, so they're never shown twice — while
+  // their actorCelebrated write is landing, or if it failed.
+  final Set<String> _shownEventIds = {};
   bool _isShowing = false;
 
   @override
@@ -67,20 +70,28 @@ class _CelebrationGateState extends State<CelebrationGate> {
   void _onSnapshot(QuerySnapshot<Map<String, dynamic>> snapshot) {
     final events = snapshot.docs
         .map(CompetitionEvent.fromDoc)
-        .where((e) => kCelebrationTypes.contains(e.type) && e.batchId != null)
+        .where(
+          (e) =>
+              kCelebrationTypes.contains(e.type) &&
+              e.batchId != null &&
+              !_shownEventIds.contains(e.id),
+        )
         .toList();
 
     _eventsByBatchId
       ..clear()
       ..addAll(_groupByBatchId(events));
 
+    _enqueueNewBatches();
+    _maybeShowNext();
+  }
+
+  void _enqueueNewBatches() {
     for (final batchId in _eventsByBatchId.keys) {
       if (_queuedBatchIds.add(batchId)) {
         _queue.add(batchId);
       }
     }
-
-    _maybeShowNext();
   }
 
   Map<String, List<CompetitionEvent>> _groupByBatchId(
@@ -107,10 +118,11 @@ class _CelebrationGateState extends State<CelebrationGate> {
 
     _isShowing = true;
     // Defer off the snapshot-delivery callstack before pushing a route.
-    Future.microtask(() => _show(events));
+    Future.microtask(() => _show(batchId, events));
   }
 
-  Future<void> _show(List<CompetitionEvent> events) async {
+  Future<void> _show(String batchId, List<CompetitionEvent> events) async {
+    _shownEventIds.addAll(events.map((e) => e.id));
     if (!mounted) {
       _isShowing = false;
       return;
@@ -130,6 +142,19 @@ class _CelebrationGateState extends State<CelebrationGate> {
     } catch (e) {
       debugPrint('Failed to mark celebration(s) as seen: $e');
     }
+
+    // Events of one batch are written separately (the Aggressor Badge's
+    // takeover in its own transaction), so some can land after the batch
+    // was already on screen. Releasing its id lets those stragglers be
+    // queued as their own screen instead of waiting forever.
+    _queuedBatchIds.remove(batchId);
+    _eventsByBatchId[batchId]?.removeWhere(
+      (e) => _shownEventIds.contains(e.id),
+    );
+    if (_eventsByBatchId[batchId]?.isEmpty ?? false) {
+      _eventsByBatchId.remove(batchId);
+    }
+    _enqueueNewBatches();
 
     _isShowing = false;
     if (mounted) _maybeShowNext();

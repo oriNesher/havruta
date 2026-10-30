@@ -183,15 +183,15 @@ class FirestoreService {
   }
 
   /// Lower a participant's progress to [progress] (the edit dialog only
-  /// ever reduces it). [todayReduction] is how much of the cut comes off
-  /// today's dailyProgress bucket ([dayKey]) — past days are never
-  /// rewritten, since a daily-minimum rule may already have judged them.
+  /// ever reduces it). [dayReductions] is how much of the cut comes off
+  /// each challenge day's dailyProgress bucket (see windowDayReductions) —
+  /// only recent days, and only today in Last One Standing, whose past
+  /// days a daily-minimum rule may already have judged.
   Future<void> updateProgress({
     required String competitionId,
     required String uid,
     required int progress,
-    required String dayKey,
-    int todayReduction = 0,
+    Map<String, int> dayReductions = const {},
   }) async {
     await _db
         .collection('competitions')
@@ -201,9 +201,9 @@ class FirestoreService {
         .update({
           'progress': progress,
           'updatedAt': FieldValue.serverTimestamp(),
-          if (todayReduction > 0)
-            FieldPath(['dailyProgress', dayKey]):
-                FieldValue.increment(-todayReduction),
+          for (final MapEntry(key: day, value: cut) in dayReductions.entries)
+            if (cut > 0)
+              FieldPath(['dailyProgress', day]): FieldValue.increment(-cut),
         });
   }
 

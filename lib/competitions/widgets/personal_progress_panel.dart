@@ -37,6 +37,20 @@ class PersonalProgressPanel extends StatelessWidget {
     );
     final gap = EdgeInsets.only(top: compact ? 14 : 20);
 
+    // The Home card's race view sits the percentage beside the ring instead
+    // of above it — the card is short on height, not width.
+    if (compact && progress is RaceProgress) {
+      return Row(
+        children: [
+          Expanded(
+            child: _Headline(headline: progress.headline, compact: compact),
+          ),
+          const SizedBox(width: 16),
+          _MilestoneRing(progress: progress, compact: compact),
+        ],
+      );
+    }
+
     final body = Column(
       // Its own height whatever it's placed in — the Home carousel sizes
       // itself from this.

@@ -8,6 +8,8 @@ import {
 } from "../events/rules/outcome";
 import {EventDraft} from "../events/types";
 import {parseChallenge} from "./model";
+import {aggressorApplies, aggressorWindow} from "./aggressor";
+import {settleAggressor} from "./settleAggressor";
 import {toStandingParticipant} from "./standings";
 import {decideDeadlineResult} from "./winConditions/deadline";
 import {evaluateLastStanding} from "./winConditions/lastStanding";
@@ -174,10 +176,52 @@ export const settleChallenges = onSchedule(
       });
     }
 
+    // After the settling above, so a holder eliminated at midnight loses
+    // the badge in this same run, and a challenge that just ended keeps
+    // its final holder (settleAggressor skips anything no longer active).
+    const rolledOver = await rollOverAggressorBadges(nowMillis);
+
     logger.info("Challenges settled", {
       lastStanding: lastStandingSnap.size,
       ended: endedSnap.size,
       failures: failures.length,
+      aggressorRollovers: rolledOver,
     });
   }
 );
+
+/**
+ * Re-decides the Aggressor Badge of every running challenge whose badge
+ * window has moved on to a new challenge day since it was last decided —
+ * otherwise a holder whose progress has aged out of the window would keep
+ * it until someone next logs progress. Filtering on the stored
+ * evaluatedDay means each challenge is re-read once a day (the run after
+ * its local midnight), not every hour.
+ * @param {number} nowMillis The current time.
+ * @return {Promise<number>} How many challenges were re-decided.
+ */
+async function rollOverAggressorBadges(nowMillis: number): Promise<number> {
+  const activeSnap = await admin.firestore()
+    .collection("competitions")
+    .where("status", "==", "active")
+    .get();
+
+  const due = activeSnap.docs.filter((doc) => {
+    const data = doc.data();
+    const challenge = parseChallenge(data);
+    const isOnboarding = data.onboarding?.isOnboarding === true;
+    return aggressorApplies(challenge, isOnboarding) &&
+      challenge.aggressor.evaluatedDay !==
+        aggressorWindow(challenge, nowMillis)[0];
+  });
+
+  const results = await Promise.allSettled(
+    due.map((doc) => settleAggressor(doc.id, "dayRollover", null))
+  );
+  for (const failure of results.filter((r) => r.status === "rejected")) {
+    logger.error("Rolling over an Aggressor Badge failed", {
+      reason: (failure as PromiseRejectedResult).reason,
+    });
+  }
+  return due.length;
+}
