@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../onboarding/onboarding_anchor.dart';
-import '../../onboarding/onboarding_ids.dart';
-import '../../services/app_signals.dart';
 import '../../services/invite_service.dart';
+import '../../tips/feature_tip.dart';
+import '../../tips/feature_tip_anchor.dart';
 
 /// Shareable-link invite card. Used both right after a challenge is created
 /// and later from the challenge details screen, so anyone can pull up a
@@ -78,9 +77,6 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
           subject: 'Join me in "${widget.competitionTitle}" on Havruta',
         ),
       );
-      AppSignals.instance.emit(
-        InviteLinkShared(competitionId: widget.competitionId, method: 'share'),
-      );
     } catch (e) {
       // Drop the cached failure so the next tap genuinely retries rather
       // than replaying the same rejected future forever.
@@ -99,9 +95,6 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
     try {
       final invite = await _resolveInvite();
       await Clipboard.setData(ClipboardData(text: invite.url));
-      AppSignals.instance.emit(
-        InviteLinkShared(competitionId: widget.competitionId, method: 'copy'),
-      );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -121,8 +114,8 @@ class _InviteLinkCardState extends State<InviteLinkCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return OnboardingAnchor(
-      id: OnboardingAnchorIds.inviteLink(widget.competitionId),
+    return FeatureTipAnchor(
+      tip: FeatureTip.inviteLink,
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),

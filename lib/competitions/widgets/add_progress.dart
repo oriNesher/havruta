@@ -2,15 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 
 import '../../app_theme.dart';
-import '../../onboarding/onboarding_anchor.dart';
-import '../../onboarding/onboarding_ids.dart';
 
 // ─────────────────────────────────────────────
 // Add progress button — shared by the home card and Challenge Details
 // ─────────────────────────────────────────────
 
 /// The "ADD PROGRESS" call to action. Callers own placement and any
-/// onboarding anchor; [isLoggingProgress] swaps the label for a spinner and
+/// feature-tip anchor; [isLoggingProgress] swaps the label for a spinner and
 /// disables the button while a report is in flight.
 class AddProgressButton extends StatelessWidget {
   final bool isLoggingProgress;
@@ -61,15 +59,14 @@ class AddProgressButton extends StatelessWidget {
 
 const List<int> _quickAddAmounts = [1, 5, 25];
 
-/// Shows the add-progress popup for [competitionId], prefilled with
-/// [initialAmount] and showing [holdStatement] in the gap above the submit
-/// button while the hold runs. Returns the submitted amount once the user
-/// completes the hold-to-submit gesture, or null if they cancelled.
+/// Shows the add-progress popup, prefilled with [initialAmount] and showing
+/// [holdStatement] in the gap above the submit button while the hold runs.
+/// Returns the submitted amount once the user completes the hold-to-submit
+/// gesture, or null if they cancelled.
 /// [maxAmount] caps the amount at what's left to reach the goal (null for
 /// modes with no finish line); anything above it is refused with a message.
 Future<int?> showAddProgressDialog(
   BuildContext context, {
-  required String competitionId,
   required int initialAmount,
   required String holdStatement,
   int? maxAmount,
@@ -78,7 +75,6 @@ Future<int?> showAddProgressDialog(
   return showDialog<int>(
     context: context,
     builder: (dialogContext) => _AddProgressDialog(
-      competitionId: competitionId,
       initialAmount: initialAmount,
       holdStatement: holdStatement,
       maxAmount: maxAmount,
@@ -88,14 +84,12 @@ Future<int?> showAddProgressDialog(
 }
 
 class _AddProgressDialog extends StatefulWidget {
-  final String competitionId;
   final int initialAmount;
   final String holdStatement;
   final int? maxAmount;
   final String unit;
 
   const _AddProgressDialog({
-    required this.competitionId,
     required this.initialAmount,
     required this.holdStatement,
     required this.maxAmount,
@@ -151,93 +145,87 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
 
     return AlertDialog(
       title: const Text('Add progress'),
-      content: OnboardingAnchor(
-        id: OnboardingAnchorIds.addProgressDialogInput(widget.competitionId),
-        child: SizedBox(
-          width: 260,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _controller,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                textAlign: TextAlign.center,
-                autofocus: true,
-                style: AppTheme.mono(fontSize: 34, fontWeight: FontWeight.w700),
-                decoration: InputDecoration(
-                  errorText: _isOverGoal ? _overGoalMessage : null,
-                  errorMaxLines: 2,
-                ),
-                onChanged: (_) => setState(() {}),
+      content: SizedBox(
+        width: 260,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              autofocus: true,
+              style: AppTheme.mono(fontSize: 34, fontWeight: FontWeight.w700),
+              decoration: InputDecoration(
+                errorText: _isOverGoal ? _overGoalMessage : null,
+                errorMaxLines: 2,
               ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: _quickAddAmounts
-                    .map(
-                      (amount) => OutlinedButton(
-                        onPressed: () => _applyQuickAdd(amount),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: green,
-                          side: BorderSide(color: green),
-                          minimumSize: Size.zero,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: Text('+$amount'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _quickAddAmounts
+                  .map(
+                    (amount) => OutlinedButton(
+                      onPressed: () => _applyQuickAdd(amount),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: green,
+                        side: BorderSide(color: green),
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                    )
-                    .toList(),
-              ),
-              // Deliberate breathing room between the quick-add chips and
-              // the submit button: the hold's encouragement lives here, and
-              // reserving the space unconditionally keeps the button from
-              // jumping under a finger that's already pressing it.
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 44,
-                child: AnimatedOpacity(
-                  opacity: _isHolding ? 1 : 0,
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOut,
-                  child: Center(
-                    child: Text(
-                      widget.holdStatement,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      style: AppTheme.display(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.25,
-                        color: green,
-                      ),
+                      child: Text('+$amount'),
+                    ),
+                  )
+                  .toList(),
+            ),
+            // Deliberate breathing room between the quick-add chips and
+            // the submit button: the hold's encouragement lives here, and
+            // reserving the space unconditionally keeps the button from
+            // jumping under a finger that's already pressing it.
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 44,
+              child: AnimatedOpacity(
+                opacity: _isHolding ? 1 : 0,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOut,
+                child: Center(
+                  child: Text(
+                    widget.holdStatement,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: AppTheme.display(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
+                      color: green,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              _HoldToSubmitButton(
-                enabled: _currentAmount() > 0 && !_isOverGoal,
-                color: green,
-                onHoldChanged: (holding) {
-                  if (_isHolding != holding) {
-                    setState(() => _isHolding = holding);
-                  }
-                },
-                onConfirmed: () => Navigator.of(context).pop(_currentAmount()),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 12),
+            _HoldToSubmitButton(
+              enabled: _currentAmount() > 0 && !_isOverGoal,
+              color: green,
+              onHoldChanged: (holding) {
+                if (_isHolding != holding) {
+                  setState(() => _isHolding = holding);
+                }
+              },
+              onConfirmed: () => Navigator.of(context).pop(_currentAmount()),
+            ),
+          ],
         ),
       ),
       actions: [
-        OnboardingAnchor(
-          id: OnboardingAnchorIds.addProgressDialogCancel(widget.competitionId),
-          child: TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
-            child: const Text('Cancel'),
-          ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
         ),
       ],
     );

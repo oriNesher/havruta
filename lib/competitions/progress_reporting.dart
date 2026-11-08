@@ -78,7 +78,6 @@ Future<void> reportProgress(
 
   final amount = await showAddProgressDialog(
     context,
-    competitionId: challenge.id,
     initialAmount: initialAmount,
     holdStatement: holdStatement,
     maxAmount: maxAmount,

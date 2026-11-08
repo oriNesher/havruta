@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../competitions/competition_event.dart';
-import '../onboarding/onboarding_anchor.dart';
-import '../onboarding/onboarding_ids.dart';
-import '../services/app_signals.dart';
+import '../tips/feature_tip.dart';
+import '../tips/feature_tip_anchor.dart';
 import 'celebration_types.dart';
 import 'celebration_visuals.dart';
 import 'shareable_card.dart';
@@ -36,8 +35,6 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
       ).compareTo(celebrationPriorityRank(b.type)),
     );
 
-  String get _batchId => widget.events.first.batchId ?? '';
-
   @override
   void initState() {
     super.initState();
@@ -58,18 +55,10 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
 
     setState(() => _isSharing = true);
     try {
-      final shown = await captureAndShareCard(
+      await captureAndShareCard(
         boundaryKey: _cardKey,
         shareText: message,
       );
-      if (shown) {
-        AppSignals.instance.emit(
-          TrashTalkShareSheetShown(
-            competitionId: widget.events.first.competitionId,
-            batchId: widget.events.first.batchId,
-          ),
-        );
-      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -111,34 +100,31 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
                 Expanded(
                   child: Center(
                     child: SingleChildScrollView(
-                      child: OnboardingAnchor(
-                        id: OnboardingAnchorIds.trashTalkCard(_batchId),
-                        child: RepaintBoundary(
-                          key: _cardKey,
-                          child: ShareableCard(
-                            accentColor: accentColor,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                AnimatedBuilder(
-                                  animation: _messageController,
-                                  builder: (context, _) => Text(
-                                    _messageController.text.isEmpty
-                                        ? ' '
-                                        : _messageController.text,
-                                    style: AppTheme.display(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
+                      child: RepaintBoundary(
+                        key: _cardKey,
+                        child: ShareableCard(
+                          accentColor: accentColor,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              AnimatedBuilder(
+                                animation: _messageController,
+                                builder: (context, _) => Text(
+                                  _messageController.text.isEmpty
+                                      ? ' '
+                                      : _messageController.text,
+                                  style: AppTheme.display(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 16),
-                                for (final event in _sortedEvents)
-                                  CelebrationEventRow(event: event),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 16),
+                              for (final event in _sortedEvents)
+                                CelebrationEventRow(event: event),
+                            ],
                           ),
                         ),
                       ),
@@ -153,8 +139,8 @@ class _TrashTalkScreenState extends State<TrashTalkScreen> {
                   decoration: const InputDecoration(labelText: 'Your message'),
                 ),
                 const SizedBox(height: 16),
-                OnboardingAnchor(
-                  id: OnboardingAnchorIds.trashTalkShareButton(_batchId),
+                FeatureTipAnchor(
+                  tip: FeatureTip.trashTalk,
                   child: ElevatedButton(
                     onPressed: _isSharing ? null : _share,
                     style: ElevatedButton.styleFrom(backgroundColor: accentColor),

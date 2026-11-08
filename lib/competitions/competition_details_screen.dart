@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../app_theme.dart';
 import '../services/firestore_service.dart';
+import '../tips/feature_tip.dart';
+import '../tips/feature_tip_anchor.dart';
 import 'aggressor.dart';
 import 'challenge.dart';
 import 'challenge_standings.dart';
@@ -651,12 +653,13 @@ class _ProgressActions extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Deliberately no onboarding anchor: the home card's button is
-          // the one the report-progress guidance points at.
           if (canLog)
-            AddProgressButton(
-              isLoggingProgress: isLoggingProgress,
-              onTap: onAdd,
+            FeatureTipAnchor(
+              tip: FeatureTip.addProgress,
+              child: AddProgressButton(
+                isLoggingProgress: isLoggingProgress,
+                onTap: onAdd,
+              ),
             ),
           if (canLog && canEdit) const SizedBox(width: 12),
           if (canEdit)

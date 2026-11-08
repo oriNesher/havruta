@@ -10,8 +10,8 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if request.auth != null;
       // Every client write path (username_screen registration, FCM token
-      // save, streak update, lastCompetitionCreatedAt) always targets the
-      // caller's own doc.
+      // save, streak update, lastCompetitionCreatedAt, seenTips) always
+      // targets the caller's own doc.
       allow create, update: if request.auth != null && request.auth.uid == uid;
       allow delete: if false;
 
@@ -191,18 +191,6 @@ service cloud.firestore {
       match /redemptions/{uid} {
         allow read, write: if false;
       }
-    }
-
-    // Written only by the startOnboarding callable (Admin SDK, bypasses
-    // these rules) as a ledger of which onboarding challenges/invites exist
-    // for a given user, so later onboarding modules can read it without a
-    // query. The onboarding challenges/invites themselves live in
-    // competitions/competition_invites above and are governed entirely by
-    // those existing rules — nothing here is a separate write path for
-    // them, so no new client write surface is opened by onboarding.
-    match /onboarding_state/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false;
     }
   }
 }

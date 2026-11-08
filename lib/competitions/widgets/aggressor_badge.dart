@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../app_theme.dart';
+import '../../tips/feature_tip.dart';
+import '../../tips/feature_tip_anchor.dart';
 import '../aggressor.dart';
 import '../challenge.dart';
 
@@ -26,11 +28,11 @@ class AggressorBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = challenge.isCompleted ? 'Final Aggressor' : 'Aggressor';
 
-    return Tooltip(
+    final badge = Tooltip(
       message: label,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _showAggressorInfo(context, challenge),
+        onTap: () => showAggressorInfo(context, challenge),
         child: compact
             ? const Icon(kAggressorIcon, size: 16, color: kAggressorColor)
             : Container(
@@ -60,11 +62,17 @@ class AggressorBadge extends StatelessWidget {
               ),
       ),
     );
+    // A finished Challenge's "Final Aggressor" is a record, not something
+    // to learn about mid-game.
+    return challenge.isCompleted
+        ? badge
+        : FeatureTipAnchor(tip: FeatureTip.aggressor, child: badge);
   }
 }
 
-void _showAggressorInfo(BuildContext context, Challenge challenge) {
-  final holder = challenge.aggressorUsername ?? 'Someone';
+/// Bottom sheet explaining the Aggressor Badge and who holds it.
+void showAggressorInfo(BuildContext context, Challenge challenge) {
+  final holder = challenge.aggressorUsername;
 
   showModalBottomSheet<void>(
     context: context,
@@ -100,7 +108,12 @@ void _showAggressorInfo(BuildContext context, Challenge challenge) {
               ),
               const SizedBox(height: 12),
               Text(
-                challenge.isCompleted
+                holder == null
+                    ? challenge.isCompleted
+                          ? 'Nobody finished holding it.'
+                          : 'Nobody holds it yet. With at least 2 players in '
+                                'the challenge, any progress claims it.'
+                    : challenge.isCompleted
                     ? '$holder finished as the Final Aggressor.'
                     : '$holder holds it right now.',
                 style: theme.textTheme.bodyMedium?.copyWith(

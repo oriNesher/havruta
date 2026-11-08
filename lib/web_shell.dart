@@ -15,9 +15,8 @@ const Color _shellBorderColor = Color(0xFF1E1E30);
 /// the child is returned untouched, so there is exactly one code path on
 /// mobile and it is the original one.
 ///
-/// Sits *inside* OnboardingGuideLayer (see main.dart) so the guide layer's
-/// Stack still spans the whole window: its scrim dims the backdrop too, and
-/// its anchor rects, which are window-global, need no adjustment.
+/// Wraps FeatureTipLayer (see main.dart), so tip bubbles are held to the
+/// same column as the screens they point at.
 class WebShell extends StatelessWidget {
   final Widget child;
 

@@ -4,8 +4,6 @@ import '../app_theme.dart';
 import '../competitions/challenge.dart';
 import '../services/firestore_service.dart';
 import '../competitions/widgets/personal_goal_input_dialog.dart';
-import '../onboarding/onboarding_anchor.dart';
-import '../onboarding/onboarding_ids.dart';
 
 class HomePendingInvitesSection extends StatelessWidget {
   final String uid;
@@ -226,11 +224,7 @@ class HomePendingInvitesSection extends StatelessWidget {
                 (invite['creatorTargetValue'] as num?)?.toInt();
             final creatorUnit = invite['creatorUnit'] as String?;
 
-            // Lets onboarding point at this specific invitation; which one
-            // (if any) is highlighted is decided centrally.
-            return OnboardingAnchor(
-              id: OnboardingAnchorIds.inviteCard(inviteId),
-              child: Card(
+            return Card(
               margin: const EdgeInsets.only(bottom: 10),
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -345,7 +339,6 @@ class HomePendingInvitesSection extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
               ),
             );
           }).toList(),

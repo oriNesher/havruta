@@ -12,12 +12,12 @@ import '../competitions/progress_reporting.dart';
 import '../competitions/widgets/add_progress.dart';
 import '../competitions/widgets/aggressor_badge.dart';
 import '../competitions/widgets/personal_progress_panel.dart';
-import '../onboarding/onboarding_anchor.dart';
-import '../onboarding/onboarding_ids.dart';
 import '../services/firestore_service.dart';
 import '../services/progress_snapshot_cache.dart';
 import '../services/respect_service.dart';
 import '../services/respect_store.dart';
+import '../tips/feature_tip.dart';
+import '../tips/feature_tip_anchor.dart';
 import '../competitions/competition_details_screen.dart';
 
 // ─────────────────────────────────────────────
@@ -65,9 +65,7 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
 
         final docs = snapshot.data?.docs ?? [];
 
-        if (docs.isEmpty) {
-          return const Text('No competitions yet');
-        }
+        if (docs.isEmpty) return const _NoChallengesCard();
 
         return Column(
           children: docs.map((doc) {
@@ -81,6 +79,85 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
           }).toList(),
         );
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Empty state — the user isn't in any Challenge yet
+// ─────────────────────────────────────────────
+
+class _NoChallengesCard extends StatelessWidget {
+  const _NoChallengesCard();
+
+  static const _accent = Color(0xFF8B5CF6);
+  static const _muted = Color(0xFF8888A0);
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final body = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: _muted,
+      height: 1.4,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: _accent.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+              border: Border.all(color: _accent.withValues(alpha: 0.4)),
+            ),
+            alignment: Alignment.center,
+            child: PhosphorIcon(
+              PhosphorIconsFill.flagPennant,
+              size: 26,
+              color: _accent,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Your first Challenge starts here',
+            textAlign: TextAlign.center,
+            style: AppTheme.display(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Pick a goal, invite a few friends, and see who goes the '
+            'distance. Tap Create Challenge to get going.',
+            textAlign: TextAlign.center,
+            style: body,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              PhosphorIcon(PhosphorIconsFill.bell, size: 14, color: _muted),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'Invites from friends show up under the bell.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: _muted),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -295,47 +372,44 @@ class _CompetitionCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Header ───────────────────────────────
-              OnboardingAnchor(
-                id: OnboardingAnchorIds.homeChallengeCard(competitionId),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  ),
+                  if (isActive) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: colorScheme.tertiary,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                    if (isActive) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: colorScheme.tertiary,
-                          shape: BoxShape.circle,
-                        ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'LIVE',
+                      style: AppTheme.display(
+                        color: colorScheme.tertiary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'LIVE',
-                        style: AppTheme.display(
-                          color: colorScheme.tertiary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8,
-                        ),
+                    ),
+                  ] else if (status.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '${status[0].toUpperCase()}${status.substring(1)}',
+                      style: AppTheme.display(
+                        color: colorScheme.onSurface.withValues(alpha: 0.4),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
                       ),
-                    ] else if (status.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        '${status[0].toUpperCase()}${status.substring(1)}',
-                        style: AppTheme.display(
-                          color: colorScheme.onSurface.withValues(alpha: 0.4),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
+                    ),
                   ],
-                ),
+                ],
               ),
               if (challenge.prize != null) ...[
                 const SizedBox(height: 6),
@@ -354,7 +428,17 @@ class _CompetitionCard extends StatelessWidget {
                     ),
                   if (daysLeft != null)
                     _MetaChip(icon: Icons.calendar_today_outlined, label: daysLeft),
-                  if (goalChip != null)
+                  if (goalChip != null &&
+                      challenge.winCondition == WinCondition.lastStanding &&
+                      isActive)
+                    FeatureTipAnchor(
+                      tip: FeatureTip.dailyMinimum,
+                      child: _MetaChip(
+                        icon: Icons.track_changes_outlined,
+                        label: goalChip,
+                      ),
+                    )
+                  else if (goalChip != null)
                     _MetaChip(
                       icon: Icons.track_changes_outlined,
                       label: goalChip,
@@ -704,6 +788,7 @@ class _ParticipantsListState extends State<_ParticipantsList> {
                   challenge: challenge,
                   me: myData,
                   compact: true,
+                  participants: participants,
                 ),
                 leaderboard: leaderboard,
               )
@@ -714,7 +799,6 @@ class _ParticipantsListState extends State<_ParticipantsList> {
             // leaderboard mid-tap and a spammed tap can land on the card
             // behind where the button used to be, opening competition details.
             if (canLog) _AddProgressButton(
-              competitionId: widget.competitionId,
               isLoggingProgress: _loggingProgress,
               onTap: () => _openAddProgressPopup(myData),
             ),
@@ -865,35 +949,13 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
     super.initState();
     _stream = widget.firestoreService.getCompetitionEvents(widget.competitionId);
     _nudgeTimer = Timer.periodic(_nudgeInterval, (_) => _performNudge());
-    OnboardingAnchorRegistry.instance.addRevealer(_revealAnchor);
   }
 
   @override
   void dispose() {
-    OnboardingAnchorRegistry.instance.removeRevealer(_revealAnchor);
     _nudgeTimer?.cancel();
     _pageController.dispose();
     super.dispose();
-  }
-
-  // PageView only builds the visible page, so an event's anchors don't
-  // exist while it's swiped away. Turns to the page holding the event an
-  // anchor id belongs to, when asked — only while this screen is on top.
-  bool _revealAnchor(String anchorId) {
-    if (!mounted || !_pageController.hasClients) return false;
-    if (ModalRoute.of(context)?.isCurrent == false) return false;
-    final index = _latestEvents.indexWhere(
-      (e) =>
-          OnboardingAnchorIds.homeEvent(e.id) == anchorId ||
-          OnboardingAnchorIds.homeEventRespect(e.id) == anchorId,
-    );
-    if (index < 0 || _pageController.page?.round() == index) return false;
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
-    return true;
   }
 
   // ── Unread tracking ──────────────────────────
@@ -1110,19 +1172,14 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
             controller: _pageController,
             onPageChanged: _onPageChanged,
             itemCount: events.length,
-            // The anchor spans the whole page, so bringing it into view
-            // can't leave the carousel parked between pages.
-            itemBuilder: (context, index) => OnboardingAnchor(
-              id: OnboardingAnchorIds.homeEvent(events[index].id),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _markSeenByIndices({index}),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: _CompetitionEventRow(
-                    event: events[index],
-                    currentUid: widget.currentUid,
-                  ),
+            itemBuilder: (context, index) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _markSeenByIndices({index}),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: _CompetitionEventRow(
+                  event: events[index],
+                  currentUid: widget.currentUid,
                 ),
               ),
             ),
@@ -1424,8 +1481,8 @@ class _CompetitionEventRow extends StatelessWidget {
           ),
           if (_canGiveRespect) ...[
             const SizedBox(width: 8),
-            OnboardingAnchor(
-              id: OnboardingAnchorIds.homeEventRespect(event.id),
+            FeatureTipAnchor(
+              tip: FeatureTip.giveRespect,
               child: _GiveRespectButton(event: event, currentUid: currentUid),
             ),
           ],
@@ -1676,12 +1733,10 @@ class _ParticipantRow extends StatelessWidget {
 // ─────────────────────────────────────────────
 
 class _AddProgressButton extends StatelessWidget {
-  final String competitionId;
   final bool isLoggingProgress;
   final VoidCallback onTap;
 
   const _AddProgressButton({
-    required this.competitionId,
     required this.isLoggingProgress,
     required this.onTap,
   });
@@ -1707,8 +1762,8 @@ class _AddProgressButton extends StatelessWidget {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {},
-            child: OnboardingAnchor(
-              id: OnboardingAnchorIds.addProgressButton(competitionId),
+            child: FeatureTipAnchor(
+              tip: FeatureTip.addProgress,
               child: AddProgressButton(
                 isLoggingProgress: isLoggingProgress,
                 onTap: onTap,

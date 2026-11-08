@@ -3,8 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../app_theme.dart';
+import '../aggressor.dart';
 import '../challenge.dart';
 import '../personal_progress.dart';
+import 'aggressor_badge.dart';
 
 /// The Challenge Details "Your progress" page: a big headline number and the
 /// viewer's own progress drawn for the challenge's mode — a milestone ring
@@ -16,65 +18,94 @@ class PersonalProgressPanel extends StatelessWidget {
   /// The viewer's raw participants/{uid} doc.
   final Map<String, dynamic> me;
 
-  /// The Home card's version: the same view scaled down, with no heading or
-  /// frame of its own, and the calendar trimmed to the last two weeks.
+  /// The Home card's version, the same for every mode: a glance ring beside
+  /// the viewer's recent progress, then the Aggressor Badge (who holds it,
+  /// and how far the viewer is from taking or keeping it). The full curve
+  /// and calendar stay on Challenge Details.
   final bool compact;
+
+  /// Everyone's participant docs, for the compact view.
+  final List<Map<String, dynamic>>? participants;
 
   const PersonalProgressPanel({
     super.key,
     required this.challenge,
     required this.me,
     this.compact = false,
+    this.participants,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final progress = PersonalProgress.of(
-      challenge,
-      me,
-      maxCalendarWeeks: compact ? 2 : 6,
-    );
-    final gap = EdgeInsets.only(top: compact ? 14 : 20);
+    final progress = PersonalProgress.of(challenge, me);
+    final now = DateTime.now();
 
-    // The Home card's race view sits the percentage beside the ring instead
-    // of above it — the card is short on height, not width.
-    if (compact && progress is RaceProgress) {
-      return Row(
-        children: [
-          Expanded(
-            child: _Headline(headline: progress.headline, compact: compact),
-          ),
-          const SizedBox(width: 16),
-          _MilestoneRing(progress: progress, compact: compact),
-        ],
+    if (compact) {
+      final participants = this.participants ?? [me];
+      final ring = glanceRingOf(challenge, progress, me, participants);
+      final uid = me['uid'] as String?;
+
+      return Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 10),
+        child: Column(
+          // Its own height whatever it's placed in — the Home carousel sizes
+          // itself from this.
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: ring != null
+                        ? _GlanceRingView(ring: ring)
+                        : _Headline(headline: progress.headline, compact: true),
+                  ),
+                ),
+                const _HalfDivider(),
+                Expanded(
+                  child: Center(
+                    child: _RecentProgress(
+                      amount: aggressorWindowTotal(challenge, me, now),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (uid != null && challenge.hasAggressorBadge) ...[
+              const SizedBox(height: 18),
+              _AggressorBanner(
+                challenge: challenge,
+                standing: aggressorStanding(challenge, participants, uid, now),
+              ),
+            ],
+          ],
+        ),
       );
     }
 
+    const gap = EdgeInsets.only(top: 20);
     final body = Column(
-      // Its own height whatever it's placed in — the Home carousel sizes
-      // itself from this.
       mainAxisSize: MainAxisSize.min,
       children: [
-        _Headline(headline: progress.headline, compact: compact),
+        _Headline(headline: progress.headline, compact: false),
         switch (progress) {
           RaceProgress race => Padding(
             padding: gap,
-            child: _MilestoneRing(progress: race, compact: compact),
+            child: _MilestoneRing(progress: race),
           ),
           GrowthProgress growth => Padding(
             padding: gap,
-            child: _GrowthCurve(progress: growth, compact: compact),
+            child: _GrowthCurve(progress: growth),
           ),
           StreakProgress streak => Padding(
             padding: gap,
-            child: _StreakCalendar(progress: streak, compact: compact),
+            child: _StreakCalendar(progress: streak),
           ),
           TotalOnlyProgress() => const SizedBox.shrink(),
         },
       ],
     );
-    if (compact) return body;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,9 +198,8 @@ class _Headline extends StatelessWidget {
 
 class _MilestoneRing extends StatelessWidget {
   final RaceProgress progress;
-  final bool compact;
 
-  const _MilestoneRing({required this.progress, required this.compact});
+  const _MilestoneRing({required this.progress});
 
   @override
   Widget build(BuildContext context) {
@@ -178,9 +208,7 @@ class _MilestoneRing extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final size = compact
-            ? math.min(constraints.maxWidth * 0.45, 120.0)
-            : math.min(constraints.maxWidth * 0.6, 220.0);
+        final size = math.min(constraints.maxWidth * 0.6, 220.0);
         return SizedBox.square(
           dimension: size,
           child: CustomPaint(
@@ -197,7 +225,7 @@ class _MilestoneRing extends StatelessWidget {
                   Text(
                     next == null ? 'FINISHED' : 'NEXT',
                     style: AppTheme.display(
-                      fontSize: compact ? 11 : 14,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.4,
                       color: next == null
@@ -209,7 +237,7 @@ class _MilestoneRing extends StatelessWidget {
                     Text(
                       '$next%',
                       style: AppTheme.mono(
-                        fontSize: compact ? 16 : 22,
+                        fontSize: 22,
                         fontWeight: FontWeight.w700,
                         color: theme.colorScheme.onSurface,
                       ),
@@ -224,42 +252,357 @@ class _MilestoneRing extends StatelessWidget {
   }
 }
 
-/// One arc per milestone stretch (0–25, 25–50, 50–75, 75–90, 90–100%):
-/// finished stretches in [doneColor], the current one filling in
-/// [currentColor], the rest as a faint track.
+// ─────────────────────────────────────────────
+// Home card top row — glance ring | recent progress
+// ─────────────────────────────────────────────
+
+class _GlanceRingView extends StatelessWidget {
+  final GlanceRing ring;
+
+  const _GlanceRingView({required this.ring});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = ring.out
+        ? scheme.error
+        : ring.achieved
+        ? scheme.tertiary
+        : null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = math.min(constraints.maxWidth * 0.85, 124.0);
+        return SizedBox.square(
+          dimension: size,
+          child: CustomPaint(
+            painter: _MilestoneRingPainter(
+              fraction: ring.fraction,
+              marks: const [0, 1],
+              trackColor: scheme.surfaceContainerHighest,
+              doneColor: scheme.tertiary,
+              currentColor: scheme.primary,
+            ),
+            child: Center(
+              child: SizedBox(
+                // Inside the stroke, with room to spare for "100%".
+                width: size * 0.7,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        ring.value,
+                        maxLines: 1,
+                        style: AppTheme.mono(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w700,
+                          color: ring.out ? scheme.error : scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        ring.label,
+                        maxLines: 1,
+                        style: AppTheme.mono(
+                          fontSize: 13,
+                          color: accent ?? scheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HalfDivider extends StatelessWidget {
+  const _HalfDivider();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 1,
+    height: 88,
+    color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.25),
+  );
+}
+
+/// What the viewer logged across the Aggressor window.
+class _RecentProgress extends StatelessWidget {
+  final int amount;
+
+  const _RecentProgress({required this.amount});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.trending_up, size: 18, color: scheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'Recent progress',
+                  maxLines: 1,
+                  style: AppTheme.display(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface.withValues(alpha: 0.85),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              amount > 0 ? '+${formatCount(amount)}' : '0',
+              maxLines: 1,
+              style: AppTheme.mono(
+                fontSize: 44,
+                fontWeight: FontWeight.w800,
+                color: amount > 0
+                    ? scheme.primary
+                    : scheme.onSurface.withValues(alpha: 0.4),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Aggressor banner — who holds it, and how far the viewer is from it
+// ─────────────────────────────────────────────
+
+/// Full width under the top row. Tapping it explains the badge.
+class _AggressorBanner extends StatelessWidget {
+  final Challenge challenge;
+  final AggressorStanding standing;
+
+  const _AggressorBanner({required this.challenge, required this.standing});
+
+  /// The line under the name: what it'd take to get or keep the badge.
+  String _distanceLine() {
+    final unitSuffix = challenge.unit.isNotEmpty ? ' ${challenge.unit}' : '';
+    String amount(int value) => '${formatCount(value)}$unitSuffix';
+
+    return switch (standing) {
+      _ when challenge.isCompleted =>
+        standing.holderUsername != null
+            ? 'Held it when the Challenge ended'
+            : 'Nobody held it at the end',
+      AggressorStanding(needsRival: true) => 'Invite someone to compete for it',
+      AggressorStanding(viewerHolds: true, lead: final lead?) when lead == 0 =>
+        '${standing.closestUsername ?? 'Someone'} is tied with you',
+      AggressorStanding(viewerHolds: true, lead: final lead?) =>
+        'You lead ${standing.closestUsername ?? 'the rest'} by ${amount(lead)}',
+      AggressorStanding(viewerHolds: true) => "Nobody's close yet",
+      AggressorStanding(viewerOut: true) => "You're out of the running",
+      AggressorStanding(toTake: final toTake?)
+          when standing.holderUsername == null =>
+        'Log ${amount(toTake)} to claim it',
+      AggressorStanding(toTake: final toTake?) =>
+        '${_gapIsBig(toTake) ? '' : 'Only '}${amount(toTake)} '
+            'to snatch it for yourself',
+      _ => '',
+    };
+  }
+
+  /// Too far for "Only" to ring true: more than a handful, and over three
+  /// quarters of what the holder has logged. Relative because units differ
+  /// (10 km is a lot, 10 minutes isn't).
+  bool _gapIsBig(int toTake) =>
+      toTake > 10 && toTake * 4 > (standing.holderTotal ?? 0) * 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isOver = challenge.isCompleted;
+    final holder = standing.holderUsername;
+    final name = holder == null
+        ? (isOver ? null : 'Up for grabs')
+        : standing.viewerHolds
+        ? 'You'
+        : holder;
+    final holderTotal = standing.holderTotal;
+    final distanceLine = _distanceLine();
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => showAggressorInfo(context, challenge),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: kAggressorColor.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: kAggressorColor.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: kAggressorColor.withValues(alpha: 0.28),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                kAggressorIcon,
+                size: 22,
+                color: kAggressorColor,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (name != null) ...[
+                        Flexible(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTheme.display(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          ' · ',
+                          style: AppTheme.display(
+                            fontSize: 15,
+                            color: scheme.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                      Text(
+                        isOver ? 'Final Aggressor' : 'Aggressor',
+                        style: AppTheme.display(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: kAggressorColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (distanceLine.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      distanceLine,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTheme.display(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: scheme.onSurface.withValues(alpha: 0.75),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            // A closed challenge's window has moved on; the number wouldn't
+            // mean anything.
+            if (!isOver && holderTotal != null) ...[
+              const SizedBox(width: 10),
+              // Capped, so a huge total shrinks instead of crushing the name.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 60),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '+${formatCount(holderTotal)}',
+                    maxLines: 1,
+                    style: AppTheme.mono(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: kAggressorColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The race milestones as ring segment boundaries: 0, .25, .5, .75, .9, 1.
+final List<double> _raceMarks = [
+  0,
+  ...kRaceMilestones.map((m) => m / 100),
+  1,
+];
+
+/// One arc per stretch between [marks] (a race's 0–25, 25–50, 50–75, 75–90,
+/// 90–100%; or a single 0–1 arc): finished stretches in [doneColor], the
+/// current one filling in [currentColor], the rest as a faint track.
 class _MilestoneRingPainter extends CustomPainter {
   final double fraction;
+  final List<double> marks;
   final Color trackColor;
   final Color doneColor;
   final Color currentColor;
 
   _MilestoneRingPainter({
     required this.fraction,
+    List<double>? marks,
     required this.trackColor,
     required this.doneColor,
     required this.currentColor,
-  });
+  }) : marks = marks ?? _raceMarks;
 
   static const double _gap = 0.06; // radians between segments
 
   @override
   void paint(Canvas canvas, Size size) {
-    // ~14px on the full-size ring, thinner as it shrinks.
-    final stroke = math.max(8.0, size.shortestSide * 0.064);
+    // A single arc needs no break at the top, and gets rounded ends.
+    final single = marks.length <= 2;
+    final gap = single ? 0.0 : _gap;
+    // ~14px on the full-size ring, thinner as it shrinks; the Home card's
+    // single arc is proportionally heavier.
+    final stroke = math.max(8.0, size.shortestSide * (single ? 0.085 : 0.064));
     final radius = size.shortestSide / 2 - stroke / 2;
     final rect = Rect.fromCircle(center: size.center(Offset.zero), radius: radius);
-    final marks = [0, ...kRaceMilestones, 100].map((m) => m / 100).toList();
     Paint arc(Color color) => Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.butt;
+      ..strokeCap = single ? StrokeCap.round : StrokeCap.butt;
 
     for (var i = 0; i < marks.length - 1; i++) {
       final from = marks[i];
       final to = marks[i + 1];
-      final start = -math.pi / 2 + from * 2 * math.pi + _gap / 2;
-      final sweep = (to - from) * 2 * math.pi - _gap;
+      final start = -math.pi / 2 + from * 2 * math.pi + gap / 2;
+      final sweep = (to - from) * 2 * math.pi - gap;
 
       canvas.drawArc(rect, start, sweep, false, arc(trackColor));
       if (fraction >= to) {
@@ -274,6 +617,7 @@ class _MilestoneRingPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MilestoneRingPainter oldDelegate) =>
       oldDelegate.fraction != fraction ||
+      oldDelegate.marks != marks ||
       oldDelegate.trackColor != trackColor ||
       oldDelegate.doneColor != doneColor ||
       oldDelegate.currentColor != currentColor;
@@ -285,9 +629,8 @@ class _MilestoneRingPainter extends CustomPainter {
 
 class _GrowthCurve extends StatelessWidget {
   final GrowthProgress progress;
-  final bool compact;
 
-  const _GrowthCurve({required this.progress, required this.compact});
+  const _GrowthCurve({required this.progress});
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +640,7 @@ class _GrowthCurve extends StatelessWidget {
     final nothingYet = progress.totals.last == 0 && !progress.isOver;
 
     return SizedBox(
-      height: compact ? 110 : 170,
+      height: 170,
       width: double.infinity,
       child: Stack(
         children: [
@@ -528,22 +871,18 @@ const List<String> _weekdayInitials = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 class _StreakCalendar extends StatelessWidget {
   final StreakProgress progress;
-  final bool compact;
 
-  const _StreakCalendar({required this.progress, required this.compact});
+  const _StreakCalendar({required this.progress});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final labelStyle = theme.textTheme.labelSmall?.copyWith(fontSize: 10);
-    final gap = compact ? 5.0 : 6.0;
+    const gap = 6.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cell = ((constraints.maxWidth - gap * 6) / 7).clamp(
-          18.0,
-          compact ? 28.0 : 40.0,
-        );
+        final cell = ((constraints.maxWidth - gap * 6) / 7).clamp(18.0, 40.0);
         final rows = progress.cells.length ~/ 7;
 
         Widget row(List<Widget> children) => Row(

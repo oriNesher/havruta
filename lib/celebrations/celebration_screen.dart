@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../competitions/competition_event.dart';
-import '../onboarding/onboarding_anchor.dart';
-import '../onboarding/onboarding_ids.dart';
 import 'celebration_types.dart';
 import 'celebration_visuals.dart';
 import 'shareable_card.dart';
@@ -33,8 +31,6 @@ class _CelebrationScreenState extends State<CelebrationScreen> {
         a.type,
       ).compareTo(celebrationPriorityRank(b.type)),
     );
-
-  String get _batchId => widget.events.first.batchId ?? '';
 
   String get _headerTitle => _sortedEvents.length > 1
       ? '${_sortedEvents.length} things just happened!'
@@ -101,40 +97,37 @@ class _CelebrationScreenState extends State<CelebrationScreen> {
                 Expanded(
                   child: Center(
                     child: SingleChildScrollView(
-                      child: OnboardingAnchor(
-                        id: OnboardingAnchorIds.celebrationCard(_batchId),
-                        child: RepaintBoundary(
-                          key: _cardKey,
-                          child: ShareableCard(
-                            accentColor: accentColor,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
+                      child: RepaintBoundary(
+                        key: _cardKey,
+                        child: ShareableCard(
+                          accentColor: accentColor,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                _headerTitle,
+                                style: AppTheme.display(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              if (competitionTitle != null) ...[
+                                const SizedBox(height: 4),
                                 Text(
-                                  _headerTitle,
+                                  competitionTitle,
                                   style: AppTheme.display(
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white.withValues(alpha: 0.6),
                                   ),
                                 ),
-                                if (competitionTitle != null) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    competitionTitle,
-                                    style: AppTheme.display(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white.withValues(alpha: 0.6),
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 20),
-                                for (final event in _sortedEvents)
-                                  CelebrationEventRow(event: event),
                               ],
-                            ),
+                              const SizedBox(height: 20),
+                              for (final event in _sortedEvents)
+                                CelebrationEventRow(event: event),
+                            ],
                           ),
                         ),
                       ),
@@ -142,13 +135,10 @@ class _CelebrationScreenState extends State<CelebrationScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                OnboardingAnchor(
-                  id: OnboardingAnchorIds.celebrationContinueButton(_batchId),
-                  child: ElevatedButton(
-                    onPressed: _talkTrash,
-                    style: ElevatedButton.styleFrom(backgroundColor: accentColor),
-                    child: const Text('Nice!'),
-                  ),
+                ElevatedButton(
+                  onPressed: _talkTrash,
+                  style: ElevatedButton.styleFrom(backgroundColor: accentColor),
+                  child: const Text('Nice!'),
                 ),
               ],
             ),

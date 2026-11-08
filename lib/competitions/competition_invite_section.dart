@@ -3,8 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../onboarding/onboarding_anchor.dart';
-import '../onboarding/onboarding_ids.dart';
 import '../services/firestore_service.dart';
 import 'challenge.dart';
 
@@ -193,66 +191,63 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
           ),
         ),
         const SizedBox(height: 12),
-        OnboardingAnchor(
-          id: OnboardingAnchorIds.inviteSearch(widget.challenge.id),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: usernameController,
-                onSubmitted: (_) => inviteUser(),
-                decoration: InputDecoration(
-                  labelText: 'Username or email',
-                  border: const OutlineInputBorder(),
-                  suffixIcon: isSearching
-                      ? const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : null,
-                ),
-              ),
-              if (searchResults.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Card(
-                  margin: EdgeInsets.zero,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: searchResults.map((doc) {
-                      final username = doc.data()['username'] as String? ?? '';
-                      return ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.person_outline),
-                        title: Text(username),
-                        trailing: isLoading
-                            ? null
-                            : const Icon(Icons.add_circle_outline),
-                        onTap: isLoading ? null : () => _inviteFromSearchResult(doc),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: isLoading ? null : inviteUser,
-                  child: isLoading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: usernameController,
+              onSubmitted: (_) => inviteUser(),
+              decoration: InputDecoration(
+                labelText: 'Username or email',
+                border: const OutlineInputBorder(),
+                suffixIcon: isSearching
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Invite'),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+            if (searchResults.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: searchResults.map((doc) {
+                    final username = doc.data()['username'] as String? ?? '';
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.person_outline),
+                      title: Text(username),
+                      trailing: isLoading
+                          ? null
+                          : const Icon(Icons.add_circle_outline),
+                      onTap: isLoading ? null : () => _inviteFromSearchResult(doc),
+                    );
+                  }).toList(),
                 ),
               ),
             ],
-          ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: isLoading ? null : inviteUser,
+                child: isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Invite'),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         const Align(

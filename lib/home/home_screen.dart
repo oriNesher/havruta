@@ -7,20 +7,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../app_theme.dart';
-// TEMPORARY — remove with the debug entry point below once the onboarding
-// flow is fully verified.
-import '../debug/onboarding_debug_screen.dart';
 import '../competitions/create_competition_screen.dart';
 import '../invites/pending_invites_screen.dart';
-import '../onboarding/onboarding_anchor.dart';
-import '../onboarding/onboarding_controller.dart';
-import '../onboarding/onboarding_ids.dart';
 import '../services/firestore_service.dart';
 import '../services/progress_snapshot_cache.dart';
 import '../services/respect_service.dart';
 import '../services/respect_store.dart';
+import '../tips/feature_tips_controller.dart';
 import 'home_competitions_section.dart';
-import 'home_onboarding_checklist.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -43,9 +37,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (uid != null) _usernameFuture = _firestoreService.getMyUsername(uid);
     _updateStreak();
     _grantDailyRespect();
-    // Entering the real Home experience is what onboarding hangs off; the
-    // controller decides from persisted state whether anything happens.
-    if (uid != null) OnboardingController.instance.attachUser(uid);
+    // Loads which first-time feature tips this user has already seen.
+    if (uid != null) FeatureTipsController.instance.attachUser(uid);
   }
 
   Future<void> _updateStreak() async {
@@ -82,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _signOut() async {
     await ProgressSnapshotCache.instance.persistAndClear(_firestoreService);
     RespectStore.instance.reset();
-    OnboardingController.instance.reset();
+    FeatureTipsController.instance.reset();
     await FirebaseAuth.instance.signOut();
   }
 
@@ -145,93 +138,70 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             stream: _firestoreService.getPendingInvites(user.uid),
             builder: (context, snapshot) {
               final count = snapshot.data?.docs.length ?? 0;
-              // The margin stays outside the anchor so onboarding
-              // highlights the button itself, not its spacing.
-              return Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: OnboardingAnchor(
-                  id: OnboardingAnchorIds.homeNotificationsButton,
-                  child: Container(
-                    height: 36,
-                    width: 36,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF181824),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFF2A2A42),
-                        width: 1,
-                      ),
-                    ),
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 36,
-                        minHeight: 36,
-                      ),
-                      icon: Badge(
-                        isLabelVisible: count > 0,
-                        label: Text('$count'),
-                        child: PhosphorIcon(
-                          PhosphorIconsFill.bell,
-                          size: 18,
-                          color: const Color(0xFF8888A0),
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const PendingInvitesScreen(),
-                          ),
-                        );
-                      },
+              return Container(
+                height: 36,
+                width: 36,
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF181824),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF2A2A42), width: 1),
+                ),
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                  icon: Badge(
+                    isLabelVisible: count > 0,
+                    label: Text('$count'),
+                    child: PhosphorIcon(
+                      PhosphorIconsFill.bell,
+                      size: 18,
+                      color: const Color(0xFF8888A0),
                     ),
                   ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PendingInvitesScreen(),
+                      ),
+                    );
+                  },
                 ),
               );
             },
           ),
-          // TEMPORARY (debug builds only): entry point for the onboarding
-          // test harness (backend + tutorial session). Delete this block
-          // together with lib/debug/onboarding_debug_screen.dart once the
-          // whole onboarding flow is signed off.
+          // Debug builds only: makes every first-time feature tip show
+          // again, for checking them by hand.
           if (kDebugMode)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: OnboardingAnchor(
-                id: OnboardingAnchorIds.debugHarnessButton,
-                child: Container(
-                  height: 36,
-                  width: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF181824),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFB69CFB),
-                      width: 1,
-                    ),
-                  ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                    icon: const Icon(
-                      Icons.bug_report_outlined,
-                      size: 18,
-                      color: Color(0xFFB69CFB),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const OnboardingDebugScreen(),
-                        ),
-                      );
-                    },
-                  ),
+            Container(
+              height: 36,
+              width: 36,
+              margin: const EdgeInsets.only(right: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF181824),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFB69CFB), width: 1),
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                tooltip: 'Reset tips (debug)',
+                icon: const Icon(
+                  Icons.lightbulb_outline,
+                  size: 18,
+                  color: Color(0xFFB69CFB),
                 ),
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  await FeatureTipsController.instance.debugResetAll();
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('Tips reset')),
+                  );
+                },
               ),
             ),
           Container(
@@ -256,61 +226,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-      // Marks "the real Home experience is on screen and settled" for
-      // onboarding (the Welcome prompt waits for it); never highlighted.
-      body: OnboardingAnchor(
-        id: OnboardingAnchorIds.homeScreen,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FutureBuilder<String?>(
-                future: _usernameFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Text(
-                      'Hello...',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    );
-                  }
-                  final username = snapshot.data;
-                  return Text(
-                    'Hello ${username ?? user.email ?? ""}',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                    ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FutureBuilder<String?>(
+              future: _usernameFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Text(
+                    'Hello...',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
                   );
-                },
+                }
+                final username = snapshot.data;
+                return Text(
+                  'Hello ${username ?? user.email ?? ""}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            _RespectSummary(uid: user.uid, firestoreService: _firestoreService),
+            const SizedBox(height: 20),
+            _CreateChallengeButton(uid: user.uid),
+            const SizedBox(height: 24),
+            Text(
+              'MY COMPETITIONS',
+              style: AppTheme.display(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.0,
               ),
-              const SizedBox(height: 10),
-              _RespectSummary(
-                uid: user.uid,
-                firestoreService: _firestoreService,
-              ),
-              const SizedBox(height: 20),
-              OnboardingAnchor(
-                id: OnboardingAnchorIds.homeCreateChallengeButton,
-                child: _CreateChallengeButton(uid: user.uid),
-              ),
-              const HomeOnboardingChecklist(),
-              const SizedBox(height: 24),
-              Text(
-                'MY COMPETITIONS',
-                style: AppTheme.display(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              const SizedBox(height: 12),
-              HomeCompetitionsSection(uid: user.uid),
-            ],
-          ),
+            ),
+            const SizedBox(height: 12),
+            HomeCompetitionsSection(uid: user.uid),
+          ],
         ),
       ),
     );

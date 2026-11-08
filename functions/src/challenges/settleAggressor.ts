@@ -102,7 +102,7 @@ export function planAggressor(input: {
  * @param {AggressorCause} cause What prompted this re-evaluation.
  * @param {string | null} reporterUid Whose progress write prompted it.
  * @param {number} nowMillis The current time.
- * @return {object} The parsed challenge and the plan.
+ * @return {object} The parsed inputs and the plan.
  */
 function planFromDocs(
   data: FirebaseFirestore.DocumentData,
@@ -110,20 +110,27 @@ function planFromDocs(
   cause: AggressorCause,
   reporterUid: string | null,
   nowMillis: number
-): {challenge: ChallengeConfig; plan: AggressorPlan} {
+): {
+  challenge: ChallengeConfig;
+  isOnboarding: boolean;
+  participants: StandingParticipant[];
+  plan: AggressorPlan;
+} {
   const challenge = parseChallenge(data);
+  const isOnboarding = data.onboarding?.isOnboarding === true;
+  const participants = participantsSnap.docs
+    .map((doc) => toStandingParticipant(doc.data(), challenge))
+    .filter((p) => !!p.uid);
   const plan = planAggressor({
     competitionTitle: data.title ?? "Challenge",
     challenge,
-    isOnboarding: data.onboarding?.isOnboarding === true,
-    participants: participantsSnap.docs
-      .map((doc) => toStandingParticipant(doc.data(), challenge))
-      .filter((p) => !!p.uid),
+    isOnboarding,
+    participants,
     cause,
     reporterUid,
     nowMillis,
   });
-  return {challenge, plan};
+  return {challenge, isOnboarding, participants, plan};
 }
 
 /**
@@ -160,10 +167,34 @@ export async function settleAggressor(
   ]);
   if (!snap.exists) return;
   const nowMillis = admin.firestore.Timestamp.now().toMillis();
-  if (!planFromDocs(snap.data() ?? {}, participantsSnap, cause, reporterUid,
-    nowMillis).plan.state) {
-    return;
-  }
+  const {challenge, isOnboarding, participants, plan} = planFromDocs(
+    snap.data() ?? {}, participantsSnap, cause, reporterUid, nowMillis);
+
+  // Every evaluation, including "nothing changed", so a report that didn't
+  // move the badge can be explained from the logs alone.
+  const decision = decideAggressor(
+    challenge, participants, challenge.aggressor.uid, nowMillis);
+  logger.info("Aggressor Badge evaluated", {
+    competitionId,
+    cause,
+    reporterUid,
+    applies: aggressorApplies(challenge, isOnboarding),
+    status: challenge.status,
+    isLegacyPersonal: challenge.isLegacyPersonal,
+    isOnboarding,
+    participantCount: participants.length,
+    window: aggressorWindow(challenge, nowMillis),
+    scores: decision.scores.map((score) => ({
+      uid: score.uid,
+      windowTotal: score.windowTotal,
+      eligibleDays: score.eligibleDays,
+    })),
+    holderBefore: challenge.aggressor.uid,
+    holderAfter: decision.holderUid,
+    willWrite: plan.state !== null,
+  });
+
+  if (!plan.state) return;
 
   const written = await db.runTransaction(async (tx) => {
     const txSnap = await tx.get(ref);

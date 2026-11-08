@@ -241,10 +241,34 @@ class StreakProgress extends PersonalProgress {
   /// Earlier or later weeks left out to keep the calendar compact.
   final int hiddenWeeks;
 
+  /// Finished days the minimum was met on.
+  final int survived;
+
+  /// Days from day 1 to the end date; null with no end date.
+  final int? totalDays;
+
+  final int todayAmount;
+  final int minimum;
+
+  /// Day number the viewer was knocked out on; null while still in.
+  final int? outOnDay;
+
+  /// Day 1, while it's still ahead; null once started.
+  final String? startsOn;
+
+  final bool isOver;
+
   const StreakProgress(
     super.headline, {
     required this.cells,
     required this.hiddenWeeks,
+    this.survived = 0,
+    this.totalDays,
+    this.todayAmount = 0,
+    this.minimum = 0,
+    this.outOnDay,
+    this.startsOn,
+    this.isOver = false,
   });
 
   int get shownWeeks => cells.length ~/ 7;
@@ -406,7 +430,127 @@ class StreakProgress extends PersonalProgress {
       ),
       cells: cells,
       hiddenWeeks: totalWeeks - (lastWeek - firstWeek + 1),
+      survived: survived,
+      totalDays: totalDays,
+      todayAmount: todayAmount,
+      minimum: minimum,
+      outOnDay: out != null ? daysBetweenDayKeys(startDay, out) + 1 : null,
+      startsOn: today.compareTo(startDay) < 0 ? startDay : null,
+      isOver: isOver,
     );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Glance ring — the Home card's one-ring summary, the same shape for every
+// mode so the card can always pair it with the Aggressor Badge.
+// ─────────────────────────────────────────────
+
+/// One ring: how full it is and what's written inside it.
+class GlanceRing {
+  /// How full the ring is, 0..1.
+  final double fraction;
+
+  /// The big figure inside the ring, and the line under it.
+  final String value;
+  final String label;
+
+  /// Good news: finished, safe today, leading. Drawn in the success colour.
+  final bool achieved;
+
+  /// Out of the running (eliminated). Drawn muted, figure in the error colour.
+  final bool out;
+
+  const GlanceRing({
+    required this.fraction,
+    required this.value,
+    required this.label,
+    this.achieved = false,
+    this.out = false,
+  });
+}
+
+/// The Home card's ring for [progress]: share of target (Race), today
+/// against the daily minimum (Last One Standing), or total against the
+/// leader's (Most Progress — the one that needs [participants]). Null for
+/// a race with no usable target.
+GlanceRing? glanceRingOf(
+  Challenge challenge,
+  PersonalProgress progress,
+  Map<String, dynamic> me,
+  List<Map<String, dynamic>> participants,
+) {
+  switch (progress) {
+    case RaceProgress race:
+      return GlanceRing(
+        fraction: race.fraction,
+        value: race.headline.value,
+        label: '${formatCount(race.progress)} / ${formatCount(race.target)}',
+        achieved: race.nextMilestone == null,
+      );
+
+    case StreakProgress streak:
+      final outOnDay = streak.outOnDay;
+      if (outOnDay != null) {
+        return GlanceRing(
+          fraction: 0,
+          value: 'OUT',
+          label: 'on day $outOnDay',
+          out: true,
+        );
+      }
+      final startsOn = streak.startsOn;
+      if (startsOn != null) {
+        return GlanceRing(
+          fraction: 0,
+          value: '–',
+          label: 'starts ${shortDayLabel(startsOn)}',
+        );
+      }
+      if (streak.isOver) {
+        return GlanceRing(
+          fraction: streak.totalDays != null && streak.totalDays! > 0
+              ? (streak.survived / streak.totalDays!).clamp(0.0, 1.0)
+              : 1,
+          value: formatCount(streak.survived),
+          label: 'survived',
+          achieved: true,
+        );
+      }
+      final safe = streak.minimum <= 0 || streak.todayAmount >= streak.minimum;
+      return GlanceRing(
+        fraction: streak.minimum > 0
+            ? (streak.todayAmount / streak.minimum).clamp(0.0, 1.0)
+            : 1,
+        value:
+            '${formatCount(streak.todayAmount)}/${formatCount(streak.minimum)}',
+        label: safe ? 'safe today ✓' : 'today',
+        achieved: safe,
+      );
+
+    case GrowthProgress growth:
+      final uid = me['uid'];
+      final total = _progressOf(me);
+      final others = [
+        for (final p in participants)
+          if (p['uid'] != uid) _progressOf(p),
+      ];
+      final leaderTotal = others.fold<int>(total, math.max);
+      final rank = 1 + others.where((other) => other > total).length;
+      // A rank means nothing until someone has logged something.
+      final ranked = others.isNotEmpty && leaderTotal > 0;
+
+      return GlanceRing(
+        fraction: leaderTotal > 0 ? total / leaderTotal : 0,
+        value: growth.headline.value,
+        label: ranked
+            ? '${growth.headline.label} · #$rank'
+            : growth.headline.label,
+        achieved: total > 0 && rank == 1,
+      );
+
+    case TotalOnlyProgress():
+      return null;
   }
 }
 

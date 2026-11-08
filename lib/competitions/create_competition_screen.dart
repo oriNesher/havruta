@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 
-import '../onboarding/onboarding_anchor.dart';
-import '../onboarding/onboarding_ids.dart';
-import '../services/app_signals.dart';
 import '../services/firestore_service.dart';
+import '../tips/feature_tip.dart';
+import '../tips/feature_tip_anchor.dart';
 import 'challenge.dart';
 import 'challenge_invite_screen.dart';
 import 'goals_bucket_bottom_sheet.dart';
@@ -55,22 +54,11 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   final _user = FirebaseAuth.instance.currentUser;
 
   bool _isLoading = false;
-  bool _requiredDetailsComplete = false;
 
   @override
   void initState() {
     super.initState();
     _goalController.addListener(_syncTargetFromGoal);
-    for (final controller in [
-      _goalController,
-      _targetController,
-      _dailyMinimumController,
-    ]) {
-      controller.addListener(_reportDraft);
-    }
-    AppSignals.instance.emit(
-      const ChallengeDraftChanged(requiredDetailsComplete: false),
-    );
     _loadTimeZone();
   }
 
@@ -88,27 +76,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
     return value != null && value > 0 ? value : null;
   }
 
-  /// Whether the current mode's required fields are filled — mirrors
-  /// _createChallenge's own validation.
-  bool get _hasRequiredDetails {
-    if (_goalController.text.trim().isEmpty) return false;
-    return switch (_mode) {
-      WinCondition.firstToTarget => _positiveInt(_targetController) != null,
-      WinCondition.lastStanding =>
-        _positiveInt(_dailyMinimumController) != null,
-      WinCondition.mostProgress => _endDate != null,
-    };
-  }
-
-  void _reportDraft() {
-    final complete = _hasRequiredDetails;
-    if (complete == _requiredDetailsComplete) return;
-    _requiredDetailsComplete = complete;
-    AppSignals.instance.emit(
-      ChallengeDraftChanged(requiredDetailsComplete: complete),
-    );
-  }
-
   // Detects the first number typed in the goal field (e.g. "Run 30km") and
   // mirrors it into Target. Always resyncs on every goal edit — a manual
   // edit to Target sticks only until the goal text changes again. Races
@@ -121,7 +88,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
 
   void _onModeChanged(WinCondition mode) {
     setState(() => _mode = mode);
-    _reportDraft();
   }
 
   Future<void> _pickEndDate() async {
@@ -137,12 +103,10 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
     );
     if (picked == null) return;
     setState(() => _endDate = picked);
-    _reportDraft();
   }
 
   void _setEndDate(DateTime? date) {
     setState(() => _endDate = date);
-    _reportDraft();
   }
 
   Future<void> _openGoalsBucketForLinkedGoal() async {
@@ -283,9 +247,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               ChallengeInviteScreen(challenge: challenge, currentUserUid: uid),
         ),
       );
-      AppSignals.instance.emit(
-        ChallengeCreated(competitionId: competitionId, winCondition: _mode),
-      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -299,13 +260,6 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
   @override
   void dispose() {
     _goalController.removeListener(_syncTargetFromGoal);
-    for (final controller in [
-      _goalController,
-      _targetController,
-      _dailyMinimumController,
-    ]) {
-      controller.removeListener(_reportDraft);
-    }
     _titleController.dispose();
     _goalController.dispose();
     _targetController.dispose();
@@ -461,8 +415,8 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            OnboardingAnchor(
-              id: OnboardingAnchorIds.createChallengeTypeSelector,
+            FeatureTipAnchor(
+              tip: FeatureTip.challengeGoal,
               child: Column(
                 children: [
                   for (final mode in WinCondition.values) ...[
@@ -480,35 +434,24 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
             const SizedBox(height: 28),
 
             // Required details for the chosen mode.
-            OnboardingAnchor(
-              id: OnboardingAnchorIds.createChallengeRequiredDetails,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _goalField(),
-                  const SizedBox(height: 16),
-                  ..._modeRequiredFields(),
-                ],
-              ),
-            ),
+            _goalField(),
+            const SizedBox(height: 16),
+            ..._modeRequiredFields(),
             const SizedBox(height: 24),
 
             // Create button — right after the required details, so everything
             // below it reads as optional extras rather than more steps.
-            OnboardingAnchor(
-              id: OnboardingAnchorIds.createChallengeSubmit,
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: _isLoading ? null : _createChallenge,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Create Challenge'),
-                ),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _isLoading ? null : _createChallenge,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Create Challenge'),
               ),
             ),
             const SizedBox(height: 32),

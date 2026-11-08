@@ -114,6 +114,11 @@ class Challenge {
   final String? aggressorUid;
   final String? aggressorUsername;
 
+  /// Whether the server runs an Aggressor Badge for this challenge at all:
+  /// not for legacy personal races or onboarding challenges. Mirrors
+  /// aggressorApplies in functions/src/challenges/aggressor.ts.
+  final bool hasAggressorBadge;
+
   const Challenge({
     required this.id,
     required this.title,
@@ -135,6 +140,7 @@ class Challenge {
     this.lastEvaluatedDay,
     this.aggressorUid,
     this.aggressorUsername,
+    this.hasAggressorBadge = false,
   });
 
   factory Challenge.fromDoc(String id, Map<String, dynamic> data) {
@@ -145,6 +151,9 @@ class Challenge {
         .toList();
     final legacyWinner = data['winnerUid'] as String?;
     final aggressor = data['aggressor'] as Map<String, dynamic>?;
+    final isLegacyPersonal =
+        data['winCondition'] == null && data['type'] == 'personalGoalChallenge';
+    final onboarding = data['onboarding'] as Map<String, dynamic>?;
 
     return Challenge(
       id: id,
@@ -155,9 +164,7 @@ class Challenge {
       winCondition: winCondition,
       // Only documents written before win conditions can be personal; new
       // challenges always carry a winCondition.
-      isLegacyPersonal:
-          data['winCondition'] == null &&
-          data['type'] == 'personalGoalChallenge',
+      isLegacyPersonal: isLegacyPersonal,
       goalTitle: data['sharedGoalTitle'] as String? ?? '',
       unit: data['sharedUnit'] as String? ?? '',
       targetValue: winCondition == WinCondition.firstToTarget
@@ -179,6 +186,8 @@ class Challenge {
       lastEvaluatedDay: data['lastEvaluatedDay'] as String?,
       aggressorUid: aggressor?['uid'] as String?,
       aggressorUsername: aggressor?['username'] as String?,
+      hasAggressorBadge:
+          !isLegacyPersonal && onboarding?['isOnboarding'] != true,
     );
   }
 
