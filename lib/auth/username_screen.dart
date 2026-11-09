@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'auth_gate.dart';
+import 'auth_service.dart' as auth_service;
 
 class UsernameScreen extends StatefulWidget {
   const UsernameScreen({super.key});
@@ -16,6 +17,31 @@ class _UsernameScreenState extends State<UsernameScreen> {
 
   final user = FirebaseAuth.instance.currentUser!;
   final db = FirebaseFirestore.instance;
+
+  bool _leaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Google/Facebook accounts arrive with a name; offer it as a starting
+    // point (spaces dropped), still fully editable.
+    final suggestion = user.displayName?.replaceAll(RegExp(r'\s+'), '');
+    if (suggestion != null && suggestion.isNotEmpty) {
+      usernameController.text = suggestion;
+    }
+  }
+
+  /// For someone who signed in with the wrong account: back to the login
+  /// screen, removing the just-created sign-in account while it still has
+  /// no profile.
+  Future<void> _useDifferentAccount() async {
+    setState(() => _leaving = true);
+    final navigator = Navigator.of(context);
+    await auth_service.abandonUnfinishedSignIn();
+    // Email sign-up pushes this screen as its own route; drop it so the
+    // root AuthGate's login screen is what's left.
+    navigator.popUntil((route) => route.isFirst);
+  }
 
   Future<void> saveUsername() async {
 
@@ -69,8 +95,19 @@ class _UsernameScreenState extends State<UsernameScreen> {
             const SizedBox(height: 30),
 
             ElevatedButton(
-              onPressed: saveUsername,
+              onPressed: _leaving ? null : saveUsername,
               child: const Text("Continue"),
+            ),
+
+            const SizedBox(height: 12),
+
+            TextButton(
+              onPressed: _leaving ? null : _useDifferentAccount,
+              child: Text(
+                user.email == null
+                    ? 'Not you? Use a different account'
+                    : 'Not ${user.email}? Use a different account',
+              ),
             ),
           ],
         ),

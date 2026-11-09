@@ -7,6 +7,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../app_theme.dart';
+import '../auth/account_screen.dart';
+import '../auth/auth_service.dart' as auth_service;
 import '../competitions/create_competition_screen.dart';
 import '../invites/pending_invites_screen.dart';
 import '../services/firestore_service.dart';
@@ -76,7 +78,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await ProgressSnapshotCache.instance.persistAndClear(_firestoreService);
     RespectStore.instance.reset();
     FeatureTipsController.instance.reset();
-    await FirebaseAuth.instance.signOut();
+    await auth_service.signOut();
   }
 
   @override
@@ -216,12 +218,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: IconButton(
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              tooltip: 'Account',
               icon: PhosphorIcon(
-                PhosphorIconsFill.signOut,
+                PhosphorIconsFill.userCircle,
                 size: 18,
                 color: const Color(0xFF8888A0),
               ),
-              onPressed: _signOut,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AccountScreen(onSignOut: _signOut),
+                  ),
+                );
+              },
             ),
           ),
         ],

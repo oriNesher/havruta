@@ -44,5 +44,40 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<!-- Facebook Login. Google/Facebook buttons are hidden on iOS until Sign
+	     in with Apple ships (App Store guideline 4.8), but the Facebook SDK
+	     is linked in and reads these at launch. App ID / Client Token are
+	     public identifiers, not secrets. PLACEHOLDERS ("0") until the Meta
+	     app exists; keep in sync with android/app/src/main/res/values/strings.xml. -->
+	<key>FacebookAppID</key>
+	<string>0</string>
+	<key>FacebookClientToken</key>
+	<string>0</string>
+	<key>FacebookDisplayName</key>
+	<string>Havruta</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>fb0</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- REVERSED_CLIENT_ID from GoogleService-Info.plist -->
+				<string>com.googleusercontent.apps.943688238219-dhvmaqh82efj1o1081ao342vf63d4ru8</string>
+			</array>
+		</dict>
+	</array>
+	<!-- Google Sign-In (CLIENT_ID from GoogleService-Info.plist). -->
+	<key>GIDClientID</key>
+	<string>943688238219-dhvmaqh82efj1o1081ao342vf63d4ru8.apps.googleusercontent.com</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>fbapi</string>
+		<string>fb-messenger-share-api</string>
+	</array>
 </dict>
 </plist>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Facebook Login (Meta app for Havruta). The App ID and Client Token
+         are public identifiers embedded in every build, not secrets; the
+         App Secret lives only in the Firebase console. PLACEHOLDERS until
+         the Meta app exists: "0" keeps the Facebook SDK initializing
+         cleanly, and the Facebook button stays hidden until
+         facebookConfigured in lib/auth/social_auth_config.dart is true. -->
+    <string name="facebook_app_id" translatable="false">0</string>
+    <string name="fb_login_protocol_scheme" translatable="false">fb0</string>
+    <string name="facebook_client_token" translatable="false">0</string>
+</resources>

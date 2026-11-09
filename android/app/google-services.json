@@ -12,7 +12,36 @@
           "package_name": "com.orinesher.havruta"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "943688238219-5597rt7savltlvs5oquhdsnju1ig2eok.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.orinesher.havruta",
+            "certificate_hash": "577aace6b858be3e1fb768a8192aee034c92b58e"
+          }
+        },
+        {
+          "client_id": "943688238219-95qickdf526f9496566v9uaah7vf41q5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.orinesher.havruta",
+            "certificate_hash": "e11d8ca30fdd660f5d9507435365800cb310d256"
+          }
+        },
+        {
+          "client_id": "943688238219-gc4090gq75c11j43pfoa249plinof8mh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.orinesher.havruta",
+            "certificate_hash": "dc284b519d7de477ba42154ef718b048ffe17aa9"
+          }
+        },
+        {
+          "client_id": "943688238219-4h068r6tlmhkmmgdqcemmcri8t1l77s1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyD9ZnLfaWOLL5Je44iHWoREk3DNee-oU6o"
@@ -20,7 +49,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "943688238219-4h068r6tlmhkmmgdqcemmcri8t1l77s1.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "943688238219-cmn6ifj9hdt6bv24dj529389eemaknn9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.havruta"
+              }
+            }
+          ]
         }
       }
     }
