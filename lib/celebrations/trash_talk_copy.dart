@@ -12,7 +12,10 @@ String _headlineLine(CompetitionEvent event) {
       return "First blood is mine. Who's next?";
     case 'overtook':
       final target = event.targetUsername ?? 'you';
-      return 'Just blew past $target. Catch me if you can.';
+      final more = (metadata['alsoOvertookCount'] as num?)?.toInt() ?? 0;
+      return more > 0
+          ? 'Just blew past $target and $more more. Catch me if you can.'
+          : 'Just blew past $target. Catch me if you can.';
     case 'tookTheLead':
       return "Guess who's #1 now.";
     case 'pullingAhead':
@@ -60,7 +63,10 @@ String _secondaryFragment(CompetitionEvent event) {
     case 'firstBlood':
       return 'first blood';
     case 'overtook':
-      return 'overtook ${event.targetUsername ?? 'someone'}';
+      final more = (metadata['alsoOvertookCount'] as num?)?.toInt() ?? 0;
+      return more > 0
+          ? 'overtook ${event.targetUsername ?? 'someone'} and $more more'
+          : 'overtook ${event.targetUsername ?? 'someone'}';
     case 'tookTheLead':
       return 'took the lead';
     case 'pullingAhead':

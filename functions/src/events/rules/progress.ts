@@ -1,4 +1,5 @@
 import {EventDraft, EventsContext} from "../types";
+import {recipientsFor} from "../recipients";
 
 const INACTIVITY_THRESHOLD_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -96,12 +97,11 @@ export function detectProgressEvents(context: EventsContext): EventDraft[] {
     actorUsername,
     beforeProgress,
     afterProgress,
-    participantUids,
     previousUpdatedAt,
     currentUpdatedAt,
   } = context;
 
-  const recipients = participantUids.filter((uid) => uid !== actorUid);
+  const recipients = recipientsFor(context, "nearby");
 
   // Progress only ever increases (decreases already exit earlier), so a
   // beforeProgress of 0 reliably means this is the actor's first-ever

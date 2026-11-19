@@ -17,6 +17,7 @@ class ParticipantReport {
   final DateTime? joinedAt;
   final String? eliminatedOnDay;
   final bool paid;
+  final String? teamId;
 
   /// Raw doc, for actions (correct/reinstate) that need more than the row.
   final Map<String, dynamic> raw;
@@ -34,6 +35,7 @@ class ParticipantReport {
     required this.eliminatedOnDay,
     required this.paid,
     required this.raw,
+    this.teamId,
   });
 
   bool get isEliminated => eliminatedOnDay != null;
@@ -87,6 +89,7 @@ class ParticipantReport {
       eliminatedOnDay: eliminatedOnDay,
       paid: paidByUid[uid] ?? false,
       raw: p,
+      teamId: p['teamId'] as String?,
     );
   }
 
@@ -122,11 +125,17 @@ class ParticipantReport {
 /// reads Hebrew and other non-Latin names correctly), CRLF line ends,
 /// RFC 4180 quoting. Personal data stays minimal — usernames only, no
 /// emails (the app doesn't expose them to organizers).
-String participantsCsv(Challenge challenge, List<ParticipantReport> rows) {
+String participantsCsv(
+  Challenge challenge,
+  List<ParticipantReport> rows, {
+  Map<String, String> teamNames = const {},
+}) {
   final unit = challenge.unit;
+  final withTeams = teamNames.isNotEmpty;
   final header = [
     'Rank',
     'Username',
+    if (withTeams) 'Team',
     'Status',
     unit.isEmpty ? 'Progress' : 'Progress ($unit)',
     if (challenge.hasTarget) 'Target',
@@ -142,6 +151,7 @@ String participantsCsv(Challenge challenge, List<ParticipantReport> rows) {
       [
         '${r.rank}',
         r.username,
+        if (withTeams) teamNames[r.teamId] ?? '',
         r.status,
         '${r.progress}',
         if (challenge.hasTarget) r.target?.toString() ?? '',

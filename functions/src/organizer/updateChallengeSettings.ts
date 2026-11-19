@@ -49,6 +49,8 @@ export const updateChallengeSettings =
             endsAtMillis: patch.endsAtMillis,
             dailyMinimum: patch.dailyMinimum,
             targetValue: patch.targetValue,
+            scale: patch.scale,
+            trashTalk: patch.trashTalk,
           },
           Date.now()
         );
@@ -74,6 +76,10 @@ export const updateChallengeSettings =
         }
         if (plan.dailyMinimum !== undefined) {
           update["rules.dailyMinimum"] = plan.dailyMinimum;
+        }
+        if (plan.scale !== undefined) update["social.scale"] = plan.scale;
+        if (plan.trashTalk !== undefined) {
+          update["social.trashTalk"] = plan.trashTalk;
         }
         if (plan.targetValue !== undefined) {
           update.sharedTargetValue = plan.targetValue;

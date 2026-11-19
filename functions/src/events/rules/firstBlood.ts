@@ -1,4 +1,5 @@
 import {EventDraft, EventsContext} from "../types";
+import {recipientsFor} from "../recipients";
 
 /**
  * Creates a "firstBlood" event the first time anyone logs progress in this
@@ -16,7 +17,6 @@ export function detectFirstBloodEvents(context: EventsContext): EventDraft[] {
     actorUsername,
     beforeProgress,
     participants,
-    participantUids,
     hasFirstBloodEvent,
   } = context;
 
@@ -35,7 +35,8 @@ export function detectFirstBloodEvents(context: EventsContext): EventDraft[] {
     return [];
   }
 
-  const recipients = participantUids.filter((uid) => uid !== actorUid);
+  // Headline news, even in a large challenge.
+  const recipients = recipientsFor(context, "everyone");
 
   return [
     {

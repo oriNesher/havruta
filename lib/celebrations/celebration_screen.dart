@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
+import '../competitions/challenge.dart';
 import '../competitions/competition_event.dart';
+import '../services/firestore_service.dart';
 import 'celebration_types.dart';
 import 'celebration_visuals.dart';
 import 'shareable_card.dart';
@@ -24,6 +26,25 @@ class CelebrationScreen extends StatefulWidget {
 class _CelebrationScreenState extends State<CelebrationScreen> {
   final GlobalKey _cardKey = GlobalKey();
   bool _isSharing = false;
+
+  /// Whether this challenge has Trash Talk on (organizers can turn it off;
+  /// it defaults off in large and organizer-only challenges). Looked up as
+  /// the screen opens; on a failed lookup the old behavior (on) stands.
+  late final Future<bool> _trashTalk = _loadTrashTalk();
+
+  Future<bool> _loadTrashTalk() async {
+    final competitionId = widget.events.firstOrNull?.competitionId ?? '';
+    if (competitionId.isEmpty) return true;
+    try {
+      final doc = await FirestoreService().getCompetition(competitionId);
+      final data = doc.data();
+      return data == null ||
+          Challenge.fromDoc(competitionId, data).trashTalkEnabled;
+    } catch (e) {
+      debugPrint('Trash Talk setting unavailable: $e');
+      return true;
+    }
+  }
 
   late final List<CompetitionEvent> _sortedEvents = [...widget.events]
     ..sort(
@@ -53,6 +74,11 @@ class _CelebrationScreenState extends State<CelebrationScreen> {
   }
 
   Future<void> _talkTrash() async {
+    if (!await _trashTalk) {
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,

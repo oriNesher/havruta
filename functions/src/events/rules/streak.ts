@@ -1,4 +1,5 @@
 import {EventDraft, EventsContext} from "../types";
+import {recipientsFor} from "../recipients";
 
 const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100];
 
@@ -14,7 +15,6 @@ export function detectStreakEvents(context: EventsContext): EventDraft[] {
     competitionTitle,
     actorUid,
     actorUsername,
-    participantUids,
     isNewActiveDay,
     newStreakCount,
   } = context;
@@ -23,7 +23,7 @@ export function detectStreakEvents(context: EventsContext): EventDraft[] {
     return [];
   }
 
-  const recipients = participantUids.filter((uid) => uid !== actorUid);
+  const recipients = recipientsFor(context, "nearby");
 
   return [
     {

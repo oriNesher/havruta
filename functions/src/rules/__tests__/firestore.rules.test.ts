@@ -584,6 +584,64 @@ describe("competition_invites", () => {
   });
 });
 
+describe("follows and teams", () => {
+  test("you follow people privately, inside a challenge you're in",
+    async () => {
+      const mine = doc(as("bob"), "competitions/race/follows/bob");
+      await assertSucceeds(setDoc(mine, {followingUids: ["alice"]}));
+      await assertSucceeds(updateDoc(mine,
+        {followingUids: arrayUnion("eve")}));
+      await assertSucceeds(getDoc(mine));
+      await assertSucceeds(deleteDoc(mine));
+      // Nobody else sees who you follow, or writes it for you.
+      await assertSucceeds(setDoc(mine, {followingUids: ["alice"]}));
+      await assertFails(getDoc(
+        doc(as("alice"), "competitions/race/follows/bob")));
+      await assertFails(setDoc(
+        doc(as("alice"), "competitions/race/follows/bob"),
+        {followingUids: []}));
+      await assertFails(setDoc(
+        doc(as("sam"), "competitions/race/follows/sam"),
+        {followingUids: ["bob"]}));
+    });
+
+  test("follow docs hold a list of at most 50 and nothing else", async () => {
+    const mine = doc(as("bob"), "competitions/race/follows/bob");
+    await assertFails(setDoc(mine, {followingUids: "alice"}));
+    await assertFails(setDoc(mine, {followingUids: [], note: "hi"}));
+    await assertFails(setDoc(mine, {
+      followingUids: Array.from({length: 51}, (_, i) => `u${i}`),
+    }));
+  });
+
+  test("members read teams; nobody writes them or picks their own",
+    async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), "competitions/race/teams/red"),
+          {name: "Red"});
+      });
+      await assertSucceeds(getDocs(
+        collection(as("bob"), "competitions/race/teams")));
+      await assertFails(getDocs(
+        collection(as("sam"), "competitions/race/teams")));
+      await assertFails(setDoc(
+        doc(as("olga"), "competitions/race/teams/blue"), {name: "Blue"}));
+      await assertFails(updateDoc(
+        doc(as("bob"), "competitions/race/participants/bob"),
+        {teamId: "red"}));
+    });
+
+  test("a large challenge's feed query: events addressed to you",
+    async () => {
+      await assertSucceeds(getDocs(query(
+        collection(as("bob"), "competitions/race/events"),
+        where("audienceUids", "array-contains", "bob"))));
+      await assertFails(getDocs(query(
+        collection(as("sam"), "competitions/race/events"),
+        where("audienceUids", "array-contains", "sam"))));
+    });
+});
+
 describe("invite links", () => {
   test("stay entirely server-side", async () => {
     await assertFails(getDoc(doc(as("alice"), "challenge_invite_links/link1")));

@@ -99,3 +99,67 @@ export async function pushToUsers(
   }
   return result;
 }
+
+/** One personalized notification for one user. */
+export interface UserMessage {
+  uid: string;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+}
+
+/**
+ * Sends a different notification to each user (the daily digest) — to
+ * every device of theirs, in batches of FCM's 500, pruning dead tokens.
+ * @param {UserMessage[]} messages One per user.
+ * @return {Promise<PushResult>} Delivery counts.
+ */
+export async function pushEach(messages: UserMessage[]): Promise<PushResult> {
+  const db = admin.firestore();
+  const byUid = new Map(messages.map((m) => [m.uid, m]));
+  const userSnaps = byUid.size === 0 ? [] :
+    await db.getAll(...[...byUid.keys()].map((uid) =>
+      db.collection("users").doc(uid)));
+
+  const sends: {token: string; uid: string; message: UserMessage}[] = [];
+  for (const snap of userSnaps) {
+    const message = byUid.get(snap.id);
+    const tokens = snap.data()?.fcmTokens;
+    if (!message || !Array.isArray(tokens)) continue;
+    for (const token of new Set(tokens)) {
+      if (typeof token === "string" && token.trim()) {
+        sends.push({token, uid: snap.id, message});
+      }
+    }
+  }
+
+  const result: PushResult = {
+    tokenCount: sends.length,
+    successCount: 0,
+    failureCount: 0,
+  };
+  const dead = new Map<string, string[]>();
+  for (const batch of chunk(sends, MAX_TOKENS_PER_CALL)) {
+    const response = await admin.messaging().sendEach(batch.map((send) => ({
+      token: send.token,
+      notification: {title: send.message.title, body: send.message.body},
+      data: send.message.data,
+      webpush: {fcmOptions: {link: `${INVITE_LINK_BASE_URL}/`}},
+    })));
+    result.successCount += response.successCount;
+    result.failureCount += response.failureCount;
+    response.responses.forEach((resp, index) => {
+      const code = resp.error?.code ?? "";
+      if (code === "messaging/invalid-registration-token" ||
+        code === "messaging/registration-token-not-registered") {
+        const {uid, token} = batch[index];
+        dead.set(uid, [...(dead.get(uid) ?? []), token]);
+      }
+    });
+  }
+  await Promise.all([...dead.entries()].map(([uid, stale]) =>
+    db.collection("users").doc(uid).update({
+      fcmTokens: admin.firestore.FieldValue.arrayRemove(...stale),
+    })));
+  return result;
+}

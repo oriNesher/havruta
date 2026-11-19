@@ -78,6 +78,8 @@ class _AuditLogTabState extends State<AuditLogTab> {
     'correctProgress' => Icons.edit_outlined,
     'endEarly' => Icons.flag_outlined,
     'addOrganizer' || 'removeOrganizer' => Icons.admin_panel_settings_outlined,
+    'createTeam' || 'renameTeam' || 'deleteTeam' || 'assignTeam' =>
+      Icons.groups_outlined,
     _ => Icons.history,
   };
 
@@ -92,6 +94,10 @@ class _AuditLogTabState extends State<AuditLogTab> {
       'endEarly' => '$actor ended the challenge early',
       'addOrganizer' => '$actor made $target an organizer',
       'removeOrganizer' => '$actor removed $target as organizer',
+      'createTeam' => '$actor created a team',
+      'renameTeam' => '$actor renamed a team',
+      'deleteTeam' => '$actor deleted a team',
+      'assignTeam' => "$actor changed $target's team",
       final other => '$actor: $other',
     };
   }

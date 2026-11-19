@@ -1,6 +1,7 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
+import {isLargeChallenge, parseChallenge} from "../challenges/model";
 
 // Notifies the link's creator specifically ("X joined via your link") —
 // distinct from onParticipantJoinCreateEvents, which notifies all other
@@ -36,6 +37,16 @@ export const onInviteLinkRedemptionCreated = onDocumentCreated(
 
     if (!creatorUid || creatorUid === event.params.uid) {
       // No creator on record, or the creator redeeming their own link.
+      return;
+    }
+
+    // In a large challenge a push per join would bury the organizer (they
+    // see joins in the dashboard and the daily digest instead).
+    const competitionSnap = await db.collection("competitions")
+      .doc(linkData.competitionId ?? "-").get();
+    if (isLargeChallenge(parseChallenge(competitionSnap.data() ?? {}))) {
+      logger.info("Large challenge, no per-join push",
+        {competitionId: linkData.competitionId});
       return;
     }
 

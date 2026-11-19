@@ -4,6 +4,7 @@ import {EventsContext, ParticipantData} from "./types";
 import {countEvents, fetchFiredValues} from "./guards";
 import {isNextCalendarDay, toDateString} from "./streakDate";
 import {parseChallenge} from "../challenges/model";
+import {loadAudience} from "./loadAudience";
 
 export interface BuildContextParams {
   competitionId: string;
@@ -151,6 +152,13 @@ export async function buildEventsContext(
     .collection("participants")
     .get();
 
+  const audience = await loadAudience(
+    competitionRef,
+    challenge,
+    participantsSnap.docs.map((doc) => doc.data()),
+    actorUid
+  );
+
   const participants: ParticipantData[] = participantsSnap.docs
     .map((doc) => doc.data() as ParticipantData)
     .filter((participant) => !!participant.uid);
@@ -231,5 +239,6 @@ export async function buildEventsContext(
     todayDateStr,
     isNewActiveDay,
     newStreakCount,
+    audience,
   };
 }

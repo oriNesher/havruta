@@ -62,7 +62,11 @@ String celebrationHeadline(CompetitionEvent event) {
       return 'First blood! You made the opening move.';
     case 'overtook':
       final target = event.targetUsername ?? 'them';
-      return 'You overtook $target!';
+      // A large challenge collapses one big jump into a single card.
+      final more = (metadata['alsoOvertookCount'] as num?)?.toInt() ?? 0;
+      return more > 0
+          ? 'You overtook $target and $more ${more == 1 ? 'other' : 'others'}!'
+          : 'You overtook $target!';
     case 'tookTheLead':
       return 'You took the lead!';
     case 'pullingAhead':

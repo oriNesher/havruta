@@ -9,6 +9,22 @@ import {
 } from "./rules/progress";
 
 /**
+ * Who an event is for, kept for good: its recipients plus its actor.
+ * unseenByUserUids shrinks as people read it; this doesn't, so a large
+ * challenge's feed can show each person just the events addressed to them
+ * (an array-contains query) long after they've been seen.
+ * @param {EventDraft} draft The draft.
+ * @return {string[]} The audience.
+ */
+export function audienceUidsOf(draft: EventDraft): string[] {
+  const actor = draft.payload.actorUid;
+  return [...new Set([
+    ...draft.recipients,
+    ...(typeof actor === "string" && actor ? [actor] : []),
+  ])];
+}
+
+/**
  * Writes decided event drafts to competitions/{competitionId}/events.
  *
  * Every draft passed in one call came from the same trigger invocation (see
@@ -43,6 +59,7 @@ export async function persistEventDrafts(
           ...draft.payload,
           batchId,
           unseenByUserUids: draft.recipients,
+          audienceUids: audienceUidsOf(draft),
           lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         return;
@@ -79,6 +96,7 @@ export function newEventFields(
     batchId,
     ...(isCelebrationType(draft.type) ? {actorCelebrated: false} : {}),
     unseenByUserUids: draft.recipients,
+    audienceUids: audienceUidsOf(draft),
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
     ...draft.payload,
@@ -178,6 +196,7 @@ async function upsertProgressEvent(
       // suppress celebrating the new activity folded into it.
       actorCelebrated: false,
       unseenByUserUids: draft.recipients,
+      audienceUids: audienceUidsOf(draft),
       lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       competitionTitle: payload.competitionTitle,
       actorUid: payload.actorUid,

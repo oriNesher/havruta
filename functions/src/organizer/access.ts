@@ -85,7 +85,11 @@ export interface AuditRecord {
     | "correctProgress"
     | "endEarly"
     | "addOrganizer"
-    | "removeOrganizer";
+    | "removeOrganizer"
+    | "createTeam"
+    | "renameTeam"
+    | "deleteTeam"
+    | "assignTeam";
   targetUid?: string | null;
   targetUsername?: string | null;
   before?: unknown;

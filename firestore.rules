@@ -109,7 +109,7 @@ service cloud.firestore {
     // organizer correction for the progress triggers).
     function serverOwnedParticipantKeys() {
       return ['eliminatedOnDay', 'eliminatedAt', 'currentStreak',
-        'lastActiveDate', 'lastCorrectionId'];
+        'lastActiveDate', 'lastCorrectionId', 'teamId'];
     }
 
     // Progress may only change while the challenge is still running: not
@@ -218,6 +218,28 @@ service cloud.firestore {
           && request.resource.data.paidUpdatedBy == request.auth.uid
           && request.resource.data.paidUpdatedAt == request.time;
         allow delete: if false;
+      }
+
+      // Teams (manageTeams callable): a team leaderboard and, in a large
+      // challenge, an audience. Every member reads them; membership lives
+      // on participants/{uid}.teamId, server-owned.
+      match /teams/{teamId} {
+        allow read: if isMemberOf(challengeDoc(competitionId));
+        allow write: if false;
+      }
+
+      // Who a member follows inside this challenge (large challenges show
+      // you their activity wherever they are on the leaderboard). Private
+      // to the follower: nobody sees who follows whom. The server reads
+      // them to address events.
+      match /follows/{followerUid} {
+        allow read, delete: if signedIn() && request.auth.uid == followerUid;
+        allow create, update: if signedIn()
+          && request.auth.uid == followerUid
+          && isMemberOf(challengeDoc(competitionId))
+          && request.resource.data.keys().hasOnly(['followingUids'])
+          && request.resource.data.followingUids is list
+          && request.resource.data.followingUids.size() <= 50;
       }
 
       // Organizer announcements (sendAnnouncement callable), for every

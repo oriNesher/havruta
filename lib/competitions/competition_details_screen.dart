@@ -13,6 +13,7 @@ import 'challenge_standings.dart';
 import 'competition_invite_section.dart';
 import 'personal_progress.dart';
 import 'progress_reporting.dart';
+import 'team_standings.dart';
 import 'widgets/add_progress.dart';
 import 'widgets/aggressor_badge.dart';
 import 'widgets/challenge_activity_graph.dart';
@@ -84,6 +85,15 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
       firestoreService.getCompetitionParticipants(widget.challenge.id);
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _announcementsStream =
       firestoreService.getAnnouncements(widget.challenge.id, limit: 3);
+  late final Stream<Map<String, String>> _teamsStream =
+      firestoreService.getTeams(widget.challenge.id);
+  late final Stream<Set<String>>? _followingStream =
+      FirebaseAuth.instance.currentUser == null
+      ? null
+      : firestoreService.getFollowing(
+          widget.challenge.id,
+          FirebaseAuth.instance.currentUser!.uid,
+        );
   bool _isDeleting = false;
   bool _loggingProgress = false;
 
@@ -523,10 +533,45 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                       : participants
                             .where((p) => p['uid'] == user.uid)
                             .firstOrNull;
-                  final leaderboard = _Leaderboard(
-                    challenge: challenge,
-                    participants: participants,
-                    currentUid: user?.uid,
+                  // A large challenge: follow people to see their activity
+                  // wherever they are on the board.
+                  final canFollow = challenge.isLarge &&
+                      user != null &&
+                      (challenge.isParticipant(user.uid) ||
+                          challenge.isOrganizer(user.uid));
+                  final leaderboard = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _TeamStandingsCard(
+                        challenge: challenge,
+                        teams: _teamsStream,
+                        participants: participants,
+                        currentUid: user?.uid,
+                      ),
+                      if (canFollow)
+                        StreamBuilder<Set<String>>(
+                          stream: _followingStream,
+                          builder: (context, following) => _Leaderboard(
+                            challenge: challenge,
+                            participants: participants,
+                            currentUid: user.uid,
+                            following: following.data ?? const {},
+                            onToggleFollow: (otherUid, follow) =>
+                                firestoreService.setFollowing(
+                                  competitionId: challenge.id,
+                                  uid: user.uid,
+                                  otherUid: otherUid,
+                                  follow: follow,
+                                ),
+                          ),
+                        )
+                      else
+                        _Leaderboard(
+                          challenge: challenge,
+                          participants: participants,
+                          currentUid: user?.uid,
+                        ),
+                    ],
                   );
 
                   return Column(
@@ -724,16 +769,24 @@ class _Leaderboard extends StatelessWidget {
   final List<Map<String, dynamic>> participants;
   final String? currentUid;
 
+  /// Large challenges only: whom the viewer follows, and how to change it.
+  final Set<String>? following;
+  final void Function(String uid, bool follow)? onToggleFollow;
+
   const _Leaderboard({
     required Challenge this.challenge,
     required this.participants,
     required this.currentUid,
+    this.following,
+    this.onToggleFollow,
   });
 
   const _Leaderboard.empty()
     : challenge = null,
       participants = const [],
-      currentUid = null;
+      currentUid = null,
+      following = null,
+      onToggleFollow = null;
 
   @override
   Widget build(BuildContext context) {
@@ -747,6 +800,14 @@ class _Leaderboard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Leaderboard', style: theme.textTheme.titleLarge),
+        if (onToggleFollow != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Star people to see their activity in your feed, wherever they '
+            'are on the board. Only you can see who you follow.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
         const SizedBox(height: 12),
         if (challenge == null || participants.isEmpty)
           const Text('No participants yet')
@@ -766,6 +827,10 @@ class _Leaderboard extends StatelessWidget {
               lastUpdateText: _formatLastUpdate(
                 participant['updatedAt'] as Timestamp?,
               ),
+              followed: onToggleFollow == null
+                  ? null
+                  : (following ?? const {}).contains(participant['uid']),
+              onToggleFollow: onToggleFollow,
             ),
       ],
     );
@@ -787,6 +852,10 @@ class _ParticipantCard extends StatelessWidget {
   final int leaderProgress;
   final String lastUpdateText;
 
+  /// Null when following isn't offered (small challenges).
+  final bool? followed;
+  final void Function(String uid, bool follow)? onToggleFollow;
+
   const _ParticipantCard({
     required this.challenge,
     required this.participant,
@@ -795,6 +864,8 @@ class _ParticipantCard extends StatelessWidget {
     required this.windowTotal,
     required this.leaderProgress,
     required this.lastUpdateText,
+    this.followed,
+    this.onToggleFollow,
   });
 
   @override
@@ -847,6 +918,17 @@ class _ParticipantCard extends StatelessWidget {
                   AggressorBadge(challenge: challenge),
                   const SizedBox(width: 8),
                 ],
+                if (followed != null && !isMe && uid.isNotEmpty)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: followed! ? 'Unfollow' : 'Follow',
+                    icon: Icon(
+                      followed! ? Icons.star : Icons.star_border,
+                      size: 20,
+                      color: followed! ? theme.colorScheme.primary : null,
+                    ),
+                    onPressed: () => onToggleFollow?.call(uid, !followed!),
+                  ),
                 trailing,
               ],
             ),
@@ -1035,6 +1117,101 @@ class _AnnouncementsCard extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The team leaderboard, above the individual one — only once an organizer
+/// has made teams. Ranked by average progress per member.
+class _TeamStandingsCard extends StatelessWidget {
+  final Challenge challenge;
+  final Stream<Map<String, String>> teams;
+  final List<Map<String, dynamic>> participants;
+  final String? currentUid;
+
+  const _TeamStandingsCard({
+    required this.challenge,
+    required this.teams,
+    required this.participants,
+    required this.currentUid,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return StreamBuilder<Map<String, String>>(
+      stream: teams,
+      builder: (context, snapshot) {
+        final teamNames = snapshot.data ?? const {};
+        if (teamNames.isEmpty) return const SizedBox.shrink();
+        final myTeam = participants
+            .where((p) => p['uid'] == currentUid)
+            .firstOrNull?['teamId'] as String?;
+        final standings = teamStandings(challenge, teamNames, participants);
+        final los = challenge.winCondition == WinCondition.lastStanding;
+        final unit = challenge.unit.isEmpty ? '' : ' ${challenge.unit}';
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Teams', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 4),
+              Text(
+                los
+                    ? 'Most members still in, then average per member.'
+                    : 'Ranked by average progress per member.',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              for (final (index, team) in standings.indexed)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: team.teamId == myTeam
+                        ? theme.colorScheme.primary.withValues(alpha: 0.08)
+                        : theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 28,
+                        child: Text('${index + 1}', style: AppTheme.mono()),
+                      ),
+                      Expanded(
+                        child: Text(
+                          team.teamId == myTeam
+                              ? '${team.name} (your team)'
+                              : team.name,
+                          style: TextStyle(
+                            fontWeight: team.teamId == myTeam
+                                ? FontWeight.bold
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        [
+                          if (los) '${team.stillIn}/${team.members} in',
+                          '${team.average.toStringAsFixed(1)}$unit avg',
+                          '${team.members} '
+                              '${team.members == 1 ? 'member' : 'members'}',
+                        ].join(' · '),
+                        style: AppTheme.mono(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         );
       },

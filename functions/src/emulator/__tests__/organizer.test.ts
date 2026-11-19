@@ -26,6 +26,7 @@ const {reinstateParticipant} =
   require("../../organizer/reinstateParticipant");
 const {acceptInvite} = require("../../invites/acceptInvite");
 const {sendAnnouncement} = require("../../organizer/sendAnnouncement");
+const {manageTeams} = require("../../organizer/manageTeams");
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 const db = admin.firestore();
@@ -288,6 +289,47 @@ describe("sendAnnouncement", () => {
   test("organizers only", async () => {
     await refused(call(sendAnnouncement, "bob", {text: "hi all"}),
       "permission-denied");
+  });
+});
+
+describe("manageTeams", () => {
+  test("create, rename, assign and delete — each audited", async () => {
+    const {teamId} = await call(manageTeams, "olga",
+      {op: "create", name: "Red"}) as {teamId: string};
+    assert.equal((await race.collection("teams").doc(teamId).get())
+      .data()?.name, "Red");
+
+    await refused(call(manageTeams, "olga", {op: "create", name: " red "}),
+      "failed-precondition", /already a team/);
+
+    await call(manageTeams, "olga", {op: "rename", teamId, name: "Crimson"});
+    await call(manageTeams, "olga", {op: "assign", teamId, uid: "bob"});
+    await call(manageTeams, "olga", {op: "assign", teamId, uid: "carol"});
+    const bob = race.collection("participants").doc("bob");
+    assert.equal((await bob.get()).data()?.teamId, teamId);
+
+    await call(manageTeams, "olga", {op: "assign", teamId: null, uid: "bob"});
+    assert.equal("teamId" in ((await bob.get()).data() ?? {}), false);
+
+    await call(manageTeams, "olga", {op: "delete", teamId});
+    assert.equal((await race.collection("teams").doc(teamId).get()).exists,
+      false);
+    const carol = (await race.collection("participants").doc("carol").get())
+      .data() ?? {};
+    assert.equal("teamId" in carol, false);
+
+    const actions = (await race.collection("auditLog").get()).docs
+      .map((d) => d.data().action).sort();
+    assert.deepEqual(actions, ["assignTeam", "assignTeam", "assignTeam",
+      "createTeam", "deleteTeam", "renameTeam"]);
+  });
+
+  test("organizers only; no team that doesn't exist", async () => {
+    await refused(call(manageTeams, "bob", {op: "create", name: "Mine"}),
+      "permission-denied");
+    await refused(call(manageTeams, "olga",
+      {op: "assign", teamId: "ghost", uid: "bob"}),
+    "failed-precondition", /doesn't exist/);
   });
 });
 

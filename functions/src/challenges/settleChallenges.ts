@@ -2,6 +2,7 @@ import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import {persistEventDrafts} from "../events/persist";
+import {loadAudienceFor} from "../events/loadAudience";
 import {
   detectEliminationEvents,
   detectPlacementEvents,
@@ -59,13 +60,16 @@ async function settleLastStanding(
 
   if (!outcome) return;
   const {title, participants, result} = outcome;
+  const audience = await loadAudienceFor(ref);
 
   const drafts: EventDraft[] = [
-    ...detectEliminationEvents(title, participants, result.eliminations),
+    ...detectEliminationEvents(
+      title, participants, result.eliminations, audience),
     ...detectPlacementEvents(
       title,
       participants,
-      result.winnerUids.map((uid) => ({uid, position: 1}))
+      result.winnerUids.map((uid) => ({uid, position: 1})),
+      audience
     ),
   ];
   await persistEventDrafts(ref.id, drafts);
@@ -126,7 +130,8 @@ async function settleDeadline(
 
   await persistEventDrafts(
     ref.id,
-    detectPlacementEvents(title, participants, result.placements)
+    detectPlacementEvents(title, participants, result.placements,
+      await loadAudienceFor(ref))
   );
 
   logger.info("Challenge ended at its deadline", {

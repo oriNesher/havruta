@@ -21,7 +21,9 @@ import {EventDraft} from "./events/types";
 import {settleRaceFinish} from "./challenges/finish";
 import {settleChallenges} from "./challenges/settleChallenges";
 import {settleAggressor} from "./challenges/settleAggressor";
-import {parseChallenge} from "./challenges/model";
+import {isLargeChallenge, parseChallenge} from "./challenges/model";
+import {audienceFor} from "./events/audience";
+import {loadAudience} from "./events/loadAudience";
 import {persistEventDrafts} from "./events/persist";
 import {
   isOrganizerCorrection,
@@ -51,6 +53,8 @@ import {endChallengeEarly} from "./organizer/endChallengeEarly";
 import {setOrganizers} from "./organizer/setOrganizers";
 import {reinstateParticipant} from "./organizer/reinstateParticipant";
 import {sendAnnouncement} from "./organizer/sendAnnouncement";
+import {sendDailyDigests} from "./notifications/sendDailyDigests";
+import {manageTeams} from "./organizer/manageTeams";
 
 admin.initializeApp();
 
@@ -60,7 +64,8 @@ export {createInvite, getInvite, redeemInvite, revokeInvite,
   grantDailyRespect, giveRespect, settleChallenges, googleSignInPreflight,
   acceptInvite, findUserByEmail, syncPublicProfile,
   updateChallengeSettings, removeParticipant, correctProgress,
-  endChallengeEarly, setOrganizers, reinstateParticipant, sendAnnouncement};
+  endChallengeEarly, setOrganizers, reinstateParticipant, sendAnnouncement,
+  sendDailyDigests, manageTeams};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {
@@ -132,6 +137,13 @@ export const onParticipantProgressUpdate = onDocumentUpdated(
 
     const competitionData = competitionSnap.data() || {};
     const competitionTitle = competitionData.title ?? "Challenge";
+
+    // A large challenge sends no per-report push — at 200 people that's
+    // 199 notifications per entry. The daily digest covers it instead.
+    if (isLargeChallenge(parseChallenge(competitionData))) {
+      logger.info("Large challenge, no per-report push", {competitionId});
+      return;
+    }
 
     const participantsSnap = await competitionRef
       .collection("participants").get();
@@ -381,13 +393,21 @@ export const onParticipantJoinCreateEvents = onDocumentCreated(
       .collection("participants")
       .get();
 
-    const recipients = [
-      ...new Set(
-        participantsSnap.docs
-          .map((doc) => doc.data().uid as string | undefined)
-          .filter((uid): uid is string => !!uid && uid !== participantUid)
+    // Large challenge: a newcomer is news to their followers and teammates,
+    // not to 200 strangers.
+    const recipients = audienceFor(
+      await loadAudience(
+        competitionRef,
+        parseChallenge(competitionData),
+        participantsSnap.docs.map((doc) => doc.data()),
+        participantUid
       ),
-    ];
+      participantsSnap.docs
+        .map((doc) => doc.data().uid as string | undefined)
+        .filter((uid): uid is string => !!uid),
+      participantUid,
+      "social"
+    );
 
     const draft: EventDraft = {
       type: "joined",
@@ -443,13 +463,19 @@ export const onParticipantLeaveCreateEvents = onDocumentDeleted(
       .collection("participants")
       .get();
 
-    const recipients = [
-      ...new Set(
-        participantsSnap.docs
-          .map((doc) => doc.data().uid as string | undefined)
-          .filter((uid): uid is string => !!uid && uid !== participantUid)
+    const recipients = audienceFor(
+      await loadAudience(
+        competitionRef,
+        parseChallenge(competitionData),
+        participantsSnap.docs.map((doc) => doc.data()),
+        participantUid
       ),
-    ];
+      participantsSnap.docs
+        .map((doc) => doc.data().uid as string | undefined)
+        .filter((uid): uid is string => !!uid),
+      participantUid,
+      "social"
+    );
 
     const draft: EventDraft = {
       type: "left",

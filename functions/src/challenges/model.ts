@@ -48,6 +48,23 @@ export interface AggressorState {
   evaluatedDay: string | null;
 }
 
+/**
+ * Above this many participants a challenge is "large": events go to the
+ * people they matter to (leaderboard neighbors, followers, teammates)
+ * instead of everyone, per-report pushes give way to a daily digest, and
+ * Trash Talk defaults off. Hand-synced with Challenge.largeThreshold in
+ * lib/competitions/challenge.dart.
+ */
+export const LARGE_CHALLENGE_THRESHOLD = 15;
+
+/** Organizer-set social settings (competition.social). */
+export interface SocialSettings {
+  /** "auto" decides by LARGE_CHALLENGE_THRESHOLD; the others force it. */
+  scale: "auto" | "small" | "large";
+  /** Trash Talk on/off; null means the default (see trashTalkEnabled). */
+  trashTalk: boolean | null;
+}
+
 export interface ChallengeConfig {
   /** The creator's uid; null only on malformed documents. */
   createdBy: string | null;
@@ -96,6 +113,19 @@ export interface ChallengeConfig {
    */
   startingParticipantCount: number | null;
   aggressor: AggressorState;
+  social: SocialSettings;
+}
+
+/**
+ * Whether a challenge gets the large-community behavior. Mirrors
+ * Challenge.isLarge on the client.
+ * @param {ChallengeConfig} challenge The challenge.
+ * @return {boolean} True when forced large, or auto and above the threshold.
+ */
+export function isLargeChallenge(challenge: ChallengeConfig): boolean {
+  if (challenge.social.scale === "large") return true;
+  if (challenge.social.scale === "small") return false;
+  return challenge.participantUids.length > LARGE_CHALLENGE_THRESHOLD;
 }
 
 /**
@@ -176,6 +206,7 @@ export function parseChallenge(
     [data.winnerUid] :
     [];
   const rawAggressor = (data.aggressor ?? {}) as Record<string, unknown>;
+  const rawSocial = (data.social ?? {}) as Record<string, unknown>;
   const createdBy = typeof data.createdBy === "string" && data.createdBy ?
     data.createdBy :
     null;
@@ -229,6 +260,14 @@ export function parseChallenge(
         0,
       evaluatedDay: typeof rawAggressor.evaluatedDay === "string" ?
         rawAggressor.evaluatedDay :
+        null,
+    },
+    social: {
+      scale: rawSocial.scale === "small" || rawSocial.scale === "large" ?
+        rawSocial.scale :
+        "auto",
+      trashTalk: typeof rawSocial.trashTalk === "boolean" ?
+        rawSocial.trashTalk :
         null,
     },
   };

@@ -1,4 +1,5 @@
 import {EventDraft, EventsContext, ExistingOpenEvent} from "../types";
+import {recipientsFor} from "../recipients";
 import {toWholePercent} from "../percent";
 import {ChallengeConfig} from "../../challenges/model";
 
@@ -186,6 +187,9 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
     }
   }
 
+  // A large challenge: one big jump can pass dozens of people.
+  if (context.audience) collapseOvertakes(drafts);
+
   const hasValidOthers = maxOtherWhole > -Infinity;
   const wasSoleLeaderBefore =
     hasValidOthers && actorWholeBefore > maxOtherWhole;
@@ -199,7 +203,7 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
   ) {
     drafts.push({
       type: "tookTheLead",
-      recipients: participantUids.filter((uid) => uid !== actorUid),
+      recipients: recipientsFor(context, "everyone"),
       target: {kind: "create"},
       payload: {
         competitionTitle,
@@ -218,4 +222,42 @@ export function detectRankingEvents(context: EventsContext): EventDraft[] {
   }
 
   return drafts;
+}
+
+/** More overtakes than this in one report get collapsed. */
+export const OVERTAKE_COLLAPSE_AT = 3;
+
+/**
+ * In place: when one report overtakes more than OVERTAKE_COLLAPSE_AT
+ * people, everyone passed still gets their own "overtook you" event, but
+ * the actor celebrates it once — the pass of whoever was highest (now
+ * just behind them) carries metadata.alsoOvertookCount, and the rest are
+ * created already celebrated, so the celebration screen shows one card
+ * ("You overtook Dana and 29 others") instead of thirty.
+ * @param {EventDraft[]} drafts The ranking drafts for this report.
+ */
+export function collapseOvertakes(drafts: EventDraft[]): void {
+  const overtakes = drafts.filter((d) => d.type === "overtook");
+  if (overtakes.length <= OVERTAKE_COLLAPSE_AT) return;
+
+  const progressOf = (d: EventDraft) =>
+    ((d.payload.metadata as Record<string, unknown>)?.targetProgress as
+      number | undefined) ?? 0;
+  const lead = overtakes.reduce((best, d) =>
+    progressOf(d) > progressOf(best) ? d : best);
+
+  for (const draft of overtakes) {
+    if (draft === lead) {
+      draft.payload = {
+        ...draft.payload,
+        metadata: {
+          ...(draft.payload.metadata as Record<string, unknown>),
+          alsoOvertookCount: overtakes.length - 1,
+        },
+      };
+    } else {
+      // Overrides newEventFields' actorCelebrated: false.
+      draft.payload = {...draft.payload, actorCelebrated: true};
+    }
+  }
 }

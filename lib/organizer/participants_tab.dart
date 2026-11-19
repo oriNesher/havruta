@@ -34,6 +34,9 @@ class _ParticipantsTabState extends State<ParticipantsTab> {
       FirestoreService().getCompetitionParticipants(widget.challenge.id);
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _organizerData =
       _organizer.organizerData(widget.challenge.id);
+  late final Stream<Map<String, String>> _teams =
+      FirestoreService().getTeams(widget.challenge.id);
+  Map<String, String> _teamNames = const {};
 
   final _search = TextEditingController();
   _Filter _filter = _Filter.all;
@@ -62,6 +65,16 @@ class _ParticipantsTabState extends State<ParticipantsTab> {
 
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<Map<String, String>>(
+      stream: _teams,
+      builder: (context, teamsSnapshot) {
+        _teamNames = teamsSnapshot.data ?? const {};
+        return _withPaid(context);
+      },
+    );
+  }
+
+  Widget _withPaid(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _organizerData,
       builder: (context, paidSnapshot) {
@@ -202,6 +215,8 @@ class _ParticipantsTabState extends State<ParticipantsTab> {
                 columns: [
                   const DataColumn(label: Text('#'), numeric: true),
                   const DataColumn(label: Text('Name')),
+                  if (_teamNames.isNotEmpty)
+                    const DataColumn(label: Text('Team')),
                   const DataColumn(label: Text('Status')),
                   DataColumn(
                     label: Text(
@@ -233,6 +248,7 @@ class _ParticipantsTabState extends State<ParticipantsTab> {
       cells: [
         DataCell(Text('${r.rank}', style: mono)),
         DataCell(Text(r.username)),
+        if (_teamNames.isNotEmpty) DataCell(_teamPicker(r)),
         DataCell(_StatusChip(status: r.status, out: r.isEliminated)),
         DataCell(Text(progress, style: mono)),
         DataCell(Text('${r.today}', style: mono)),
@@ -249,6 +265,31 @@ class _ParticipantsTabState extends State<ParticipantsTab> {
           ),
         ),
         DataCell(_actions(r)),
+      ],
+    );
+  }
+
+  Widget _teamPicker(ParticipantReport r) {
+    final current = _teamNames.containsKey(r.teamId) ? r.teamId : null;
+    return DropdownButton<String?>(
+      value: current,
+      underline: const SizedBox.shrink(),
+      hint: const Text('—'),
+      onChanged: challenge.isActive
+          ? (teamId) {
+              if (teamId == current) return;
+              _run(
+                () => _organizer.assignTeam(challenge.id, r.uid, teamId),
+                teamId == null
+                    ? '${r.username} is on no team'
+                    : '${r.username} is on ${_teamNames[teamId]}',
+              );
+            }
+          : null,
+      items: [
+        const DropdownMenuItem<String?>(value: null, child: Text('No team')),
+        for (final MapEntry(key: id, value: name) in _teamNames.entries)
+          DropdownMenuItem<String?>(value: id, child: Text(name)),
       ],
     );
   }
@@ -361,7 +402,7 @@ class _ParticipantsTabState extends State<ParticipantsTab> {
   }
 
   Future<void> _exportCsv(List<ParticipantReport> rows) async {
-    final csv = participantsCsv(challenge, rows);
+    final csv = participantsCsv(challenge, rows, teamNames: _teamNames);
     final today = DateTime.now().toIso8601String().substring(0, 10);
     final name = challenge.title
         .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), '-')

@@ -3,6 +3,7 @@ import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import {toStandingParticipant} from "../challenges/standings";
 import {persistEventDrafts} from "../events/persist";
+import {loadAudienceFor} from "../events/loadAudience";
 import {
   detectEliminationEvents,
   detectPlacementEvents,
@@ -76,9 +77,13 @@ export const endChallengeEarly = onCall<EndChallengeEarlyRequest>(
     });
 
     const {title, participants, plan} = outcome;
+    const audience = await loadAudienceFor(
+      admin.firestore().collection("competitions").doc(competitionId));
     await persistEventDrafts(competitionId, [
-      ...detectEliminationEvents(title, participants, plan.eliminations),
-      ...detectPlacementEvents(title, participants, plan.placements),
+      ...detectEliminationEvents(
+        title, participants, plan.eliminations, audience),
+      ...detectPlacementEvents(
+        title, participants, plan.placements, audience),
     ]);
 
     logger.info("Challenge ended early", {

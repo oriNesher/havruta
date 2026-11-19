@@ -1,4 +1,5 @@
 import {ChallengeConfig} from "../challenges/model";
+import {Audience} from "./audience";
 
 export interface ParticipantData {
   uid: string;
@@ -8,6 +9,7 @@ export interface ParticipantData {
   updatedAt?: FirebaseFirestore.Timestamp;
   dailyProgress?: Record<string, number>;
   eliminatedOnDay?: string;
+  teamId?: string;
 }
 
 export interface ExistingOpenEvent {
@@ -35,6 +37,11 @@ export interface EventsContext {
   todayDateStr: string;
   isNewActiveDay: boolean;
   newStreakCount: number;
+  /**
+   * Who events reach in a large challenge (see audience.ts); null or
+   * absent for a small one, where everyone else hears everything.
+   */
+  audience?: Audience | null;
 }
 
 export type EventDraftTarget =

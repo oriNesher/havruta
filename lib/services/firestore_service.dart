@@ -383,6 +383,57 @@ class FirestoreService {
     return doc.exists;
   }
 
+  /// Who [uid] follows in a challenge (private to them; in a large
+  /// challenge it decides whose activity reaches their feed).
+  Stream<Set<String>> getFollowing(String competitionId, String uid) {
+    return _db
+        .collection('competitions')
+        .doc(competitionId)
+        .collection('follows')
+        .doc(uid)
+        .snapshots()
+        .map(
+          (doc) =>
+              ((doc.data()?['followingUids'] as List?) ?? const [])
+                  .whereType<String>()
+                  .toSet(),
+        );
+  }
+
+  /// Follow or unfollow [otherUid] inside a challenge.
+  Future<void> setFollowing({
+    required String competitionId,
+    required String uid,
+    required String otherUid,
+    required bool follow,
+  }) {
+    return _db
+        .collection('competitions')
+        .doc(competitionId)
+        .collection('follows')
+        .doc(uid)
+        .set({
+          'followingUids': follow
+              ? FieldValue.arrayUnion([otherUid])
+              : FieldValue.arrayRemove([otherUid]),
+        }, SetOptions(merge: true));
+  }
+
+  /// A challenge's teams (id → name), live.
+  Stream<Map<String, String>> getTeams(String competitionId) {
+    return _db
+        .collection('competitions')
+        .doc(competitionId)
+        .collection('teams')
+        .snapshots()
+        .map(
+          (snapshot) => {
+            for (final doc in snapshot.docs)
+              doc.id: doc.data()['name'] as String? ?? '',
+          },
+        );
+  }
+
   /// Organizer announcements for a challenge, newest first (members only,
   /// per firestore.rules).
   Stream<QuerySnapshot<Map<String, dynamic>>> getAnnouncements(
@@ -399,14 +450,21 @@ class FirestoreService {
   }
 
   /// Get the most recent events for a single competition, newest first.
-  /// Backs the home card's event carousel.
+  /// Backs the home card's event carousel. With [audienceUid] (large
+  /// challenges), only events addressed to or about that user — their
+  /// audienceUids, which the server keeps even after they've been seen.
   Stream<QuerySnapshot<Map<String, dynamic>>> getCompetitionEvents(
-    String competitionId,
-  ) {
-    return _db
+    String competitionId, {
+    String? audienceUid,
+  }) {
+    Query<Map<String, dynamic>> query = _db
         .collection('competitions')
         .doc(competitionId)
-        .collection('events')
+        .collection('events');
+    if (audienceUid != null) {
+      query = query.where('audienceUids', arrayContains: audienceUid);
+    }
+    return query
         .orderBy('lastUpdatedAt', descending: true)
         .limit(25)
         .snapshots();

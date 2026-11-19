@@ -1,5 +1,9 @@
 import {EventDraft, EventsContext} from "../types";
+import {recipientsFor} from "../recipients";
 import {toWholePercent} from "../percent";
+
+/** Finish positions announced to everyone in a large challenge. */
+const PODIUM = 3;
 
 const MILESTONE_THRESHOLDS = [25, 50, 75, 90];
 const NEAR_COMPLETION_THRESHOLD = 90;
@@ -25,7 +29,6 @@ export function detectProgressionEvents(context: EventsContext): EventDraft[] {
     actorTargetValue,
     beforeProgress,
     afterProgress,
-    participantUids,
     completionsCount,
   } = context;
 
@@ -37,7 +40,7 @@ export function detectProgressionEvents(context: EventsContext): EventDraft[] {
     return [];
   }
 
-  const recipients = participantUids.filter((uid) => uid !== actorUid);
+  const recipients = recipientsFor(context, "nearby");
   const wholeBefore = toWholePercent(beforeProgress / actorTargetValue);
   const wholeAfter = toWholePercent(afterProgress / actorTargetValue);
 
@@ -53,7 +56,11 @@ export function detectProgressionEvents(context: EventsContext): EventDraft[] {
     return [
       {
         type,
-        recipients,
+        // A win or a podium finish is headline news; later finishers
+        // matter to the people around them.
+        recipients: position <= PODIUM ?
+          recipientsFor(context, "everyone") :
+          recipients,
         target: {kind: "create"},
         payload: {
           competitionTitle,

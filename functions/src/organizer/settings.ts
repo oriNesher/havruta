@@ -11,6 +11,10 @@ export interface SettingsPatch {
   endsAtMillis?: unknown;
   dailyMinimum?: unknown;
   targetValue?: unknown;
+  /** "auto" | "small" | "large" (see isLargeChallenge). */
+  scale?: unknown;
+  /** true / false, or null to go back to the default. */
+  trashTalk?: unknown;
 }
 
 /** One changed field, for the audit log. */
@@ -31,6 +35,8 @@ export interface SettingsPlan {
    * standings read a participant's own targetValue first.
    */
   targetValue?: number;
+  scale?: "auto" | "small" | "large";
+  trashTalk?: boolean | null;
   changes: Record<string, FieldChange>;
 }
 
@@ -202,6 +208,36 @@ export function planSettingsChange(
       }
       plan.targetValue = target;
       plan.changes.targetValue = {before, after: target};
+    }
+  }
+
+  if (has("scale") || has("trashTalk")) {
+    if (challenge.status !== "active") {
+      throw new OrganizerError(
+        "This challenge is over, so its settings can't change.");
+    }
+  }
+  if (has("scale")) {
+    const scale = patch.scale;
+    if (scale !== "auto" && scale !== "small" && scale !== "large") {
+      throw new OrganizerError("Pick automatic, small or large.");
+    }
+    if (scale !== challenge.social.scale) {
+      plan.scale = scale;
+      plan.changes.scale = {before: challenge.social.scale, after: scale};
+    }
+  }
+  if (has("trashTalk")) {
+    const trashTalk = patch.trashTalk;
+    if (trashTalk !== null && typeof trashTalk !== "boolean") {
+      throw new OrganizerError("Trash Talk is either on or off.");
+    }
+    if (trashTalk !== challenge.social.trashTalk) {
+      plan.trashTalk = trashTalk;
+      plan.changes.trashTalk = {
+        before: challenge.social.trashTalk,
+        after: trashTalk,
+      };
     }
   }
 

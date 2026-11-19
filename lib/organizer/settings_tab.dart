@@ -260,6 +260,12 @@ class _SettingsTabState extends State<SettingsTab> {
             ),
           ],
         ),
+        if (challenge.isActive) ...[
+          const SizedBox(height: 16),
+          _CommunitySection(challenge: challenge),
+          const SizedBox(height: 16),
+          _TeamsSection(challenge: challenge),
+        ],
         const SizedBox(height: 16),
         _OrganizersSection(challenge: challenge, uid: widget.uid),
         if (challenge.isActive) ...[
@@ -501,6 +507,292 @@ class _DateRow extends StatelessWidget {
           TextButton(onPressed: onChange, child: const Text('Change')),
         ],
       ),
+    );
+  }
+}
+
+/// How the social layer scales, and whether Trash Talk is on. Each change
+/// saves immediately (and lands in the activity log).
+class _CommunitySection extends StatefulWidget {
+  final Challenge challenge;
+
+  const _CommunitySection({required this.challenge});
+
+  @override
+  State<_CommunitySection> createState() => _CommunitySectionState();
+}
+
+class _CommunitySectionState extends State<_CommunitySection> {
+  final _organizer = OrganizerService();
+  bool _busy = false;
+
+  Future<void> _save(Future<void> Function() change, String done) async {
+    setState(() => _busy = true);
+    try {
+      await change();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(done)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(organizerErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final challenge = widget.challenge;
+    final count = challenge.participantUids.length;
+    final now = challenge.isLarge
+        ? 'Right now it behaves as a large community ($count participants).'
+        : 'Right now it behaves as a friend challenge ($count participants).';
+
+    return _Section(
+      title: 'Community',
+      children: [
+        Text(
+          "Size decides who sees what. A friend challenge shows everyone "
+          "everything. A large community shows each person what's near "
+          "them on the leaderboard, people they follow, their team and "
+          "the big moments, and sends one daily digest at 20:00 instead "
+          "of a notification per entry.",
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(
+              value: 'auto',
+              label: Text('Automatic'),
+              tooltip: 'Large above ${Challenge.largeThreshold} participants',
+            ),
+            ButtonSegment(value: 'small', label: Text('Friend challenge')),
+            ButtonSegment(value: 'large', label: Text('Large community')),
+          ],
+          selected: {challenge.socialScale},
+          onSelectionChanged: _busy
+              ? null
+              : (selection) => _save(
+                  () => _organizer.updateSettings(
+                    challenge.id,
+                    scale: selection.first,
+                  ),
+                  'Community size saved',
+                ),
+        ),
+        const SizedBox(height: 6),
+        Text(now, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 12),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Trash Talk'),
+          subtitle: Text(
+            challenge.trashTalkSetting == null
+                ? 'Default: '
+                    '${challenge.trashTalkEnabled ? 'on' : 'off'} for this '
+                    'challenge. After a celebration, people can write and '
+                    'share a brag.'
+                : 'After a celebration, people can write and share a '
+                    'brag.',
+          ),
+          value: challenge.trashTalkEnabled,
+          onChanged: _busy
+              ? null
+              : (on) => _save(
+                  () => _organizer.updateSettings(
+                    challenge.id,
+                    setTrashTalk: true,
+                    trashTalk: on,
+                  ),
+                  on ? 'Trash Talk on' : 'Trash Talk off',
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Create, rename and delete teams; people are put on teams from the
+/// Participants tab.
+class _TeamsSection extends StatefulWidget {
+  final Challenge challenge;
+
+  const _TeamsSection({required this.challenge});
+
+  @override
+  State<_TeamsSection> createState() => _TeamsSectionState();
+}
+
+class _TeamsSectionState extends State<_TeamsSection> {
+  final _organizer = OrganizerService();
+  late final Stream<Map<String, String>> _teams =
+      FirestoreService().getTeams(widget.challenge.id);
+  final _name = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _run(Future<void> Function() action, String done) async {
+    setState(() => _busy = true);
+    try {
+      await action();
+      _toast(done);
+    } catch (e) {
+      _toast(organizerErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _create() async {
+    final name = _name.text.trim();
+    if (name.isEmpty) return;
+    await _run(() async {
+      await _organizer.createTeam(widget.challenge.id, name);
+      _name.clear();
+    }, 'Team $name created');
+  }
+
+  Future<void> _rename(String teamId, String current) async {
+    final controller = TextEditingController(text: current);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rename team'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 40,
+          decoration: const InputDecoration(labelText: 'Team name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || name == current) return;
+    await _run(
+      () => _organizer.renameTeam(widget.challenge.id, teamId, name),
+      'Renamed to $name',
+    );
+  }
+
+  Future<void> _delete(String teamId, String name) async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete team $name?'),
+        content: const Text(
+          "Its members stay in the challenge with their progress; they're "
+          'just no longer on a team.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete team'),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return;
+    await _run(
+      () => _organizer.deleteTeam(widget.challenge.id, teamId),
+      'Team $name deleted',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _Section(
+      title: 'Teams',
+      children: [
+        Text(
+          'Optional. Teams get their own leaderboard (average progress per '
+          "member, so team size doesn't decide it), and in a large "
+          "community teammates see each other's activity. Individual "
+          'winners are unchanged. Put people on teams from the '
+          'Participants tab.',
+          style: theme.textTheme.bodySmall,
+        ),
+        StreamBuilder<Map<String, String>>(
+          stream: _teams,
+          builder: (context, snapshot) {
+            final teams = snapshot.data ?? const {};
+            return Column(
+              children: [
+                for (final MapEntry(key: id, value: name) in teams.entries)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.groups_outlined),
+                    title: Text(name),
+                    trailing: Wrap(
+                      children: [
+                        IconButton(
+                          tooltip: 'Rename',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: _busy ? null : () => _rename(id, name),
+                        ),
+                        IconButton(
+                          tooltip: 'Delete team',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: _busy ? null : () => _delete(id, name),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _name,
+                maxLength: 40,
+                onSubmitted: (_) => _create(),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: 'New team name',
+                  counterText: '',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: _busy ? null : _create,
+              child: const Text('Add team'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

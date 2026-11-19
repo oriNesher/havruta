@@ -456,10 +456,13 @@ class _CompetitionCard extends StatelessWidget {
               const SizedBox(height: 14),
               // ── Event carousel ───────────────────────
               _CompetitionEventCarousel(
-                key: ValueKey(competitionId),
+                // Re-keyed when the challenge crosses into "large", so the
+                // feed switches queries.
+                key: ValueKey('$competitionId-${challenge.isLarge}'),
                 competitionId: competitionId,
                 currentUid: currentUid,
                 firestoreService: firestoreService,
+                onlyAddressedToMe: challenge.isLarge,
               ),
               // ── Participants ─────────────────────────
               _ParticipantsList(
@@ -921,11 +924,16 @@ class _CompetitionEventCarousel extends StatefulWidget {
   final String currentUid;
   final FirestoreService firestoreService;
 
+  /// A large challenge's feed: just the events addressed to this user
+  /// (their neighbors, follows, team, headline news) instead of everyone's.
+  final bool onlyAddressedToMe;
+
   const _CompetitionEventCarousel({
     super.key,
     required this.competitionId,
     required this.currentUid,
     required this.firestoreService,
+    this.onlyAddressedToMe = false,
   });
 
   @override
@@ -949,7 +957,10 @@ class _CompetitionEventCarouselState extends State<_CompetitionEventCarousel> {
   @override
   void initState() {
     super.initState();
-    _stream = widget.firestoreService.getCompetitionEvents(widget.competitionId);
+    _stream = widget.firestoreService.getCompetitionEvents(
+      widget.competitionId,
+      audienceUid: widget.onlyAddressedToMe ? widget.currentUid : null,
+    );
     _nudgeTimer = Timer.periodic(_nudgeInterval, (_) => _performNudge());
   }
 

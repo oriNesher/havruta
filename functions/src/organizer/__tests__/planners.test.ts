@@ -10,6 +10,7 @@ import {raceCompletesOnRemoval} from "../removal";
 import {planReinstatement} from "../reinstate";
 import {announcementPushBody, planAnnouncement} from "../announcement";
 import {chunk} from "../../notifications/push";
+import {cleanTeamName, requireTeamOp} from "../teams";
 import {
   evaluateLastStanding,
 } from "../../challenges/winConditions/lastStanding";
@@ -156,6 +157,34 @@ test("the end can be removed, except from Most Progress", () => {
   refused(() => planSettingsChange(parseChallenge({
     winCondition: "mostProgress", endsAt: ts(NOW + DAY),
   }), TEXT, [], {endsAtMillis: null}, NOW), /needs an end date/);
+});
+
+test("scale and Trash Talk are organizer settings while it runs", () => {
+  const plan = planSettingsChange(race(), TEXT, [],
+    {scale: "large", trashTalk: false}, NOW);
+  assert.equal(plan.scale, "large");
+  assert.equal(plan.trashTalk, false);
+  assert.equal(planSettingsChange(race({social: {trashTalk: false}}), TEXT,
+    [], {trashTalk: null}, NOW).trashTalk, null);
+  refused(() => planSettingsChange(race(), TEXT, [], {scale: "huge"}, NOW),
+    /automatic, small or large/);
+  refused(() => planSettingsChange(race(), TEXT, [], {trashTalk: "yes"}, NOW),
+    /on or off/);
+  refused(() => planSettingsChange(race({status: "completed"}), TEXT, [],
+    {scale: "large"}, NOW), /over/);
+  refused(() => planSettingsChange(race(), TEXT, [], {scale: "auto"}, NOW),
+    /Nothing changed/);
+});
+
+// ── Teams ───────────────────────────────────────────────────
+
+test("team names are trimmed, short and unique (any case)", () => {
+  assert.equal(cleanTeamName("  Red  ", ["Blue"]), "Red");
+  refused(() => cleanTeamName(" ", []), /1 to 40/);
+  refused(() => cleanTeamName("x".repeat(41), []), /1 to 40/);
+  refused(() => cleanTeamName("blue", ["Blue"]), /already a team/);
+  assert.equal(requireTeamOp("assign"), "assign");
+  refused(() => requireTeamOp("merge"), /Unknown team action/);
 });
 
 // ── Ending early ────────────────────────────────────────────

@@ -122,6 +122,13 @@ class Challenge {
   final String? aggressorUid;
   final String? aggressorUsername;
 
+  /// Organizer-set scale ('auto' | 'small' | 'large'); see [isLarge].
+  final String socialScale;
+
+  /// Organizer's Trash Talk choice; null means the default
+  /// ([trashTalkEnabled]).
+  final bool? trashTalkSetting;
+
   /// Whether the server runs an Aggressor Badge for this challenge at all:
   /// not for legacy personal races or onboarding challenges. Mirrors
   /// aggressorApplies in functions/src/challenges/aggressor.ts.
@@ -151,7 +158,29 @@ class Challenge {
     this.aggressorUid,
     this.aggressorUsername,
     this.hasAggressorBadge = false,
+    this.socialScale = 'auto',
+    this.trashTalkSetting,
   });
+
+  /// Above this many participants a challenge scales its social layer.
+  /// Hand-synced with LARGE_CHALLENGE_THRESHOLD in
+  /// functions/src/challenges/model.ts.
+  static const int largeThreshold = 15;
+
+  /// Large-community behavior: events reach leaderboard neighbors,
+  /// followers and teammates rather than everyone, and a daily digest
+  /// replaces per-report pushes. Mirrors isLargeChallenge on the server.
+  bool get isLarge => switch (socialScale) {
+    'large' => true,
+    'small' => false,
+    _ => participantUids.length > largeThreshold,
+  };
+
+  /// Trash Talk follows the organizer's choice; by default it's on for
+  /// friend challenges and off for large ones or ones whose creator only
+  /// organizes.
+  bool get trashTalkEnabled =>
+      trashTalkSetting ?? !(isLarge || !isParticipant(createdBy));
 
   factory Challenge.fromDoc(String id, Map<String, dynamic> data) {
     final winCondition =
@@ -164,6 +193,7 @@ class Challenge {
     final isLegacyPersonal =
         data['winCondition'] == null && data['type'] == 'personalGoalChallenge';
     final onboarding = data['onboarding'] as Map<String, dynamic>?;
+    final social = data['social'] as Map<String, dynamic>?;
     final createdBy = data['createdBy'] as String? ?? '';
     final organizerUids = data['organizerUids'] is List
         ? (data['organizerUids'] as List).whereType<String>().toList()
@@ -206,6 +236,12 @@ class Challenge {
       aggressorUsername: aggressor?['username'] as String?,
       hasAggressorBadge:
           !isLegacyPersonal && onboarding?['isOnboarding'] != true,
+      socialScale: switch (social?['scale']) {
+        'small' => 'small',
+        'large' => 'large',
+        _ => 'auto',
+      },
+      trashTalkSetting: social?['trashTalk'] as bool?,
     );
   }
 

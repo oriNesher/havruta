@@ -38,7 +38,12 @@ class OrganizerService {
     bool clearEndsAt = false,
     int? dailyMinimum,
     int? targetValue,
+    String? scale,
+    bool setTrashTalk = false,
+    bool? trashTalk,
   }) => _call('updateChallengeSettings', competitionId, {
+    'scale': ?scale,
+    if (setTrashTalk) 'trashTalk': trashTalk,
     'title': ?title,
     'description': ?description,
     if (startsAt != null) 'startsAtMillis': startsAt.millisecondsSinceEpoch,
@@ -94,6 +99,33 @@ class OrganizerService {
 
   Future<void> removeOrganizer(String competitionId, String uid) =>
       _call('setOrganizers', competitionId, {'remove': uid});
+
+  /// Teams: create one; returns its id.
+  Future<String> createTeam(String competitionId, String name) async {
+    final result = await _call('manageTeams', competitionId, {
+      'op': 'create',
+      'name': name,
+    });
+    return result['teamId'] as String? ?? '';
+  }
+
+  Future<void> renameTeam(String competitionId, String teamId, String name) =>
+      _call('manageTeams', competitionId, {
+        'op': 'rename',
+        'teamId': teamId,
+        'name': name,
+      });
+
+  Future<void> deleteTeam(String competitionId, String teamId) =>
+      _call('manageTeams', competitionId, {'op': 'delete', 'teamId': teamId});
+
+  /// Puts [uid] on [teamId], or on no team when it's null.
+  Future<void> assignTeam(String competitionId, String uid, String? teamId) =>
+      _call('manageTeams', competitionId, {
+        'op': 'assign',
+        'uid': uid,
+        'teamId': teamId,
+      });
 
   /// Sends to everyone in the challenge; returns how many people.
   Future<int> sendAnnouncement(String competitionId, String text) async {

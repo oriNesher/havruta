@@ -1,4 +1,5 @@
 import {EventDraft, EventsContext} from "../types";
+import {recipientsFor} from "../recipients";
 import {toWholePercent} from "../percent";
 
 const CLOSE_THRESHOLD_POINTS = 5;
@@ -42,7 +43,6 @@ export function detectGapEvents(context: EventsContext): EventDraft[] {
     beforeProgress,
     afterProgress,
     participants,
-    participantUids,
     firedCloseRaceCheckpoints,
   } = context;
 
@@ -107,7 +107,8 @@ export function detectGapEvents(context: EventsContext): EventDraft[] {
   if (otherWholes.length > 0) {
     const before = topTwo([...otherWholes, actorWholeBefore]);
     const after = topTwo([...otherWholes, actorWholeAfter]);
-    const recipients = participantUids.filter((uid) => uid !== actorUid);
+    // Both are about the very top of the leaderboard: headline news.
+    const recipients = recipientsFor(context, "everyone");
 
     // Only the actor's own move can have caused the leader gap to widen, so
     // this implies the actor is the (possibly new) leader.
