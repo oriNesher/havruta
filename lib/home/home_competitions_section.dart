@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:marquee/marquee.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -1537,6 +1538,7 @@ class _GiveRespectButtonState extends State<_GiveRespectButton> {
       return;
     }
 
+    HapticFeedback.lightImpact();
     setState(() {
       _optimisticallyGiven = true;
       _submitting = true;

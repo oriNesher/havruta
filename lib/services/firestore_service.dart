@@ -6,22 +6,6 @@ import '../competitions/challenge.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  /// Create user document in Firestore
-  Future<void> createUser({required String uid, required String email}) async {
-    await _db.collection('users').doc(uid).set({
-      'uid': uid,
-      'email': email,
-      'username': null,
-      'usernameLower': null,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  /// Get user data
-  Future<DocumentSnapshot<Map<String, dynamic>>> getUser(String uid) {
-    return _db.collection('users').doc(uid).get();
-  }
-
   /// Live user doc — backs the Home screen's Respect balance display, which
   /// needs to react the instant a spend or a daily grant lands.
   Stream<DocumentSnapshot<Map<String, dynamic>>> getUserDoc(String uid) {
@@ -124,11 +108,6 @@ class FirestoreService {
         .snapshots();
   }
 
-  /// Get all competitions
-  Future<QuerySnapshot<Map<String, dynamic>>> getCompetitions() {
-    return _db.collection('competitions').get();
-  }
-
   /// Get a single competition by id
   Future<DocumentSnapshot<Map<String, dynamic>>> getCompetition(
     String competitionId,
@@ -153,33 +132,6 @@ class FirestoreService {
         .doc(competitionId)
         .collection('participants')
         .snapshots();
-  }
-
-  /// Add new participant to an existing competition
-  Future<void> addParticipant({
-    required String competitionId,
-    required String uid,
-    required String username,
-    required String goalTitle,
-    required int targetValue,
-    required String unit,
-  }) async {
-    final competitionRef = _db.collection('competitions').doc(competitionId);
-
-    await competitionRef.update({
-      'participantUids': FieldValue.arrayUnion([uid]),
-    });
-
-    await competitionRef.collection('participants').doc(uid).set({
-      'uid': uid,
-      'username': username,
-      'goalTitle': goalTitle,
-      'targetValue': targetValue,
-      'unit': unit,
-      'progress': 0,
-      'joinedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
   }
 
   /// Lower a participant's progress to [progress] (the edit dialog only
@@ -231,27 +183,6 @@ class FirestoreService {
           // A FieldPath, not 'dailyProgress.$dayKey': the dashes in the
           // date aren't valid in a dotted field-path string.
           FieldPath(['dailyProgress', dayKey]): FieldValue.increment(amount),
-        });
-  }
-
-  /// Update participant personal goal inside a competition
-  Future<void> updateParticipantGoal({
-    required String competitionId,
-    required String uid,
-    required String goalTitle,
-    required int targetValue,
-    required String unit,
-  }) async {
-    await _db
-        .collection('competitions')
-        .doc(competitionId)
-        .collection('participants')
-        .doc(uid)
-        .update({
-          'goalTitle': goalTitle,
-          'targetValue': targetValue,
-          'unit': unit,
-          'updatedAt': FieldValue.serverTimestamp(),
         });
   }
 
@@ -456,13 +387,6 @@ class FirestoreService {
     });
   }
 
-  /// Save FCM token for notification service
-  Future<void> saveUserFcmToken(String uid, String token) async {
-    await FirebaseFirestore.instance.collection('users').doc(uid).set({
-      'fcmTokens': FieldValue.arrayUnion([token]),
-    }, SetOptions(merge: true));
-  }
-
   /// Delete competition (only creator should be allowed from UI / rules)
   ///
   /// The competition doc is deleted first, before its participants, so that
@@ -515,16 +439,6 @@ class FirestoreService {
         .get();
 
     return doc.exists;
-  }
-
-  /// Get all events relevant to the user, across all of their competitions
-  Stream<QuerySnapshot<Map<String, dynamic>>> getHomeEvents(String uid) {
-    return _db
-        .collectionGroup('events')
-        .where('unseenByUserUids', arrayContains: uid)
-        .orderBy('lastUpdatedAt', descending: true)
-        .limit(15)
-        .snapshots();
   }
 
   /// Get the most recent events for a single competition, newest first.
@@ -654,14 +568,6 @@ class FirestoreService {
         );
   }
 
-  /// Save a single goal to the bucket
-  Future<void> addGoal(String uid, String goalTitle) async {
-    await _db.collection('users').doc(uid).collection('goals').add({
-      'title': goalTitle,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-  }
-
   /// Check today's date against lastOpenedDate and update the streak.
   /// Returns the current streak count after the update.
   Future<int> checkAndUpdateStreak(String uid) async {
@@ -693,16 +599,5 @@ class FirestoreService {
     });
 
     return newStreak;
-  }
-
-  /// Check if a goal already exists in the bucket (case-insensitive exact match)
-  Future<bool> goalExistsInBucket(String uid, String goalTitle) async {
-    final snapshot =
-        await _db.collection('users').doc(uid).collection('goals').get();
-
-    final normalized = goalTitle.trim().toLowerCase();
-    return snapshot.docs.any(
-      (doc) => (doc.data()['title'] as String).toLowerCase() == normalized,
-    );
   }
 }

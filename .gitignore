@@ -46,3 +46,6 @@ app.*.map.json
 
 # Play store keys
 android/key.properties
+
+# Firebase CLI local deploy cache
+.firebase/

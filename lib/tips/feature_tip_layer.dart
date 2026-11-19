@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -23,10 +22,11 @@ const Duration _dwell = Duration(milliseconds: 800);
 /// Mounted once, above the Navigator (see MaterialApp.builder), so a tip can
 /// be drawn over whatever real screen the user is on.
 ///
-/// Tips never block anything: there is no scrim, and every tap goes through
-/// to the app. The first tap anywhere while a tip is up both does what it
-/// normally would and dismisses the tip for good. At most one tip shows per
-/// screen visit (see PageVisitObserver); others wait for the next visit.
+/// Tips never block anything: there is no scrim, and every tap outside the
+/// bubble goes through to the app. A tip is dismissed for good only by the
+/// bubble's own button or by tapping the highlighted control itself — a tip
+/// whose anchor goes away undismissed hides and comes back later. At most one tip shows per screen visit (see
+/// PageVisitObserver); others wait for the next visit.
 class FeatureTipLayer extends StatefulWidget {
   final Widget child;
 
@@ -56,15 +56,12 @@ class _FeatureTipLayerState extends State<FeatureTipLayer>
   /// the user moves to a different page.
   int? _quietVisit;
 
-  /// Pointers that went down while the current tip was showing.
-  final Set<int> _pointersDown = {};
-
   @override
   void initState() {
     super.initState();
     _controller.addListener(_scheduleFrame);
     _controller.pageVisits.addListener(_scheduleFrame);
-    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
+    FeatureTipAnchorRegistry.instance.onAnchorUsed = _onAnchorUsed;
     // Persistent (not repeating): runs after layout on frames that already
     // happen — scrolls, route transitions, anchors mounting — instead of
     // driving frames of its own.
@@ -73,7 +70,9 @@ class _FeatureTipLayerState extends State<FeatureTipLayer>
 
   @override
   void dispose() {
-    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
+    if (FeatureTipAnchorRegistry.instance.onAnchorUsed == _onAnchorUsed) {
+      FeatureTipAnchorRegistry.instance.onAnchorUsed = null;
+    }
     _controller.pageVisits.removeListener(_scheduleFrame);
     _controller.removeListener(_scheduleFrame);
     _dwellTimer?.cancel();
@@ -85,21 +84,11 @@ class _FeatureTipLayerState extends State<FeatureTipLayer>
     if (mounted) SchedulerBinding.instance.scheduleFrame();
   }
 
-  void _onPointer(PointerEvent event) {
-    final shown = _shown;
-    if (shown == null) {
-      _pointersDown.clear();
-      return;
-    }
-    if (event is PointerDownEvent) {
-      _pointersDown.add(event.pointer);
-    } else if (event is PointerCancelEvent) {
-      _pointersDown.remove(event.pointer);
-    } else if (event is PointerUpEvent && _pointersDown.remove(event.pointer)) {
-      // Only a tap that started while the tip was up — never the tail end
-      // of a touch that began before it appeared.
-      _dismiss(shown.tip);
-    }
+  /// Tapping the highlighted control itself counts as "Got it". A tap on an
+  /// anchor whose tip isn't up (still dwelling, or another tip showing)
+  /// changes nothing.
+  void _onAnchorUsed(FeatureTip tip) {
+    if (mounted && _shown?.tip == tip) _dismiss(tip);
   }
 
   void _dismiss(FeatureTip tip) {
@@ -107,7 +96,6 @@ class _FeatureTipLayerState extends State<FeatureTipLayer>
     _controller.markSeen(tip);
     _quietVisit = _controller.pageVisits.visit;
     _clearCandidate();
-    _pointersDown.clear();
     _pulse.stop();
     setState(() => _shown = null);
   }

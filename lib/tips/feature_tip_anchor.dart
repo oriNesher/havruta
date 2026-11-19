@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 
 import 'feature_tip.dart';
@@ -5,7 +6,10 @@ import 'feature_tip.dart';
 /// Marks a real product widget as where [tip] belongs.
 ///
 /// Placing one has no visible effect and no tip logic: the screen only
-/// declares "this control lives here". FeatureTipsController decides
+/// declares "this control lives here". The one thing it reports is a tap on
+/// the control, which FeatureTipLayer treats like "Got it" when this tip is
+/// up — using the feature means the tip has done its job. A drag that
+/// starts on it (a scroll, a carousel swipe) doesn't count. FeatureTipsController decides
 /// whether the tip is still owed, and FeatureTipLayer only uses an anchor
 /// that is fully on screen, on the settled top-most route. Several anchors
 /// may share a tip (e.g. every Home card's Add Progress button); the first
@@ -88,8 +92,36 @@ class _FeatureTipAnchorState extends State<FeatureTipAnchor> {
       inner.right <= outer.right + 1 &&
       inner.bottom <= outer.bottom + 1;
 
+  int? _downPointer;
+  Offset? _downPosition;
+
+  void _onPointerDown(PointerDownEvent event) {
+    _downPointer = event.pointer;
+    _downPosition = event.position;
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    final start = _downPosition;
+    final isTap = event.pointer == _downPointer &&
+        start != null &&
+        (event.position - start).distance < kTouchSlop;
+    _downPointer = null;
+    _downPosition = null;
+    if (isTap) FeatureTipAnchorRegistry.instance._reportUsed(widget.tip);
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _downPointer = null;
+    _downPosition = null;
+  }
+
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: _onPointerDown,
+    onPointerUp: _onPointerUp,
+    onPointerCancel: _onPointerCancel,
+    child: widget.child,
+  );
 }
 
 /// Every mounted [FeatureTipAnchor], by tip.
@@ -98,6 +130,11 @@ class FeatureTipAnchorRegistry {
   static final FeatureTipAnchorRegistry instance = FeatureTipAnchorRegistry._();
 
   final Map<FeatureTip, List<_FeatureTipAnchorState>> _byTip = {};
+
+  /// Set by FeatureTipLayer: told whenever an anchored control is tapped.
+  ValueChanged<FeatureTip>? onAnchorUsed;
+
+  void _reportUsed(FeatureTip tip) => onAnchorUsed?.call(tip);
 
   void _register(FeatureTip tip, _FeatureTipAnchorState anchor) {
     _byTip.putIfAbsent(tip, () => []).add(anchor);

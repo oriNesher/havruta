@@ -33,10 +33,9 @@ something to rename wholesale unless explicitly asked.
   invite landing page and the App/Universal Links `.well-known` files.
 - State management is `StatefulWidget` + Firestore `Stream`/`FutureBuilder`,
   plain `Navigator.push`, and two singleton `ChangeNotifier` stores
-  (`RespectStore`, `ProgressSnapshotCache`) for cross-widget state.
-  `riverpod` and `go_router` are pubspec dependencies but are not part of
-  this architecture — don't adopt them for new code; only introduce them as
-  part of an explicitly-requested state-management/navigation migration.
+  (`RespectStore`, `ProgressSnapshotCache`) for cross-widget state. Don't
+  add `riverpod`, `go_router`, or similar for new code; only introduce them
+  as part of an explicitly-requested state-management/navigation migration.
 - Trust boundary: cosmetic fields (streak count, `lastOpenedDate`) are
   written directly by the client. Anything socially visible or currency-like
   (Respect balance, invite redemption, celebration state) goes through a

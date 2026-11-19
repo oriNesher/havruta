@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show FilteringTextInputFormatter;
+import 'package:flutter/services.dart'
+    show FilteringTextInputFormatter, HapticFeedback;
 
 import '../../app_theme.dart';
 
@@ -107,8 +108,19 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
   // animating its label) for a bit after Navigator.pop() resolves that
   // Future, so disposing on the Future's completion tore the controller down
   // while the field could still touch it, crashing mid-frame.
-  late final TextEditingController _controller =
-      TextEditingController(text: '${widget.initialAmount}');
+  //
+  // The prefill starts fully selected, so typing a new amount replaces the
+  // last one instead of appending to it ("5" + "10" → "10", not "510");
+  // autofocus keeps a valid selection rather than collapsing it.
+  late final TextEditingController _controller = TextEditingController.fromValue(
+    TextEditingValue(
+      text: '${widget.initialAmount}',
+      selection: TextSelection(
+        baseOffset: 0,
+        extentOffset: '${widget.initialAmount}'.length,
+      ),
+    ),
+  );
 
   bool _isHolding = false;
 
@@ -132,6 +144,7 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
   }
 
   void _applyQuickAdd(int delta) {
+    HapticFeedback.selectionClick();
     final next = _currentAmount() + delta;
     _controller.text = '$next';
     _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
@@ -191,7 +204,7 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
               height: 44,
               child: AnimatedOpacity(
                 opacity: _isHolding ? 1 : 0,
-                duration: const Duration(milliseconds: 260),
+                duration: const Duration(milliseconds: 150),
                 curve: Curves.easeOut,
                 child: Center(
                   child: Text(
@@ -236,7 +249,8 @@ class _AddProgressDialogState extends State<_AddProgressDialog> {
 /// the full [_holdDuration] — releasing early cancels the hold instead of
 /// submitting, giving a deliberate confirmation gesture for a write that
 /// (unlike the old +1 tap) can move progress by a large, hard-to-undo
-/// amount.
+/// amount. Short enough to feel like a firm press rather than a wait, long
+/// enough that a stray tap never submits. Fires at most once per dialog.
 class _HoldToSubmitButton extends StatefulWidget {
   final bool enabled;
   final Color color;
@@ -260,9 +274,14 @@ class _HoldToSubmitButton extends StatefulWidget {
 
 class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
     with SingleTickerProviderStateMixin {
-  static const _holdDuration = Duration(seconds: 4);
+  static const _holdDuration = Duration(milliseconds: 800);
 
   late final AnimationController _controller;
+
+  /// Latched on the first completed hold: the dialog's exit transition keeps
+  /// this button alive and pressable briefly, and a second completion would
+  /// pop the screen underneath (and report twice).
+  bool _confirmed = false;
 
   @override
   void initState() {
@@ -282,14 +301,17 @@ class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
     // Only a hold that runs the animation all the way to 1.0 counts as a
     // confirmation — a release partway through animates back to 0 instead
     // of completing, so this only ever fires for a genuine full-length hold.
-    if (status == AnimationStatus.completed) {
+    if (status == AnimationStatus.completed && !_confirmed) {
+      _confirmed = true;
+      // The "click" that tells the thumb it landed — no-op on web.
+      HapticFeedback.heavyImpact();
       widget.onHoldChanged(false);
       widget.onConfirmed();
     }
   }
 
   void _startHold() {
-    if (!mounted || !widget.enabled) return;
+    if (!mounted || !widget.enabled || _confirmed) return;
     widget.onHoldChanged(true);
     _controller.forward(from: 0);
   }
@@ -298,7 +320,7 @@ class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
     // The dialog closes as soon as a hold completes (see _onStatusChanged),
     // which can leave a pointer-up still in flight for the pointer that
     // completed it — guard against acting on a disposed controller.
-    if (!mounted) return;
+    if (!mounted || _confirmed) return;
     // Reported before the value guard below: a tap released within the same
     // frame it started never moves the controller off 0, and skipping the
     // report there would leave the statement showing with no hold running.
@@ -324,7 +346,6 @@ class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
           animation: _controller,
           builder: (context, _) {
             final progress = _controller.value;
-            final secondsLeft = (_holdDuration.inSeconds * (1 - progress)).ceil();
 
             return Container(
               height: 52,
@@ -343,7 +364,9 @@ class _HoldToSubmitButtonState extends State<_HoldToSubmitButton>
                     child: Container(color: widget.color),
                   ),
                   Text(
-                    progress > 0 ? 'HOLD… ${secondsLeft}s' : 'HOLD TO SUBMIT',
+                    // A seconds countdown would read "1s" the whole way at
+                    // this length, so the fill alone shows how long is left.
+                    progress > 0 ? 'HOLD…' : 'HOLD TO SUBMIT',
                     style: AppTheme.display(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,

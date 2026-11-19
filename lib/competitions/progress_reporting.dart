@@ -86,6 +86,10 @@ Future<void> reportProgress(
   if (amount == null || !context.mounted) return;
 
   if (amount > 0) {
+    // Captured before the write: the card that started this can rebuild
+    // away mid-await (a race finish hides its button), and the confirmation
+    // should still land.
+    final messenger = ScaffoldMessenger.of(context);
     onSubmitting(true);
     try {
       await FirestoreService().addProgress(
@@ -94,6 +98,19 @@ Future<void> reportProgress(
         amount: amount,
         dayKey: challenge.dayKey(DateTime.now()),
       );
+      // A plain receipt — celebrations only fire for some reports, but
+      // every report should visibly count. Replaces any receipt still up,
+      // so back-to-back reports don't queue behind each other.
+      final unitSuffix = unit.isNotEmpty ? ' $unit' : '';
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('+$amount$unitSuffix logged · ${challenge.title}'),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

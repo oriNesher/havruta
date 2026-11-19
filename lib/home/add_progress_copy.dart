@@ -1,9 +1,10 @@
 /// The empowering lines shown in the gap above the hold-to-submit button
 /// while a hold is in progress.
 ///
-/// The hold is four seconds of deliberate friction (see _HoldToSubmitButton)
+/// The hold is a short beat of deliberate friction (see _HoldToSubmitButton)
 /// — this fills that pause with a reason to want it instead of a countdown
-/// to endure. Every line opens with "Take a moment to…" so the gap reads as
+/// to endure. The hold is now under a second, so it's glimpsed rather than
+/// read in full. Every line opens with "Take a moment to…" so the gap reads as
 /// one recurring ritual, while the rest rotates on each submission (see
 /// HoldStatementStore) so the ritual never turns into wallpaper.
 ///
