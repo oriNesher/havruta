@@ -9,11 +9,32 @@ const double _shellMaxWidth = 480;
 const Color _backdropColor = Color(0xFF08080D);
 const Color _shellBorderColor = Color(0xFF1E1E30);
 
+/// Screens built for a desktop browser (the organizer dashboard) lift the
+/// phone-width column while they're mounted: [acquire] in initState,
+/// [release] in dispose. A count rather than a flag, so stacked wide
+/// screens don't switch it off under each other. Changes are deferred to
+/// after the frame, since initState/dispose run mid-build and WebShell sits
+/// above the Navigator.
+class WebShellWide {
+  WebShellWide._();
+
+  static final ValueNotifier<int> _requests = ValueNotifier(0);
+
+  static void acquire() => WidgetsBinding.instance.addPostFrameCallback(
+    (_) => _requests.value++,
+  );
+
+  static void release() => WidgetsBinding.instance.addPostFrameCallback(
+    (_) => _requests.value = _requests.value > 0 ? _requests.value - 1 : 0,
+  );
+}
+
 /// Constrains the app to a phone-width column when it's running in a browser
-/// window wider than the layouts were built for. Below that width — every
-/// phone, and native Android/iOS, which never enter this branch at all —
-/// the child is returned untouched, so there is exactly one code path on
-/// mobile and it is the original one.
+/// window wider than the layouts were built for — unless a wide screen has
+/// asked for the whole window (WebShellWide). At or below that width (every
+/// phone browser) nothing binds and the child fills the window. Native
+/// Android/iOS never enter this at all: the child is returned untouched, so
+/// mobile keeps exactly one code path and it is the original one.
 ///
 /// Wraps FeatureTipLayer (see main.dart), so tip bubbles are held to the
 /// same column as the screens they point at.
@@ -26,32 +47,48 @@ class WebShell extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!kIsWeb) return child;
 
-    final media = MediaQuery.of(context);
-    if (media.size.width <= _shellMaxWidth) return child;
+    return ValueListenableBuilder<int>(
+      valueListenable: WebShellWide._requests,
+      builder: (context, wideRequests, _) {
+        final media = MediaQuery.of(context);
+        final column =
+            wideRequests == 0 && media.size.width > _shellMaxWidth;
 
-    return ColoredBox(
-      color: _backdropColor,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _shellMaxWidth),
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              border: Border.symmetric(
-                vertical: BorderSide(color: _shellBorderColor),
+        // One fixed widget structure for every case, varying only its
+        // parameters: switching between "column" and "full width" must
+        // never re-parent the Navigator below, or open screens (and the
+        // tip layer) would lose their state.
+        return ColoredBox(
+          color: column ? _backdropColor : Colors.transparent,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: column ? _shellMaxWidth : double.infinity,
               ),
-            ),
-            // Screens that measure themselves must see the column's width,
-            // not the window's, or anything width-driven inside would size
-            // against space it doesn't actually have.
-            child: MediaQuery(
-              data: media.copyWith(
-                size: Size(_shellMaxWidth, media.size.height),
+              child: DecoratedBox(
+                decoration: column
+                    ? const BoxDecoration(
+                        border: Border.symmetric(
+                          vertical: BorderSide(color: _shellBorderColor),
+                        ),
+                      )
+                    : const BoxDecoration(),
+                // Screens that measure themselves must see the column's
+                // width, not the window's, or anything width-driven inside
+                // would size against space it doesn't actually have.
+                child: MediaQuery(
+                  data: column
+                      ? media.copyWith(
+                          size: Size(_shellMaxWidth, media.size.height),
+                        )
+                      : media,
+                  child: child,
+                ),
               ),
-              child: child,
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

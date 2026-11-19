@@ -8,6 +8,8 @@ import {planCorrection, requireReason} from "../correction";
 import {organizersToBackfill, planOrganizerChange} from "../organizers";
 import {raceCompletesOnRemoval} from "../removal";
 import {planReinstatement} from "../reinstate";
+import {announcementPushBody, planAnnouncement} from "../announcement";
+import {chunk} from "../../notifications/push";
 import {
   evaluateLastStanding,
 } from "../../challenges/winConditions/lastStanding";
@@ -353,6 +355,33 @@ test("once reinstated, past days stay judged; the next one counts", () => {
   assert.deepEqual(
     evaluateLastStanding(losRunning(), [reinstated, alice, carol], after19)
       .eliminations.map((e) => e.uid), ["bob"]);
+});
+
+// ── Announcements ───────────────────────────────────────────
+
+test("an announcement is trimmed text up to 500 characters", () => {
+  assert.equal(planAnnouncement("  Run at 7, bring water ", 0),
+    "Run at 7, bring water");
+  refused(() => planAnnouncement("   ", 0), /Write something/);
+  refused(() => planAnnouncement("x".repeat(501), 0), /at most 500/);
+});
+
+test("ten announcements a day, then a pause", () => {
+  assert.equal(planAnnouncement("ok", 9), "ok");
+  refused(() => planAnnouncement("one more", 10), /limit/);
+});
+
+test("the push body names the organizer and fits a lock screen", () => {
+  assert.equal(announcementPushBody("Coach", "Run at 7"), "Coach: Run at 7");
+  const long = announcementPushBody("Coach", "x".repeat(400));
+  assert.ok(long.length <= 160);
+  assert.ok(long.endsWith("…"));
+});
+
+test("push tokens go out in batches FCM accepts", () => {
+  const tokens = Array.from({length: 1201}, (_, i) => `t${i}`);
+  assert.deepEqual(chunk(tokens, 500).map((c) => c.length), [500, 500, 201]);
+  assert.deepEqual(chunk([], 500), []);
 });
 
 // ── Removal ─────────────────────────────────────────────────

@@ -204,6 +204,29 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Organizer-only notes about each participant: the manual "paid"
+      // flag (fees are collected outside the app during the pilot; later
+      // registration answers and payment records would live here too).
+      // Written directly by organizers, stamped with who and when. Not on
+      // the participant doc, which every participant can read.
+      match /organizerData/{participantUid} {
+        allow read: if isOrganizerOf(challengeDoc(competitionId));
+        allow create, update: if isOrganizerOf(challengeDoc(competitionId))
+          && request.resource.data.keys().hasOnly(
+            ['paid', 'paidUpdatedBy', 'paidUpdatedAt'])
+          && request.resource.data.paid is bool
+          && request.resource.data.paidUpdatedBy == request.auth.uid
+          && request.resource.data.paidUpdatedAt == request.time;
+        allow delete: if false;
+      }
+
+      // Organizer announcements (sendAnnouncement callable), for every
+      // member to read.
+      match /announcements/{announcementId} {
+        allow read: if isMemberOf(challengeDoc(competitionId));
+        allow write: if false;
+      }
+
       // Who did what, when, and why — organizers only, server-written so
       // it can't be edited after the fact.
       match /auditLog/{recordId} {

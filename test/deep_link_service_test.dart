@@ -53,4 +53,24 @@ void main() {
       expect(extract('https://havruta-app.web.app/#/'), isNull);
     });
   });
+
+  group('organizer dashboard links', () {
+    String? organize(String url) =>
+        DeepLinkService.extractOrganizerDashboardId(Uri.parse(url));
+
+    test('/organize/{id} opens that dashboard', () {
+      expect(organize('https://havruta-app.web.app/organize/c1'), 'c1');
+      expect(organize('https://havruta-app.web.app/organize/c1/'), 'c1');
+    });
+
+    test('anything else does not', () {
+      expect(organize('https://havruta-app.web.app/'), isNull);
+      expect(organize('https://havruta-app.web.app/organize'), isNull);
+      expect(organize('https://havruta-app.web.app/join/c1'), isNull);
+    });
+
+    test("a dashboard link isn't mistaken for an invite", () {
+      expect(extract('https://havruta-app.web.app/organize/c1'), isNull);
+    });
+  });
 }

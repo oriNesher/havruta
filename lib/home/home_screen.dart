@@ -12,6 +12,7 @@ import '../auth/auth_service.dart' as auth_service;
 import '../competitions/create_competition_screen.dart';
 import '../invites/pending_invites_screen.dart';
 import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 import '../services/progress_snapshot_cache.dart';
 import '../services/respect_service.dart';
 import '../services/respect_store.dart';
@@ -261,6 +262,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               },
             ),
             const SizedBox(height: 10),
+            const _WebPushPrompt(),
             _RespectSummary(uid: user.uid, firestoreService: _firestoreService),
             const SizedBox(height: 20),
             _CreateChallengeButton(uid: user.uid),
@@ -765,6 +767,102 @@ class _NextRespectBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// Web only: offer browser notifications (announcements from organizers),
+// here rather than at sign-in, and only while the browser hasn't been
+// asked yet. Renders nothing on Android/iOS or until a VAPID key exists.
+// ─────────────────────────────────────────────
+
+class _WebPushPrompt extends StatefulWidget {
+  const _WebPushPrompt();
+
+  @override
+  State<_WebPushPrompt> createState() => _WebPushPromptState();
+}
+
+class _WebPushPromptState extends State<_WebPushPrompt> {
+  // Dismissed for the rest of this session (the browser itself remembers
+  // the real answer once given).
+  static bool _dismissed = false;
+
+  final NotificationService _notifications = NotificationService();
+  bool _offer = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_dismissed) return;
+    _notifications.shouldOfferWebPush().then((offer) {
+      if (mounted) setState(() => _offer = offer);
+    });
+  }
+
+  Future<void> _enable() async {
+    setState(() => _busy = true);
+    final on = await _notifications.enableWebPush().catchError((Object e) {
+      debugPrint('Enabling web push failed: $e');
+      return false;
+    });
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _offer = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(on
+          ? "Notifications on — you'll get announcements here."
+          : 'Notifications stay off. You can allow them in your browser '
+              'settings any time.'),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_offer || _dismissed) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+          child: Row(
+            children: [
+              Icon(Icons.notifications_active_outlined,
+                  color: theme.colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Get notified',
+                        style: AppTheme.display(
+                            fontSize: 18, fontWeight: FontWeight.w700)),
+                    Text(
+                      'Announcements from your organizers and Challenge '
+                      'news, even when this tab is closed.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: _busy ? null : _enable,
+                child: const Text('Turn on'),
+              ),
+              IconButton(
+                tooltip: 'Not now',
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => setState(() => _dismissed = true),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

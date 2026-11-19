@@ -1317,6 +1317,8 @@ class _CompetitionEventRow extends StatelessWidget {
         return Icons.heart_broken;
       case 'aggressorTakeover':
         return kAggressorIcon;
+      case 'announcement':
+        return Icons.campaign;
       default:
         return Icons.notifications_none;
     }
@@ -1420,6 +1422,13 @@ class _CompetitionEventRow extends StatelessWidget {
           else
             name(target),
         ];
+      case 'announcement':
+        // From an organizer to everyone: the message itself is the news.
+        final message = (event.metadata?['text'] as String?)?.trim() ?? '';
+        return [
+          name(actor),
+          text(message.isEmpty ? ' posted an announcement' : ': $message'),
+        ];
       default:
         return [text('New activity')];
     }
@@ -1450,8 +1459,12 @@ class _CompetitionEventRow extends StatelessWidget {
     }
   }
 
+  // Not on announcements: they're an organizer talking, not an
+  // achievement to cheer.
   bool get _canGiveRespect =>
-      event.actorUid != null && event.actorUid != currentUid;
+      event.actorUid != null &&
+      event.actorUid != currentUid &&
+      event.type != 'announcement';
 
   @override
   Widget build(BuildContext context) {

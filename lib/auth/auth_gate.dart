@@ -8,6 +8,8 @@ import 'login_screen.dart';
 import 'username_screen.dart';
 import '../celebrations/celebration_gate.dart';
 import '../home/home_screen.dart';
+import '../organizer/organizer_dashboard_screen.dart';
+import '../services/deep_link_service.dart';
 import '../services/notification_service.dart';
 import '../services/pending_invite_store.dart';
 import '../competitions/invite_redeem_screen.dart';
@@ -125,6 +127,17 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
+  /// Web: the app was opened at /organize/{id} — open that dashboard on
+  /// top of Home (so backing out lands on Home), once.
+  void _openPendingOrganizerDashboard() {
+    final competitionId = DeepLinkService.pendingOrganizerDashboard;
+    if (competitionId == null) return;
+    DeepLinkService.pendingOrganizerDashboard = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) OrganizerDashboardScreen.open(context, competitionId);
+    });
+  }
+
   @override
   void dispose() {
     _authSubscription.cancel();
@@ -166,6 +179,8 @@ class _AuthGateState extends State<AuthGate> {
         onDone: () => setState(() => _pendingInviteLinkId = null),
       );
     }
+
+    _openPendingOrganizerDashboard();
 
     return CelebrationGate(uid: _user!.uid, child: const HomeScreen());
   }

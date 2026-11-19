@@ -25,6 +25,7 @@ const {setOrganizers} = require("../../organizer/setOrganizers");
 const {reinstateParticipant} =
   require("../../organizer/reinstateParticipant");
 const {acceptInvite} = require("../../invites/acceptInvite");
+const {sendAnnouncement} = require("../../organizer/sendAnnouncement");
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 const db = admin.firestore();
@@ -259,6 +260,35 @@ describe("reinstateParticipant", () => {
       await refused(call(reinstateParticipant, "olga",
         {uid: "carol", reason: "again"}), "failed-precondition", /still in/);
     });
+});
+
+describe("sendAnnouncement", () => {
+  test("stores it and puts it in everyone's feed but the sender's",
+    async () => {
+      const result = await call(sendAnnouncement, "olga",
+        {text: "Group run Saturday 7:00"}) as {
+          announcementId: string; recipientCount: number;
+        };
+      assert.equal(result.recipientCount, 3); // alice, bob, carol
+      const announcement = (await race.collection("announcements")
+        .doc(result.announcementId).get()).data() ?? {};
+      assert.equal(announcement.text, "Group run Saturday 7:00");
+      assert.equal(announcement.byUid, "olga");
+
+      const events = await race.collection("events")
+        .where("type", "==", "announcement").get();
+      assert.equal(events.size, 1);
+      const event = events.docs[0].data();
+      assert.deepEqual([...event.unseenByUserUids].sort(),
+        ["alice", "bob", "carol"]);
+      assert.equal(event.metadata.text, "Group run Saturday 7:00");
+      assert.equal("actorCelebrated" in event, false);
+    });
+
+  test("organizers only", async () => {
+    await refused(call(sendAnnouncement, "bob", {text: "hi all"}),
+      "permission-denied");
+  });
 });
 
 describe("setOrganizers", () => {

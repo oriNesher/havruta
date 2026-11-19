@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../app_theme.dart';
+import '../organizer/organizer_dashboard_screen.dart';
 import '../services/firestore_service.dart';
 import '../tips/feature_tip.dart';
 import '../tips/feature_tip_anchor.dart';
@@ -15,6 +16,7 @@ import 'progress_reporting.dart';
 import 'widgets/add_progress.dart';
 import 'widgets/aggressor_badge.dart';
 import 'widgets/challenge_activity_graph.dart';
+import 'widgets/confirm_irreversible_dialog.dart';
 import 'widgets/invite_link_card.dart';
 import 'widgets/personal_progress_panel.dart';
 
@@ -80,6 +82,8 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   // the leaderboard all read this one stream.
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _participantsStream =
       firestoreService.getCompetitionParticipants(widget.challenge.id);
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _announcementsStream =
+      firestoreService.getAnnouncements(widget.challenge.id, limit: 3);
   bool _isDeleting = false;
   bool _loggingProgress = false;
 
@@ -206,29 +210,20 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   }
 
   Future<void> _confirmAndDeleteCompetition() async {
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Delete Challenge'),
-          content: const Text(
-            'Are you sure you want to delete this challenge? This action cannot be undone.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
+    final title = widget.challenge.title.isNotEmpty
+        ? widget.challenge.title
+        : 'this Challenge';
+    final confirmed = await confirmIrreversible(
+      context,
+      what: 'Delete $title?',
+      consequences: const [
+        'The Challenge disappears for everyone in it.',
+        "Everyone's progress, activity and invites are deleted.",
+      ],
+      confirmLabel: 'Delete Challenge',
     );
 
-    if (shouldDelete != true) return;
+    if (confirmed == null || !mounted) return;
 
     setState(() {
       _isDeleting = true;
@@ -292,6 +287,7 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
   Widget _buildScreen(BuildContext context, Challenge challenge) {
     final user = FirebaseAuth.instance.currentUser;
     final isCreator = user != null && user.uid == challenge.createdBy;
+    final isOrganizer = user != null && challenge.isOrganizer(user.uid);
     final theme = Theme.of(context);
     final startsAt = challenge.startsAt;
     final endsAt = challenge.endsAt;
@@ -300,6 +296,13 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
       appBar: AppBar(
         title: const Text('Challenge Details'),
         actions: [
+          if (isOrganizer)
+            IconButton(
+              onPressed: () =>
+                  OrganizerDashboardScreen.open(context, challenge.id),
+              icon: const Icon(Icons.space_dashboard_outlined),
+              tooltip: 'Organizer dashboard',
+            ),
           if (isCreator)
             IconButton(
               onPressed: _isDeleting ? null : _confirmAndDeleteCompetition,
@@ -352,6 +355,10 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 ),
                 const SizedBox(height: 20),
               ],
+
+              // Organizer announcements, newest first; nothing at all for
+              // a challenge that never had one.
+              _AnnouncementsCard(stream: _announcementsStream),
 
               // Goal — legacy personal challenges show each participant's
               // own goal on their row instead.
@@ -420,6 +427,13 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                 Text('Your role', style: theme.textTheme.titleMedium),
                 const SizedBox(height: 6),
                 const Text("Organizer — you're not competing in this one"),
+                const SizedBox(height: 10),
+                FilledButton.tonalIcon(
+                  onPressed: () =>
+                      OrganizerDashboardScreen.open(context, challenge.id),
+                  icon: const Icon(Icons.space_dashboard_outlined, size: 18),
+                  label: const Text('Open organizer dashboard'),
+                ),
                 const SizedBox(height: 20),
               ],
 
@@ -968,6 +982,62 @@ class _StatusChip extends StatelessWidget {
           fontWeight: FontWeight.w700,
         ),
       ),
+    );
+  }
+}
+
+/// The latest organizer announcements, for everyone in the challenge.
+/// Renders nothing until there's at least one.
+class _AnnouncementsCard extends StatelessWidget {
+  final Stream<QuerySnapshot<Map<String, dynamic>>> stream;
+
+  const _AnnouncementsCard({required this.stream});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.campaign, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text('From the organizers',
+                          style: theme.textTheme.titleMedium),
+                    ],
+                  ),
+                  for (final doc in docs) ...[
+                    const SizedBox(height: 10),
+                    Text(doc.data()['text'] as String? ?? ''),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        doc.data()['byUsername'] as String? ?? 'An organizer',
+                        if (doc.data()['createdAt'] is Timestamp)
+                          _formatDate(
+                            (doc.data()['createdAt'] as Timestamp).toDate(),
+                          ),
+                      ].join(' · '),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

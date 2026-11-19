@@ -383,6 +383,21 @@ class FirestoreService {
     return doc.exists;
   }
 
+  /// Organizer announcements for a challenge, newest first (members only,
+  /// per firestore.rules).
+  Stream<QuerySnapshot<Map<String, dynamic>>> getAnnouncements(
+    String competitionId, {
+    int limit = 50,
+  }) {
+    return _db
+        .collection('competitions')
+        .doc(competitionId)
+        .collection('announcements')
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots();
+  }
+
   /// Get the most recent events for a single competition, newest first.
   /// Backs the home card's event carousel.
   Stream<QuerySnapshot<Map<String, dynamic>>> getCompetitionEvents(

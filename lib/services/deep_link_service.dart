@@ -17,12 +17,19 @@ import 'platform_web.dart';
 /// there is no equivalent of a warm-start stream, since arriving at a new
 /// URL reloads the app.
 class DeepLinkService {
+  /// A challenge whose organizer dashboard the web app was opened at
+  /// (/organize/{competitionId}); AuthGate opens it once the user is
+  /// signed in, then clears it. In memory only — the URL itself is what
+  /// survives a reload.
+  static String? pendingOrganizerDashboard;
+
   final _appLinks = AppLinks();
   final _pendingInviteStore = PendingInviteStore();
   StreamSubscription<Uri>? _subscription;
 
   Future<void> init() async {
     if (kIsWeb) {
+      pendingOrganizerDashboard = extractOrganizerDashboardId(Uri.base);
       await _handleUri(Uri.base);
       return;
     }
@@ -68,6 +75,15 @@ class DeepLinkService {
     final fragment = uri.fragment;
     if (fragment.isEmpty) return null;
     return _linkIdFromSegments(Uri.parse(fragment).pathSegments);
+  }
+
+  /// The challenge id in a web organizer-dashboard URL,
+  /// `https://<host>/organize/{competitionId}`, or null.
+  @visibleForTesting
+  static String? extractOrganizerDashboardId(Uri uri) {
+    final segments = uri.pathSegments;
+    if (segments.length < 2 || segments[0] != 'organize') return null;
+    return segments[1].isEmpty ? null : segments[1];
   }
 
   static const _invitePrefixes = {'i', 'join'};

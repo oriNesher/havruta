@@ -67,6 +67,12 @@ export const giveRespect = onCall<GiveRespectRequest>(
           "This event has no recipient."
         );
       }
+      if (eventData.type === "announcement") {
+        throw new HttpsError(
+          "failed-precondition",
+          "Announcements don't take Respect."
+        );
+      }
       if (actorUid === uid) {
         throw new HttpsError(
           "failed-precondition",

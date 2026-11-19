@@ -50,6 +50,7 @@ import {correctProgress} from "./organizer/correctProgress";
 import {endChallengeEarly} from "./organizer/endChallengeEarly";
 import {setOrganizers} from "./organizer/setOrganizers";
 import {reinstateParticipant} from "./organizer/reinstateParticipant";
+import {sendAnnouncement} from "./organizer/sendAnnouncement";
 
 admin.initializeApp();
 
@@ -59,7 +60,7 @@ export {createInvite, getInvite, redeemInvite, revokeInvite,
   grantDailyRespect, giveRespect, settleChallenges, googleSignInPreflight,
   acceptInvite, findUserByEmail, syncPublicProfile,
   updateChallengeSettings, removeParticipant, correctProgress,
-  endChallengeEarly, setOrganizers, reinstateParticipant};
+  endChallengeEarly, setOrganizers, reinstateParticipant, sendAnnouncement};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {

@@ -351,6 +351,48 @@ describe("organizers", () => {
       doc(as("olga"), "competitions/race/auditLog/a1")));
   });
 
+  test("organizers mark someone paid, stamped with who and when",
+    async () => {
+      const ref = doc(as("olga"), "competitions/race/organizerData/bob");
+      await assertSucceeds(setDoc(ref, {
+        paid: true, paidUpdatedBy: "olga", paidUpdatedAt: serverTimestamp(),
+      }));
+      await assertSucceeds(getDoc(ref));
+      // Not in someone else's name, not without a stamp, nothing extra.
+      await assertFails(setDoc(ref, {
+        paid: false, paidUpdatedBy: "alice", paidUpdatedAt: serverTimestamp(),
+      }));
+      await assertFails(setDoc(ref, {paid: true}));
+      await assertFails(setDoc(ref, {
+        paid: true, paidUpdatedBy: "olga", paidUpdatedAt: serverTimestamp(),
+        note: "cash",
+      }));
+      await assertFails(setDoc(ref, {
+        paid: "yes", paidUpdatedBy: "olga", paidUpdatedAt: serverTimestamp(),
+      }));
+    });
+
+  test("participants can't see or set the paid flag", async () => {
+    await assertFails(getDoc(
+      doc(as("bob"), "competitions/race/organizerData/bob")));
+    await assertFails(getDocs(
+      collection(as("bob"), "competitions/race/organizerData")));
+    await assertFails(setDoc(
+      doc(as("bob"), "competitions/race/organizerData/bob"),
+      {paid: true, paidUpdatedBy: "bob", paidUpdatedAt: serverTimestamp()}));
+  });
+
+  test("members read announcements; nobody writes them directly",
+    async () => {
+      await assertSucceeds(getDocs(
+        collection(as("bob"), "competitions/race/announcements")));
+      await assertFails(getDocs(
+        collection(as("sam"), "competitions/race/announcements")));
+      await assertFails(setDoc(
+        doc(as("olga"), "competitions/race/announcements/x"),
+        {text: "fake", byUid: "olga"}));
+    });
+
   test("a participant can't pass off a write as a correction", async () => {
     await assertFails(updateDoc(
       doc(as("bob"), "competitions/race/participants/bob"),
