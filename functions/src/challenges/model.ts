@@ -49,6 +49,16 @@ export interface AggressorState {
 }
 
 export interface ChallengeConfig {
+  /** The creator's uid; null only on malformed documents. */
+  createdBy: string | null;
+  /** Everyone competing. */
+  participantUids: string[];
+  /**
+   * Who runs the challenge. A document without organizerUids predates the
+   * organizer role and is run by its creator alone — the same fallback
+   * firestore.rules (organizersOf) applies.
+   */
+  organizerUids: string[];
   winCondition: WinCondition;
   /**
    * A pre-redesign personalGoalChallenge: still a race, but each
@@ -90,6 +100,21 @@ export interface ChallengeConfig {
  */
 export function isWinCondition(value: unknown): value is WinCondition {
   return (WIN_CONDITIONS as readonly unknown[]).includes(value);
+}
+
+/**
+ * Whether a user takes part in a challenge — competing or organizing.
+ * Mirrors isMemberOf in firestore.rules.
+ * @param {ChallengeConfig} challenge The challenge.
+ * @param {string} uid The user.
+ * @return {boolean} True for a participant or an organizer.
+ */
+export function isChallengeMember(
+  challenge: ChallengeConfig,
+  uid: string
+): boolean {
+  return challenge.participantUids.includes(uid) ||
+    challenge.organizerUids.includes(uid);
 }
 
 /**
@@ -146,8 +171,16 @@ export function parseChallenge(
     [data.winnerUid] :
     [];
   const rawAggressor = (data.aggressor ?? {}) as Record<string, unknown>;
+  const createdBy = typeof data.createdBy === "string" && data.createdBy ?
+    data.createdBy :
+    null;
 
   return {
+    createdBy,
+    participantUids: stringArray(data.participantUids),
+    organizerUids: Array.isArray(data.organizerUids) ?
+      stringArray(data.organizerUids) :
+      (createdBy ? [createdBy] : []),
     winCondition,
     isLegacyPersonal,
     goalTitle: typeof data.sharedGoalTitle === "string" ?

@@ -1,6 +1,7 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
+import {isChallengeMember, parseChallenge} from "../challenges/model";
 
 interface GiveRespectRequest {
   competitionId: string;
@@ -36,15 +37,25 @@ export const giveRespect = onCall<GiveRespectRequest>(
       .collection("events")
       .doc(eventId);
     const userRef = db.collection("users").doc(uid);
+    const competitionRef = db.collection("competitions").doc(competitionId);
 
     const balance = await db.runTransaction(async (tx) => {
-      const [eventSnap, userSnap] = await Promise.all([
+      const [eventSnap, userSnap, competitionSnap] = await Promise.all([
         tx.get(eventRef),
         tx.get(userRef),
+        tx.get(competitionRef),
       ]);
 
-      if (!eventSnap.exists) {
+      if (!eventSnap.exists || !competitionSnap.exists) {
         throw new HttpsError("not-found", "This event no longer exists.");
+      }
+      // Respect is a social signal between people in the same challenge.
+      if (!isChallengeMember(parseChallenge(competitionSnap.data() ?? {}),
+        uid)) {
+        throw new HttpsError(
+          "permission-denied",
+          "Only people in this challenge can give Respect here."
+        );
       }
 
       const eventData = eventSnap.data() || {};

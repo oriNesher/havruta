@@ -116,6 +116,27 @@ class InviteService {
     );
   }
 
+  /// Accept a direct (username/email) invite. Server-side because clients
+  /// can't add themselves to a challenge (firestore.rules); [goalTitle] and
+  /// [targetValue] are only for legacy Personal Goal challenges.
+  Future<({String competitionId, bool alreadyJoined})> acceptInvite({
+    required String inviteId,
+    String? goalTitle,
+    int? targetValue,
+  }) async {
+    final callable = _functions.httpsCallable('acceptInvite');
+    final result = await callable.call<Map<String, dynamic>>({
+      'inviteId': inviteId,
+      'goalTitle': ?goalTitle,
+      'targetValue': ?targetValue,
+    });
+    final data = Map<String, dynamic>.from(result.data as Map);
+    return (
+      competitionId: data['competitionId'] as String,
+      alreadyJoined: data['alreadyJoined'] == true,
+    );
+  }
+
   Future<void> revokeInvite({required String linkId}) async {
     final callable = _functions.httpsCallable('revokeInvite');
     await callable.call<Map<String, dynamic>>({'linkId': linkId});

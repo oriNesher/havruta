@@ -37,13 +37,17 @@ import {
 import {grantDailyRespect} from "./respect/grantDailyRespect";
 import {giveRespect} from "./respect/giveRespect";
 import {googleSignInPreflight} from "./auth/googleSignInPreflight";
+import {acceptInvite} from "./invites/acceptInvite";
+import {findUserByEmail} from "./users/findUserByEmail";
+import {syncPublicProfile} from "./users/syncPublicProfile";
 
 admin.initializeApp();
 
 export {createInvite, getInvite, redeemInvite, revokeInvite,
   onInviteLinkRedemptionCreated, inviteLanding,
   onCompetitionDeletedCleanupInviteLinks,
-  grantDailyRespect, giveRespect, settleChallenges, googleSignInPreflight};
+  grantDailyRespect, giveRespect, settleChallenges, googleSignInPreflight,
+  acceptInvite, findUserByEmail, syncPublicProfile};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {

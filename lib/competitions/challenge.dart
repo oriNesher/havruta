@@ -72,6 +72,11 @@ class Challenge {
   final String title;
   final String description;
   final String createdBy;
+
+  /// Who runs the challenge. A document without organizerUids predates the
+  /// organizer role and is run by its creator alone. Mirrors parseChallenge
+  /// and organizersOf in firestore.rules.
+  final List<String> organizerUids;
   final String status;
 
   final WinCondition winCondition;
@@ -124,6 +129,7 @@ class Challenge {
     required this.title,
     this.description = '',
     required this.createdBy,
+    this.organizerUids = const [],
     this.status = 'active',
     this.winCondition = WinCondition.firstToTarget,
     this.isLegacyPersonal = false,
@@ -154,12 +160,17 @@ class Challenge {
     final isLegacyPersonal =
         data['winCondition'] == null && data['type'] == 'personalGoalChallenge';
     final onboarding = data['onboarding'] as Map<String, dynamic>?;
+    final createdBy = data['createdBy'] as String? ?? '';
+    final organizerUids = data['organizerUids'] is List
+        ? (data['organizerUids'] as List).whereType<String>().toList()
+        : [if (createdBy.isNotEmpty) createdBy];
 
     return Challenge(
       id: id,
       title: data['title'] as String? ?? '',
       description: data['description'] as String? ?? '',
-      createdBy: data['createdBy'] as String? ?? '',
+      createdBy: createdBy,
+      organizerUids: organizerUids,
       status: data['status'] as String? ?? 'active',
       winCondition: winCondition,
       // Only documents written before win conditions can be personal; new
@@ -190,6 +201,8 @@ class Challenge {
           !isLegacyPersonal && onboarding?['isOnboarding'] != true,
     );
   }
+
+  bool isOrganizer(String uid) => organizerUids.contains(uid);
 
   bool get isActive => status == 'active';
   bool get isCompleted => status == 'completed';

@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../competitions/challenge.dart';
 
@@ -186,18 +186,18 @@ class FirestoreService {
         });
   }
 
-  /// Search users by usernameLower
-  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> findUserByUsername(
-    String username,
-  ) async {
+  /// Exact username lookup. Reads publicProfiles ({uid, username}), the
+  /// only part of another user that's visible — users/{uid} is private to
+  /// its owner.
+  Future<Map<String, dynamic>?> findUserByUsername(String username) async {
     final result = await _db
-        .collection('users')
+        .collection('publicProfiles')
         .where('usernameLower', isEqualTo: username.toLowerCase())
         .limit(1)
         .get();
 
     if (result.docs.isEmpty) return null;
-    return result.docs.first;
+    return result.docs.first.data();
   }
 
   /// Live prefix search on usernameLower, for as-you-type search fields.
@@ -209,7 +209,7 @@ class FirestoreService {
     if (normalized.isEmpty) return [];
 
     final result = await _db
-        .collection('users')
+        .collection('publicProfiles')
         .where('usernameLower', isGreaterThanOrEqualTo: normalized)
         .where('usernameLower', isLessThan: '$normalized')
         .limit(limit)
@@ -218,18 +218,14 @@ class FirestoreService {
     return result.docs;
   }
 
-  /// Search users by emailLower
-  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> findUserByEmail(
-    String email,
-  ) async {
-    final result = await _db
-        .collection('users')
-        .where('emailLower', isEqualTo: email.toLowerCase())
-        .limit(1)
-        .get();
-
-    if (result.docs.isEmpty) return null;
-    return result.docs.first;
+  /// Exact email lookup, server-side (emails aren't readable by other
+  /// users). Returns {uid, username}, or null when nobody has that email.
+  Future<Map<String, dynamic>?> findUserByEmail(String email) async {
+    final result = await FirebaseFunctions.instance
+        .httpsCallable('findUserByEmail')
+        .call<Map<String, dynamic>>({'email': email});
+    final user = (result.data as Map)['user'];
+    return user == null ? null : Map<String, dynamic>.from(user as Map);
   }
 
   /// Check if there is already a pending invite for this user in this competition
@@ -298,88 +294,6 @@ class FirestoreService {
         .snapshots();
   }
 
-  /// Accept an invite to a legacy Personal Goal challenge, defining the
-  /// joiner's own goal. Only reachable from invites sent before win
-  /// conditions; remove once those have all been answered.
-  Future<void> acceptCompetitionInvite({
-    required String inviteId,
-    required String competitionId,
-    required String uid,
-    required String username,
-    required String goalTitle,
-    required int targetValue,
-    required String unit,
-  }) async {
-    final competitionRef = _db.collection('competitions').doc(competitionId);
-    final participantRef = competitionRef.collection('participants').doc(uid);
-    final inviteRef = _db.collection('competition_invites').doc(inviteId);
-
-    try {
-      final batch = _db.batch();
-
-      batch.update(competitionRef, {
-        'participantUids': FieldValue.arrayUnion([uid]),
-      });
-
-      batch.set(participantRef, {
-        'uid': uid,
-        'username': username,
-        'goalTitle': goalTitle,
-        'targetValue': targetValue,
-        'unit': unit,
-        'progress': 0,
-        'joinedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      batch.update(inviteRef, {'status': 'accepted'});
-
-      await batch.commit();
-    } catch (e, st) {
-      debugPrint('ACCEPT_INVITE_SERVICE: ERROR -> $e');
-      debugPrint('ACCEPT_INVITE_SERVICE: STACK TRACE: $st');
-      rethrow;
-    }
-  }
-
-  /// Accept a challenge invite. The participant is added with the
-  /// challenge's shared goal; [targetValue] is the race finish line, null
-  /// for modes without one.
-  Future<void> acceptChallengeInvite({
-    required String inviteId,
-    required String competitionId,
-    required String uid,
-    required String username,
-    required String goalTitle,
-    required int? targetValue,
-    required String unit,
-  }) async {
-    final competitionRef = _db.collection('competitions').doc(competitionId);
-    final participantRef = competitionRef.collection('participants').doc(uid);
-    final inviteRef = _db.collection('competition_invites').doc(inviteId);
-
-    final batch = _db.batch();
-
-    batch.update(competitionRef, {
-      'participantUids': FieldValue.arrayUnion([uid]),
-    });
-
-    batch.set(participantRef, {
-      'uid': uid,
-      'username': username,
-      'goalTitle': goalTitle,
-      'targetValue': ?targetValue,
-      'unit': unit,
-      'progress': 0,
-      'joinedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-
-    batch.update(inviteRef, {'status': 'accepted'});
-
-    await batch.commit();
-  }
-
   /// Decline an invite
   Future<void> declineCompetitionInvite({required String inviteId}) async {
     await _db.collection('competition_invites').doc(inviteId).update({
@@ -387,42 +301,20 @@ class FirestoreService {
     });
   }
 
-  /// Delete competition (only creator should be allowed from UI / rules)
-  ///
-  /// The competition doc is deleted first, before its participants, so that
-  /// participant-deletion triggers can tell "competition ending" apart from
-  /// "participant leaving one that continues" by checking whether the
-  /// competition doc still exists.
+  /// Delete a challenge (creator only, per firestore.rules). Only the
+  /// challenge doc is deleted here: its participants, events, invites and
+  /// invite links are removed server-side by
+  /// onCompetitionDeletedCleanupInviteLinks, since clients can't delete
+  /// other people's data. Participant-deletion triggers fired by that
+  /// cleanup see the challenge is already gone and stay silent.
   Future<void> deleteCompetition(String competitionId) async {
-    final competitionRef = _db.collection('competitions').doc(competitionId);
-
-    await competitionRef.delete();
-
-    final participantsSnapshot = await competitionRef
-        .collection('participants')
-        .get();
-
-    for (final doc in participantsSnapshot.docs) {
-      await doc.reference.delete();
-    }
-
-    final invitesSnapshot = await _db
-        .collection('competition_invites')
-        .where('competitionId', isEqualTo: competitionId)
-        .get();
-
-    for (final doc in invitesSnapshot.docs) {
-      await doc.reference.delete();
-    }
-
-    // Invite links (and their redemptions) are server-only per
-    // firestore.rules; the onCompetitionDeletedCleanupInviteLinks trigger
-    // removes them once the competition doc above is gone.
+    await _db.collection('competitions').doc(competitionId).delete();
   }
 
-  /// Get username by uid
+  /// Another user's display name, from their public profile (users/{uid}
+  /// is private to its owner).
   Future<String?> getUsernameByUid(String uid) async {
-    final doc = await _db.collection('users').doc(uid).get();
+    final doc = await _db.collection('publicProfiles').doc(uid).get();
     final data = doc.data();
     return data?['username'] as String?;
   }

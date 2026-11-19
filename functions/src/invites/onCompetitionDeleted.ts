@@ -2,34 +2,49 @@ import {onDocumentDeleted} from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 
-// Invite links are a bearer credential that firestore.rules keeps entirely
-// server-side (no client read or write), so the client's deleteCompetition
-// can't clean them up itself. Deleting the challenge doc is the signal:
-// every link for it — and each link's redemptions subcollection — goes
-// here, so a leftover link can't keep resolving to a deleted challenge.
+// Deleting the challenge doc is the only client step of deleting a
+// challenge; everything hanging off it is cleaned up here, server-side,
+// because firestore.rules gives clients no delete access to any of it:
+// - its subcollections (participants, events, progress cursors, …) — no
+//   client may delete another participant's doc, and a deleted parent
+//   can't vouch for the deleter anyway;
+// - its direct invites (competition_invites), so none stays acceptable;
+// - its invite links and their redemptions — a bearer credential kept
+//   entirely server-side, so a leftover link can't keep resolving.
+// (The export keeps its original name: renaming a deployed function
+// deletes and recreates it.)
+// Safe to re-run if the trigger is retried: already-deleted docs simply
+// aren't found again. Participant deletions fired from here are skipped
+// by onParticipantLeaveCreateEvents, which sees the parent is gone.
 export const onCompetitionDeletedCleanupInviteLinks = onDocumentDeleted(
   {
     document: "competitions/{competitionId}",
     maxInstances: 5,
+    timeoutSeconds: 300,
   },
   async (event) => {
     const competitionId = event.params.competitionId;
     const db = admin.firestore();
 
-    const linksSnap = await db
-      .collection("challenge_invite_links")
-      .where("competitionId", "==", competitionId)
-      .get();
+    const [linksSnap, invitesSnap] = await Promise.all([
+      db.collection("challenge_invite_links")
+        .where("competitionId", "==", competitionId)
+        .get(),
+      db.collection("competition_invites")
+        .where("competitionId", "==", competitionId)
+        .get(),
+    ]);
 
-    // recursiveDelete also removes redemptions/{uid}. Safe to re-run if the
-    // trigger is retried: already-deleted links simply aren't found again.
-    await Promise.all(
-      linksSnap.docs.map((doc) => db.recursiveDelete(doc.ref))
-    );
+    await Promise.all([
+      db.recursiveDelete(db.collection("competitions").doc(competitionId)),
+      ...linksSnap.docs.map((doc) => db.recursiveDelete(doc.ref)),
+      ...invitesSnap.docs.map((doc) => doc.ref.delete()),
+    ]);
 
-    logger.info("Invite links cleaned up for deleted challenge", {
+    logger.info("Cleaned up deleted challenge", {
       competitionId,
       linkCount: linksSnap.size,
+      inviteCount: invitesSnap.size,
     });
   }
 );

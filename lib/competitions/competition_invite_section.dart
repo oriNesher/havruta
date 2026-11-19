@@ -74,11 +74,20 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
     });
 
     try {
-      final userDoc = input.contains('@')
-          ? await firestoreService.findUserByEmail(input)
-          : await firestoreService.findUserByUsername(input);
+      final Map<String, dynamic>? user;
+      try {
+        user = input.contains('@')
+            ? await firestoreService.findUserByEmail(input)
+            : await firestoreService.findUserByUsername(input);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not search: $e')));
+        return;
+      }
 
-      if (userDoc == null) {
+      if (user == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
@@ -86,7 +95,7 @@ class _CompetitionInviteSectionState extends State<CompetitionInviteSection> {
         return;
       }
 
-      await _sendInviteTo(userDoc.data());
+      await _sendInviteTo(user);
     } finally {
       if (mounted) {
         setState(() {

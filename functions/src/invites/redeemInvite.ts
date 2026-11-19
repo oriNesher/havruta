@@ -2,7 +2,12 @@ import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import {parseChallenge} from "../challenges/model";
-import {joinClosedReason, sharedGoalFields} from "../challenges/joining";
+import {
+  joinClosedReason,
+  personalGoalFields,
+  sharedGoalFields,
+} from "../challenges/joining";
+import {writeParticipantJoin} from "../challenges/addParticipant";
 
 interface RedeemInviteRequest {
   linkId: string;
@@ -102,38 +107,20 @@ export const redeemInvite = onCall<RedeemInviteRequest>(
       const userSnap = await tx.get(db.collection("users").doc(uid));
       const username = userSnap.data()?.username ?? "Someone";
 
-      let goalFields: {goalTitle: string; unit: string; targetValue?: number};
-
-      if (!challenge.isLegacyPersonal) {
-        goalFields = sharedGoalFields(challenge);
-      } else {
-        // Pre-redesign Personal Goal challenges: each joiner brings their
-        // own goal. Kept only until those challenges are done.
-        const {goalTitle: g, targetValue: t, unit: u} = request.data;
-        if (!g || !t || t <= 0) {
-          throw new HttpsError(
-            "invalid-argument",
-            "This is a personal goal challenge — goalTitle and targetValue " +
-              "are required to join."
-          );
-        }
-        // Unit is an optional detail; the join dialog no longer asks for
-        // it, and every display path already handles an empty unit.
-        goalFields = {goalTitle: g, targetValue: t, unit: u ?? ""};
+      // Pre-redesign Personal Goal challenges: each joiner brings their own
+      // goal. Kept only until those challenges are done.
+      const goalFields = challenge.isLegacyPersonal ?
+        personalGoalFields(request.data) :
+        sharedGoalFields(challenge);
+      if (!goalFields) {
+        throw new HttpsError(
+          "invalid-argument",
+          "This is a personal goal challenge — goalTitle and targetValue " +
+            "are required to join."
+        );
       }
 
-      tx.update(competitionRef, {
-        participantUids: admin.firestore.FieldValue.arrayUnion(uid),
-      });
-
-      tx.set(participantRef, {
-        uid,
-        username,
-        ...goalFields,
-        progress: 0,
-        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      writeParticipantJoin(tx, competitionRef, uid, username, goalFields);
 
       tx.set(redemptionRef, {
         uid,

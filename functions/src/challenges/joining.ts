@@ -50,6 +50,39 @@ export function joinClosesAtMillis(challenge: ChallengeConfig): number {
   return Math.min(endsAt, dayOneEnds);
 }
 
+/** The goal fields written onto a new participants/{uid} doc. */
+export interface ParticipantGoalFields {
+  goalTitle: string;
+  unit: string;
+  targetValue?: number;
+}
+
+/**
+ * The goal fields a joiner brings to a pre-redesign Personal Goal
+ * challenge, where each participant races to their own target — or null
+ * when the request doesn't define a usable goal. Unit is optional; every
+ * display path already handles an empty one.
+ * @param {object} input The join request's goal fields.
+ * @param {unknown} input.goalTitle Requested goal title.
+ * @param {unknown} input.targetValue Requested target.
+ * @param {unknown} input.unit Requested unit, if any.
+ * @return {ParticipantGoalFields | null} The fields, or null if invalid.
+ */
+export function personalGoalFields(input: {
+  goalTitle?: unknown;
+  targetValue?: unknown;
+  unit?: unknown;
+}): ParticipantGoalFields | null {
+  const {goalTitle, targetValue, unit} = input;
+  if (typeof goalTitle !== "string" || !goalTitle.trim()) return null;
+  if (typeof targetValue !== "number" || !(targetValue > 0)) return null;
+  return {
+    goalTitle,
+    targetValue,
+    unit: typeof unit === "string" ? unit : "",
+  };
+}
+
 /**
  * The goal fields a new participant doc gets: everyone shares the
  * challenge's goal, and only a race has a finish line to copy.
@@ -59,7 +92,7 @@ export function joinClosesAtMillis(challenge: ChallengeConfig): number {
  */
 export function sharedGoalFields(
   challenge: ChallengeConfig
-): {goalTitle: string; unit: string; targetValue?: number} {
+): ParticipantGoalFields {
   return {
     goalTitle: challenge.goalTitle,
     unit: challenge.unit,

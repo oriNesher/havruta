@@ -3,11 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_theme.dart';
 import '../competitions/challenge.dart';
 import '../services/firestore_service.dart';
+import '../services/invite_service.dart';
 import '../competitions/widgets/personal_goal_input_dialog.dart';
 
 class HomePendingInvitesSection extends StatelessWidget {
   final String uid;
   final _firestoreService = FirestoreService();
+  final _inviteService = InviteService();
 
   HomePendingInvitesSection({super.key, required this.uid});
 
@@ -31,20 +33,10 @@ class HomePendingInvitesSection extends StatelessWidget {
       creatorUnit: creatorUnit,
       submitLabel: 'Accept',
       onSubmit: (goalTitle, targetValue) async {
-        final username = await _firestoreService.getMyUsername(uid);
-        if (username == null || username.trim().isEmpty) {
-          throw Exception('Could not find your username');
-        }
-
-        await _firestoreService.acceptCompetitionInvite(
+        await _inviteService.acceptInvite(
           inviteId: inviteId,
-          competitionId: competitionId,
-          uid: uid,
-          username: username,
           goalTitle: goalTitle,
           targetValue: targetValue,
-          // Optional detail, no longer asked for when joining.
-          unit: '',
         );
       },
     );
@@ -79,27 +71,9 @@ class HomePendingInvitesSection extends StatelessWidget {
               });
 
               try {
-                final username = await _firestoreService.getMyUsername(uid);
-
-                if (username == null || username.trim().isEmpty) {
-                  if (!dialogContext.mounted) return;
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Could not find your username'),
-                    ),
-                  );
-                  return;
-                }
-
-                await _firestoreService.acceptChallengeInvite(
-                  inviteId: inviteId,
-                  competitionId: challenge.id,
-                  uid: uid,
-                  username: username,
-                  goalTitle: challenge.goalTitle,
-                  targetValue: challenge.targetValue,
-                  unit: challenge.unit,
-                );
+                // The server checks the invite and copies the challenge's
+                // goal onto the new participant.
+                await _inviteService.acceptInvite(inviteId: inviteId);
 
                 acceptedSuccessfully = true;
 

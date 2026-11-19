@@ -2,45 +2,96 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Reads stay as open as the current live rules (any signed-in user) —
-    // this file only tightens writes, to minimize regression risk against
-    // flows not covered below. See PR/commit notes for the client call
-    // sites each write rule was traced against.
+    // Access model: a challenge, its participants and its events are
+    // visible only to its members (participants and organizers). What
+    // other users may see of a person lives in publicProfiles; users/{uid}
+    // itself (email, push tokens, Respect wallet) is private to its owner.
+    // Joining a challenge is server-only (redeemInvite / acceptInvite), so
+    // membership can't be self-granted. Covered by the emulator tests in
+    // functions/src/rules/__tests__/.
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function challengeDoc(competitionId) {
+      return get(/databases/$(database)/documents/competitions/$(competitionId)).data;
+    }
+
+    // A challenge without organizerUids predates the organizer role and is
+    // run by its creator. Mirrors parseChallenge / Challenge.fromDoc.
+    function organizersOf(challenge) {
+      return challenge.get('organizerUids', [challenge.get('createdBy', '')]);
+    }
+
+    function isMemberOf(challenge) {
+      return signedIn() && (
+        request.auth.uid in challenge.get('participantUids', [])
+        || request.auth.uid in organizersOf(challenge));
+    }
+
+    function isOrganizerOf(challenge) {
+      return signedIn() && request.auth.uid in organizersOf(challenge);
+    }
+
+    // Pre-redesign Personal Goal challenges, where each participant owns
+    // their goal and target. Everywhere else the goal is the challenge's.
+    function isLegacyPersonal(challenge) {
+      return challenge.get('winCondition', null) == null
+        && challenge.get('type', '') == 'personalGoalChallenge';
+    }
+
+    // The Respect wallet is currency-like: only the grantDailyRespect and
+    // giveRespect callables (Admin SDK) may change it.
+    function serverOwnedUserKeys() {
+      return ['respectBalance', 'respectLastGrantDate', 'totalRespectReceived'];
+    }
 
     match /users/{uid} {
-      allow read: if request.auth != null;
+      allow read: if signedIn() && request.auth.uid == uid;
       // Every client write path (username_screen registration, FCM token
-      // save, streak update, lastCompetitionCreatedAt, seenTips) always
-      // targets the caller's own doc.
-      allow create, update: if request.auth != null && request.auth.uid == uid;
+      // save, streak update, lastCompetitionCreatedAt, seenTips) targets
+      // the caller's own doc and none touches the wallet.
+      allow create: if signedIn() && request.auth.uid == uid
+        && !request.resource.data.keys().hasAny(serverOwnedUserKeys());
+      allow update: if signedIn() && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(serverOwnedUserKeys());
       allow delete: if false;
 
       match /goals/{goalId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if signedIn() && request.auth.uid == uid;
       }
 
       match /competitionSnapshots/{snapshotId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if signedIn() && request.auth.uid == uid;
       }
 
       // Written only by the giveRespect callable (Admin SDK, bypasses these
       // rules) so a client can't fabricate its own "X gave you Respect"
       // notification.
       match /respectNotifications/{notifId} {
-        allow read: if request.auth != null && request.auth.uid == uid;
+        allow read: if signedIn() && request.auth.uid == uid;
         allow write: if false;
       }
     }
 
-    // Collection-group reads against "events" (getPendingCelebrations,
-    // getHomeEvents) need their own wildcard-path rule — Firestore does
-    // NOT apply the nested /competitions/{id}/events/{eventId} rule below
-    // to collectionGroup('events') queries, only to direct subcollection
-    // reads of one competition's events. Read-only; writes are still
-    // governed solely by the nested block, since this one is silent on
-    // create/update/delete.
+    // Username + uid only, mirrored from users/{uid} by syncPublicProfile.
+    // Backs username search and showing other people's names.
+    match /publicProfiles/{uid} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // Collection-group reads against "events" (getPendingCelebrations)
+    // need their own wildcard-path rule — Firestore does NOT apply the
+    // nested /competitions/{id}/events/{eventId} rule below to
+    // collectionGroup('events') queries. That query only ever asks for the
+    // caller's own events (actorUid == caller), so that's all this allows.
+    // Read-only; writes are governed solely by the nested block.
     match /{path=**}/events/{eventId} {
-      allow read: if request.auth != null;
+      allow read: if signedIn()
+        && resource.data.get('actorUid', null) == request.auth.uid;
     }
 
     // Challenge outcome state — who won, finish order, elimination
@@ -62,104 +113,95 @@ service cloud.firestore {
 
     // Progress may only change while the challenge is still running: not
     // after it completed, and not after its end time.
-    function challengeAcceptsProgress(competitionId) {
-      let challenge = get(/databases/$(database)/documents/competitions/$(competitionId)).data;
+    function challengeAcceptsProgress(challenge) {
       return challenge.get('status', 'active') == 'active'
         && (challenge.get('endsAt', null) == null
           || request.time < challenge.endsAt);
     }
 
     match /competitions/{competitionId} {
-      allow read: if request.auth != null;
+      // A missing doc reads as "doesn't exist" rather than "denied", so a
+      // member still viewing a challenge its creator just deleted sees it
+      // disappear instead of an error. Ids are random; nothing leaks.
+      allow read: if resource == null || isMemberOf(resource.data);
 
-      // Mirrors joinClosedReason (functions/src/challenges/joining.ts) for
-      // direct-invite self-joins: not once the challenge is over, and for
-      // Last One Standing not after day 1 (approximated as startsAt + 24h;
-      // rules can't do calendar math in the challenge's time zone).
-      function challengeAcceptsJoins() {
-        return resource.data.get('status', 'active') == 'active'
-          && (resource.data.get('endsAt', null) == null
-            || request.time < resource.data.endsAt)
-          && (resource.data.get('winCondition', '') != 'lastStanding'
-            || resource.data.get('startsAt', null) == null
-            || request.time < resource.data.startsAt + duration.value(1, 'd'));
-      }
-
-      // createCompetition/createSharedGoalCompetition always seed
-      // participantUids with only the creator.
-      allow create: if request.auth != null
+      // createChallenge always seeds participantUids (and, once written,
+      // organizerUids) with only the creator.
+      allow create: if signedIn()
         && request.auth.uid == request.resource.data.createdBy
         && request.resource.data.participantUids == [request.auth.uid]
+        && request.resource.data.get('organizerUids', [request.auth.uid])
+          == [request.auth.uid]
         && request.resource.data.get('status', 'active') == 'active'
         && request.resource.data.get('winnerUid', null) == null
         && !request.resource.data.keys().hasAny(serverOwnedChallengeKeys());
 
-      // Two allowed update shapes: the creator renaming/re-describing their
-      // own challenge (its definition and outcome are fixed once created),
-      // or a self-join adding exactly the caller's own uid to
-      // participantUids (acceptCompetitionInvite / addParticipant /
-      // redeemInvite's client-visible shape — redeemInvite itself runs
-      // via Admin SDK and bypasses this, but direct client self-joins hit
-      // this path).
-      allow update: if request.auth != null && (
-        (
-          request.auth.uid == resource.data.createdBy &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description'])
-        ) ||
-        (
-          challengeAcceptsJoins() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantUids']) &&
-          request.auth.uid in request.resource.data.participantUids &&
-          request.resource.data.participantUids.size() == resource.data.participantUids.size() + 1 &&
-          request.resource.data.participantUids.hasAll(resource.data.participantUids)
-        )
-      );
+      // An organizer renaming/re-describing the challenge is the only
+      // client update. Its definition and outcome are fixed once created,
+      // and membership (participantUids) changes only server-side.
+      allow update: if isOrganizerOf(resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['title', 'description']);
 
-      // Only the creator may delete a challenge (matches the existing
-      // deleteCompetition doc comment).
-      allow delete: if request.auth != null && request.auth.uid == resource.data.createdBy;
+      // Only the creator may delete a challenge. Everything under it is
+      // removed by onCompetitionDeletedCleanupInviteLinks.
+      allow delete: if signedIn()
+        && request.auth.uid == resource.data.createdBy;
 
       match /participants/{participantId} {
-        allow read: if request.auth != null;
-        // Every client write always targets the caller's own participant
-        // doc (createCompetition, acceptCompetitionInvite,
-        // updateProgress, updateParticipantGoal all pass uid = caller).
-        allow create: if request.auth != null
+        allow read: if isMemberOf(challengeDoc(competitionId));
+
+        // Your own doc, once the server (or challenge creation) has put
+        // you on participantUids, starting from zero progress.
+        allow create: if signedIn()
           && request.auth.uid == participantId
-          && !request.resource.data.keys().hasAny(serverOwnedParticipantKeys());
-        // Updates are progress reports and goal edits only, never by an
-        // eliminated participant, and only while the challenge runs.
-        allow update: if request.auth != null
+          && request.resource.data.uid == participantId
+          && request.auth.uid in challengeDoc(competitionId).get('participantUids', [])
+          && request.resource.data.get('progress', 0) == 0
+          && !request.resource.data.keys().hasAny(
+            serverOwnedParticipantKeys().concat(['dailyProgress']));
+
+        // Progress reports and (legacy personal challenges only) goal
+        // edits on your own doc, never once eliminated, only while the
+        // challenge runs. A shared goal's target belongs to the challenge:
+        // standings prefer a participant's own targetValue, so letting
+        // participants edit it would let them shorten their race.
+        allow update: if signedIn()
           && request.auth.uid == participantId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-            ['progress', 'updatedAt', 'dailyProgress', 'goalTitle', 'targetValue', 'unit'])
+          && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+              ['progress', 'updatedAt', 'dailyProgress'])
+            || (
+              isLegacyPersonal(challengeDoc(competitionId))
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                ['progress', 'updatedAt', 'dailyProgress', 'goalTitle',
+                  'targetValue', 'unit'])
+            )
+          )
+          && request.resource.data.get('progress', 0) is number
+          && request.resource.data.get('progress', 0) >= 0
           && !('eliminatedOnDay' in resource.data)
-          && challengeAcceptsProgress(competitionId);
-        // deleteCompetition (creator-only, cascades from the UI) deletes
-        // the competition doc first, then loops participant docs — by
-        // that point the parent doc is already gone, so a creator check
-        // here can't reliably re-verify against it. Left as-is (same
-        // permissiveness as the current live rules) rather than risk
-        // breaking the delete-challenge feature; not the focus of this
-        // pass, which is closing the invite-link bearer-token gap.
-        allow delete: if request.auth != null;
+          && challengeAcceptsProgress(challengeDoc(competitionId));
+
+        // Server-only: challenge deletion cascades in a Cloud Function.
+        allow delete: if false;
       }
 
       match /events/{eventId} {
-        allow read: if request.auth != null;
+        allow read: if isMemberOf(challengeDoc(competitionId));
         // Only Cloud Functions (Admin SDK, bypasses rules) create/delete
         // events. dismissEventsForUser and markEventsCelebrated are the two
         // client writes: removing the caller's own uid from
         // unseenByUserUids, or the event's actor flipping actorCelebrated.
         allow create, delete: if false;
-        allow update: if request.auth != null
+        allow update: if signedIn()
           && request.auth.uid in resource.data.unseenByUserUids
           && !(request.auth.uid in request.resource.data.unseenByUserUids)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unseenByUserUids']);
         // markEventsCelebrated: only the actor, only false -> true, and only
         // once (resource.data.actorCelebrated == false guards against a
         // caller replaying the write after it already landed).
-        allow update: if request.auth != null
+        allow update: if signedIn()
           && request.auth.uid == resource.data.actorUid
           && resource.data.actorCelebrated == false
           && request.resource.data.actorCelebrated == true
@@ -167,16 +209,31 @@ service cloud.firestore {
       }
     }
 
+    // Direct (username/email) invites. They carry a copy of the challenge's
+    // definition, so the recipient never needs to read the challenge
+    // itself before joining. Accepting goes through the acceptInvite
+    // callable; the client only ever declines.
     match /competition_invites/{inviteId} {
-      allow read: if request.auth != null;
-      // sendCompetitionInvite always writes fromUid = the caller.
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.fromUid;
-      // accept/decline are always performed by the invite's recipient.
-      allow update: if request.auth != null && request.auth.uid == resource.data.toUid;
-      // Same ordering caveat as competitions/participants delete above —
-      // deleteCompetition removes these after the parent competition doc
-      // is already gone. Left permissive, matching current behavior.
-      allow delete: if request.auth != null;
+      allow read: if signedIn() && (
+        resource.data.toUid == request.auth.uid
+        || resource.data.fromUid == request.auth.uid
+        || isMemberOf(challengeDoc(resource.data.competitionId)));
+      // Only into a challenge you're in, from yourself, to someone else.
+      allow create: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && isMemberOf(challengeDoc(request.resource.data.competitionId));
+      allow update: if signedIn()
+        && resource.data.toUid == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'declined'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      // The sender withdrawing it, or the challenge's organizer.
+      // Challenge deletion removes the rest server-side.
+      allow delete: if signedIn() && (
+        resource.data.fromUid == request.auth.uid
+        || isOrganizerOf(challengeDoc(resource.data.competitionId)));
     }
 
     // Reusable invite links are a bearer credential — whoever holds the

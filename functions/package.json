@@ -9,7 +9,8 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "tsc && node --test lib/events/__tests__/*.test.js lib/respect/__tests__/*.test.js lib/invites/__tests__/*.test.js lib/challenges/__tests__/*.test.js lib/auth/__tests__/*.test.js"
+    "test": "tsc && node --test lib/events/__tests__/*.test.js lib/respect/__tests__/*.test.js lib/invites/__tests__/*.test.js lib/challenges/__tests__/*.test.js lib/auth/__tests__/*.test.js lib/users/__tests__/*.test.js",
+    "test:rules": "tsc && firebase emulators:exec --only firestore --project demo-havruta-rules \"node --test lib/rules/__tests__/*.test.js\""
   },
   "engines": {
     "node": "22"
@@ -21,11 +22,13 @@
     "google-auth-library": "^9.15.1"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@typescript-eslint/eslint-plugin": "^5.12.0",
     "@typescript-eslint/parser": "^5.12.0",
     "eslint": "^8.9.0",
     "eslint-config-google": "^0.14.0",
     "eslint-plugin-import": "^2.25.4",
+    "firebase": "^11.10.0",
     "firebase-functions-test": "^3.1.0",
     "typescript": "^5.9.3"
   },
