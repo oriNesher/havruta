@@ -9,8 +9,8 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "tsc && node --test lib/events/__tests__/*.test.js lib/respect/__tests__/*.test.js lib/invites/__tests__/*.test.js lib/challenges/__tests__/*.test.js lib/auth/__tests__/*.test.js lib/users/__tests__/*.test.js",
-    "test:rules": "tsc && firebase emulators:exec --only firestore --project demo-havruta-rules \"node --test lib/rules/__tests__/*.test.js\""
+    "test": "tsc && node --test lib/events/__tests__/*.test.js lib/respect/__tests__/*.test.js lib/invites/__tests__/*.test.js lib/challenges/__tests__/*.test.js lib/auth/__tests__/*.test.js lib/users/__tests__/*.test.js lib/organizer/__tests__/*.test.js",
+    "test:rules": "tsc && firebase emulators:exec --only firestore --project demo-havruta-rules \"node --test lib/rules/__tests__/*.test.js lib/emulator/__tests__/*.test.js\""
   },
   "engines": {
     "node": "22"

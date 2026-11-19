@@ -46,6 +46,10 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
 
   String? _linkedGoalTitle;
 
+  /// Off for an organizer running a challenge for a group without
+  /// logging progress themselves.
+  bool _creatorCompetes = true;
+
   /// The creator's IANA zone; becomes the challenge calendar. Null (UTC)
   /// only if the platform couldn't report one.
   String? _timeZone;
@@ -220,13 +224,16 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
         timeZone: _timeZone,
         startsAt: startsAt,
         endsAt: endsAt,
-        linkedGoalTitle: _linkedGoalTitle,
+        linkedGoalTitle: _creatorCompetes ? _linkedGoalTitle : null,
+        creatorCompetes: _creatorCompetes,
       );
 
       final challenge = Challenge(
         id: competitionId,
         title: challengeName,
         createdBy: uid,
+        organizerUids: [uid],
+        participantUids: [if (_creatorCompetes) uid],
         winCondition: _mode,
         goalTitle: goalText,
         unit: unit,
@@ -487,7 +494,20 @@ class _CreateCompetitionScreenState extends State<CreateCompetitionScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 4),
+
+            // Organizing for a group without competing.
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _creatorCompetes,
+              onChanged: (value) => setState(() => _creatorCompetes = value),
+              title: const Text("I'm competing too"),
+              subtitle: const Text(
+                "Turn off if you're running this for a group and won't log "
+                'progress yourself. You stay the organizer either way.',
+              ),
+            ),
+            const SizedBox(height: 12),
 
             // Title
             _fieldSection(

@@ -36,7 +36,8 @@ class HomeCompetitionsSection extends StatefulWidget {
 
 class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
   late final FirestoreService _firestoreService;
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _competitionsStream;
+  late final Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _competitionsStream;
 
   @override
   void initState() {
@@ -47,7 +48,7 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
       stream: _competitionsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -64,7 +65,7 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
           return Text('Error: ${snapshot.error}');
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final docs = snapshot.data ?? [];
 
         if (docs.isEmpty) return const _NoChallengesCard();
 

@@ -411,6 +411,18 @@ class _CompetitionDetailsScreenState extends State<CompetitionDetailsScreen> {
                   : challenge.status),
               const SizedBox(height: 20),
 
+              // Only for an organizer who isn't competing — a friend
+              // challenge's creator (organizer and participant) sees no
+              // change here.
+              if (user != null &&
+                  challenge.isOrganizer(user.uid) &&
+                  !challenge.isParticipant(user.uid)) ...[
+                Text('Your role', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 6),
+                const Text("Organizer — you're not competing in this one"),
+                const SizedBox(height: 20),
+              ],
+
               Text(
                 'Started by',
                 style: theme.textTheme.titleMedium,

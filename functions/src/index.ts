@@ -23,6 +23,10 @@ import {settleChallenges} from "./challenges/settleChallenges";
 import {settleAggressor} from "./challenges/settleAggressor";
 import {parseChallenge} from "./challenges/model";
 import {persistEventDrafts} from "./events/persist";
+import {
+  isOrganizerCorrection,
+  keepForCorrection,
+} from "./events/corrections";
 import {createInvite} from "./invites/createInvite";
 import {getInvite} from "./invites/getInvite";
 import {redeemInvite} from "./invites/redeemInvite";
@@ -40,6 +44,12 @@ import {googleSignInPreflight} from "./auth/googleSignInPreflight";
 import {acceptInvite} from "./invites/acceptInvite";
 import {findUserByEmail} from "./users/findUserByEmail";
 import {syncPublicProfile} from "./users/syncPublicProfile";
+import {updateChallengeSettings} from "./organizer/updateChallengeSettings";
+import {removeParticipant} from "./organizer/removeParticipant";
+import {correctProgress} from "./organizer/correctProgress";
+import {endChallengeEarly} from "./organizer/endChallengeEarly";
+import {setOrganizers} from "./organizer/setOrganizers";
+import {reinstateParticipant} from "./organizer/reinstateParticipant";
 
 admin.initializeApp();
 
@@ -47,7 +57,9 @@ export {createInvite, getInvite, redeemInvite, revokeInvite,
   onInviteLinkRedemptionCreated, inviteLanding,
   onCompetitionDeletedCleanupInviteLinks,
   grantDailyRespect, giveRespect, settleChallenges, googleSignInPreflight,
-  acceptInvite, findUserByEmail, syncPublicProfile};
+  acceptInvite, findUserByEmail, syncPublicProfile,
+  updateChallengeSettings, removeParticipant, correctProgress,
+  endChallengeEarly, setOrganizers, reinstateParticipant};
 
 export const onParticipantProgressUpdate = onDocumentUpdated(
   {
@@ -69,6 +81,14 @@ export const onParticipantProgressUpdate = onDocumentUpdated(
 
     if (beforeProgress === afterProgress) {
       logger.info("Progress did not change");
+      return;
+    }
+
+    if (isOrganizerCorrection(before, after)) {
+      logger.info("Organizer correction, skipping notification", {
+        competitionId: event.params.competitionId,
+        participantId: event.params.participantId,
+      });
       return;
     }
 
@@ -241,6 +261,10 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
     const batchId = randomUUID();
     const beforeProgress = before.progress ?? 0;
     const afterProgress = after.progress ?? 0;
+    // An organizer's correction settles outcomes (badge, race finish) like
+    // any progress change, but isn't the participant doing something: no
+    // celebrations of it, no social events, no streak.
+    const correction = isOrganizerCorrection(before, after);
 
     // The badge settles first, and for decreases too (which skip every
     // other event): a race finish below can complete the challenge, which
@@ -250,7 +274,7 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
         await settleAggressor(
           event.params.competitionId,
           afterProgress > beforeProgress ? "progress" : "progressRemoved",
-          after.uid ?? null,
+          correction ? null : after.uid ?? null,
           batchId
         );
       } catch (error) {
@@ -266,9 +290,24 @@ export const onParticipantProgressCreateEvents = onDocumentUpdated(
       participantId: event.params.participantId,
       before,
       after,
+      countsAsActivity: !correction,
     });
 
     if (!context) {
+      return;
+    }
+
+    if (correction) {
+      const finishDrafts = await settleRaceFinish(
+        context,
+        keepForCorrection(detectProgressionEvents(context))
+      );
+      await persistEventDrafts(context.competitionId, finishDrafts, batchId);
+      logger.info("Correction processed", {
+        competitionId: context.competitionId,
+        actorUid: context.actorUid,
+        draftCount: finishDrafts.length,
+      });
       return;
     }
 

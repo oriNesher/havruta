@@ -90,6 +90,13 @@ beforeEach(async () => {
     await set("competitions/race/participants/eve", {
       uid: "eve", username: "eve", progress: 0, eliminatedOnDay: "2026-11-01",
     });
+    await set("competitions/race/entries/bobFix", {
+      uid: "bob", amount: -5, source: {type: "organizerCorrection"},
+      status: "counted",
+    });
+    await set("competitions/race/auditLog/a1", {
+      action: "correctProgress", actorUid: "olga", targetUid: "bob",
+    });
     await set("competitions/race/events/e1", {
       type: "progress", competitionId: "race", actorUid: "bob",
       unseenByUserUids: ["alice"], actorCelebrated: false,
@@ -259,6 +266,95 @@ describe("competitions: create, update, delete", () => {
     await assertFails(deleteDoc(doc(as("bob"), "competitions/race")));
     await assertFails(deleteDoc(doc(as("sam"), "competitions/race")));
     await assertSucceeds(deleteDoc(doc(as("alice"), "competitions/race")));
+  });
+});
+
+describe("organizers", () => {
+  const organized = (extra: Record<string, unknown> = {}) => ({
+    title: "Club run", description: "", createdBy: "olga",
+    participantUids: [], organizerUids: ["olga"], status: "active",
+    winnerUid: null, winCondition: "mostProgress", ...extra,
+  });
+
+  test("an organizer can create a challenge without competing", async () => {
+    await assertSucceeds(
+      setDoc(doc(as("olga"), "competitions/club"), organized()));
+    // ...and it shows up in their organizer query.
+    await assertSucceeds(getDocs(query(collection(as("olga"), "competitions"),
+      where("organizerUids", "array-contains", "olga"))));
+  });
+
+  test("organizing without competing still needs organizerUids", async () => {
+    const withoutOrganizers: Record<string, unknown> = organized();
+    delete withoutOrganizers.organizerUids;
+    await assertFails(setDoc(doc(as("olga"), "competitions/c1"),
+      withoutOrganizers));
+    await assertFails(setDoc(doc(as("olga"), "competitions/c2"),
+      organized({organizerUids: ["sam"]})));
+  });
+
+  test("creation can't seed removals or an early end", async () => {
+    await assertFails(setDoc(doc(as("olga"), "competitions/c3"),
+      organized({removedUids: ["bob"]})));
+    await assertFails(setDoc(doc(as("olga"), "competitions/c4"),
+      organized({endedEarly: {byUid: "olga"}})));
+  });
+
+  test("nobody else can query someone's organized challenges", async () => {
+    await assertFails(getDocs(query(collection(as("sam"), "competitions"),
+      where("organizerUids", "array-contains", "olga"))));
+  });
+
+  test("organizer powers aren't direct writes", async () => {
+    const challenge = doc(as("olga"), "competitions/race");
+    await assertFails(updateDoc(challenge, {endsAt: inAWeek()}));
+    await assertFails(updateDoc(challenge, {status: "completed"}));
+    await assertFails(updateDoc(challenge,
+      {removedUids: arrayUnion("bob")}));
+    await assertFails(deleteDoc(challenge));
+  });
+
+  test("entries: the participant's own and the organizers' only", async () => {
+    const path = "competitions/race/entries/bobFix";
+    await assertSucceeds(getDoc(doc(as("bob"), path)));
+    await assertSucceeds(getDoc(doc(as("olga"), path)));
+    await assertSucceeds(getDoc(doc(as("alice"), path)));
+    await assertFails(getDoc(doc(as("eve"), path)));
+    await assertFails(getDoc(doc(as("sam"), path)));
+    await assertSucceeds(getDocs(query(
+      collection(as("bob"), "competitions/race/entries"),
+      where("uid", "==", "bob"))));
+    await assertFails(getDocs(
+      collection(as("bob"), "competitions/race/entries")));
+    await assertSucceeds(getDocs(
+      collection(as("olga"), "competitions/race/entries")));
+  });
+
+  test("nobody writes entries directly yet", async () => {
+    await assertFails(setDoc(
+      doc(as("bob"), "competitions/race/entries/mine"),
+      {uid: "bob", amount: 1000}));
+    await assertFails(updateDoc(
+      doc(as("olga"), "competitions/race/entries/bobFix"), {amount: 0}));
+  });
+
+  test("the audit log is organizer-only and read-only", async () => {
+    await assertSucceeds(getDocs(
+      collection(as("olga"), "competitions/race/auditLog")));
+    await assertFails(getDocs(
+      collection(as("bob"), "competitions/race/auditLog")));
+    await assertFails(getDoc(
+      doc(as("sam"), "competitions/race/auditLog/a1")));
+    await assertFails(updateDoc(
+      doc(as("olga"), "competitions/race/auditLog/a1"), {reason: "edited"}));
+    await assertFails(deleteDoc(
+      doc(as("olga"), "competitions/race/auditLog/a1")));
+  });
+
+  test("a participant can't pass off a write as a correction", async () => {
+    await assertFails(updateDoc(
+      doc(as("bob"), "competitions/race/participants/bob"),
+      {progress: 50, lastCorrectionId: "fake"}));
   });
 });
 

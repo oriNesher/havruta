@@ -50,6 +50,22 @@ export function joinClosesAtMillis(challenge: ChallengeConfig): number {
   return Math.min(endsAt, dayOneEnds);
 }
 
+/**
+ * Why this particular user can't join, or null if nothing personal stops
+ * them (joinClosedReason covers the challenge being closed to everyone).
+ * @param {ChallengeConfig} challenge The challenge being joined.
+ * @param {string} uid The would-be joiner.
+ * @return {string | null} A user-facing reason, or null.
+ */
+export function joinRefusedReason(
+  challenge: ChallengeConfig,
+  uid: string
+): string | null {
+  return challenge.removedUids.includes(uid) ?
+    "An organizer removed you from this challenge." :
+    null;
+}
+
 /** The goal fields written onto a new participants/{uid} doc. */
 export interface ParticipantGoalFields {
   goalTitle: string;

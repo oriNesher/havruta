@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -35,7 +37,9 @@ class FirestoreService {
 
   /// Create a new challenge. Everyone shares one goal; [winCondition]
   /// decides how it's won. [targetValue] is the race's finish line (races
-  /// only); [rules] carries the daily minimum for Last One Standing.
+  /// only); [rules] carries the daily minimum for Last One Standing. The
+  /// creator is always its organizer, and also competes unless
+  /// [creatorCompetes] is false (an organizer running it for a group).
   /// Returns the new competition ID.
   Future<String> createChallenge({
     required String title,
@@ -52,6 +56,7 @@ class FirestoreService {
     DateTime? startsAt,
     DateTime? endsAt,
     String? linkedGoalTitle,
+    bool creatorCompetes = true,
   }) async {
     final isRace = winCondition == WinCondition.firstToTarget;
 
@@ -59,7 +64,8 @@ class FirestoreService {
       'title': title,
       'description': description,
       'createdBy': createdBy,
-      'participantUids': [createdBy],
+      'participantUids': [if (creatorCompetes) createdBy],
+      'organizerUids': [createdBy],
       'status': 'active',
       'winnerUid': null,
       'winCondition': winCondition.name,
@@ -81,17 +87,19 @@ class FirestoreService {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    await competitionRef.collection('participants').doc(createdBy).set({
-      'uid': createdBy,
-      'username': creatorUsername,
-      'goalTitle': goalTitle,
-      if (isRace && targetValue != null) 'targetValue': targetValue,
-      'unit': unit,
-      'progress': 0,
-      'joinedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'linkedGoalTitle': ?linkedGoalTitle,
-    });
+    if (creatorCompetes) {
+      await competitionRef.collection('participants').doc(createdBy).set({
+        'uid': createdBy,
+        'username': creatorUsername,
+        'goalTitle': goalTitle,
+        if (isRace && targetValue != null) 'targetValue': targetValue,
+        'unit': unit,
+        'progress': 0,
+        'joinedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'linkedGoalTitle': ?linkedGoalTitle,
+      });
+    }
 
     await _db.collection('users').doc(createdBy).update({
       'lastCompetitionCreatedAt': FieldValue.serverTimestamp(),
@@ -100,12 +108,54 @@ class FirestoreService {
     return competitionRef.id;
   }
 
-  /// Get competitions that the user participates in
-  Stream<QuerySnapshot<Map<String, dynamic>>> getUserCompetitions(String uid) {
-    return _db
-        .collection('competitions')
-        .where('participantUids', arrayContains: uid)
-        .snapshots();
+  /// Challenges the user competes in or organizes, merged (a creator who
+  /// competes matches both queries; each challenge appears once). Emits
+  /// once both queries have reported. Firestore can't OR two array-contains
+  /// filters in one query, hence the two listeners.
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getUserCompetitions(
+    String uid,
+  ) {
+    final competitions = _db.collection('competitions');
+    final queries = [
+      competitions.where('participantUids', arrayContains: uid),
+      competitions.where('organizerUids', arrayContains: uid),
+    ];
+    final latest = List<List<QueryDocumentSnapshot<Map<String, dynamic>>>?>
+        .filled(queries.length, null);
+    final subscriptions = <StreamSubscription<Object?>>[];
+    late final StreamController<
+      List<QueryDocumentSnapshot<Map<String, dynamic>>>
+    > controller;
+
+    void emit() {
+      if (latest.any((docs) => docs == null)) return;
+      final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      for (final docs in latest) {
+        for (final doc in docs!) {
+          byId[doc.id] = doc;
+        }
+      }
+      controller.add(byId.values.toList());
+    }
+
+    controller = StreamController(
+      onListen: () {
+        for (var i = 0; i < queries.length; i++) {
+          subscriptions.add(
+            queries[i].snapshots().listen((snapshot) {
+              latest[i] = snapshot.docs;
+              emit();
+            }, onError: controller.addError),
+          );
+        }
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+    return controller.stream;
   }
 
   /// Get a single competition by id

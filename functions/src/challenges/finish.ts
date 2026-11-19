@@ -3,8 +3,7 @@ import * as logger from "firebase-functions/logger";
 import {EventDraft, EventsContext} from "../events/types";
 import {parseChallenge} from "./model";
 import {claimFinish} from "./winConditions/firstToTarget";
-
-const COMPLETION_TYPES = ["won", "finishedInPosition"];
+import {COMPLETION_TYPES} from "../events/corrections";
 
 /**
  * Settles a race completion the progression rule detected: claims the

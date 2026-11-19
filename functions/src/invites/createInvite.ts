@@ -2,7 +2,7 @@ import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 import {buildInviteUrl} from "./config";
-import {parseChallenge} from "../challenges/model";
+import {isChallengeMember, parseChallenge} from "../challenges/model";
 import {
   joinClosedReason,
   joinClosesAtMillis,
@@ -61,17 +61,17 @@ export const createInvite = onCall<CreateInviteRequest>(
     }
 
     const competitionData = competitionSnap.data() || {};
-    const participantUids = (competitionData.participantUids as string[]) ?? [];
+    const challenge = parseChallenge(competitionData);
 
-    if (!participantUids.includes(uid)) {
+    // Organizers who don't compete invite people too.
+    if (!isChallengeMember(challenge, uid)) {
       throw new HttpsError(
         "permission-denied",
-        "Only participants can create an invite link for this challenge."
+        "Only people in this challenge can create an invite link for it."
       );
     }
 
     const now = Date.now();
-    const challenge = parseChallenge(competitionData);
     const closedReason = joinClosedReason(challenge, now);
     if (closedReason) {
       throw new HttpsError("failed-precondition", closedReason);

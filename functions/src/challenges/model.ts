@@ -59,6 +59,11 @@ export interface ChallengeConfig {
    * firestore.rules (organizersOf) applies.
    */
   organizerUids: string[];
+  /**
+   * Participants an organizer removed. Server-written; they can't rejoin
+   * through any invite.
+   */
+  removedUids: string[];
   winCondition: WinCondition;
   /**
    * A pre-redesign personalGoalChallenge: still a race, but each
@@ -181,6 +186,7 @@ export function parseChallenge(
     organizerUids: Array.isArray(data.organizerUids) ?
       stringArray(data.organizerUids) :
       (createdBy ? [createdBy] : []),
+    removedUids: stringArray(data.removedUids),
     winCondition,
     isLegacyPersonal,
     goalTitle: typeof data.sharedGoalTitle === "string" ?

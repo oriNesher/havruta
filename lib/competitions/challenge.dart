@@ -77,6 +77,9 @@ class Challenge {
   /// organizer role and is run by its creator alone. Mirrors parseChallenge
   /// and organizersOf in firestore.rules.
   final List<String> organizerUids;
+
+  /// Everyone competing. An organizer who doesn't compete isn't on it.
+  final List<String> participantUids;
   final String status;
 
   final WinCondition winCondition;
@@ -130,6 +133,7 @@ class Challenge {
     this.description = '',
     required this.createdBy,
     this.organizerUids = const [],
+    this.participantUids = const [],
     this.status = 'active',
     this.winCondition = WinCondition.firstToTarget,
     this.isLegacyPersonal = false,
@@ -171,6 +175,9 @@ class Challenge {
       description: data['description'] as String? ?? '',
       createdBy: createdBy,
       organizerUids: organizerUids,
+      participantUids:
+          (data['participantUids'] as List?)?.whereType<String>().toList() ??
+          const [],
       status: data['status'] as String? ?? 'active',
       winCondition: winCondition,
       // Only documents written before win conditions can be personal; new
@@ -203,6 +210,8 @@ class Challenge {
   }
 
   bool isOrganizer(String uid) => organizerUids.contains(uid);
+
+  bool isParticipant(String uid) => participantUids.contains(uid);
 
   bool get isActive => status == 'active';
   bool get isCompleted => status == 'completed';

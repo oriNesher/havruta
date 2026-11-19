@@ -4,6 +4,7 @@ import * as logger from "firebase-functions/logger";
 import {parseChallenge} from "../challenges/model";
 import {
   joinClosedReason,
+  joinRefusedReason,
   personalGoalFields,
   sharedGoalFields,
 } from "../challenges/joining";
@@ -82,7 +83,8 @@ export const redeemInvite = onCall<RedeemInviteRequest>(
 
       const competitionData = competitionSnap.data() || {};
       const challenge = parseChallenge(competitionData);
-      const closedReason = joinClosedReason(challenge, Date.now());
+      const closedReason = joinClosedReason(challenge, Date.now()) ??
+        joinRefusedReason(challenge, uid);
       if (closedReason) {
         throw new HttpsError("failed-precondition", closedReason);
       }

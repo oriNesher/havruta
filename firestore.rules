@@ -101,14 +101,15 @@ service cloud.firestore {
     function serverOwnedChallengeKeys() {
       return ['winnerUids', 'finisherUids', 'legacyFinisherCount',
         'completedAt', 'lastEvaluatedDay', 'startingParticipantCount',
-        'aggressor'];
+        'aggressor', 'removedUids', 'endedEarly'];
     }
 
     // Server-written participant fields (elimination; the streak fields
-    // claimActiveDay maintains).
+    // claimActiveDay maintains; lastCorrectionId, which marks a write as an
+    // organizer correction for the progress triggers).
     function serverOwnedParticipantKeys() {
       return ['eliminatedOnDay', 'eliminatedAt', 'currentStreak',
-        'lastActiveDate'];
+        'lastActiveDate', 'lastCorrectionId'];
     }
 
     // Progress may only change while the challenge is still running: not
@@ -125,20 +126,26 @@ service cloud.firestore {
       // disappear instead of an error. Ids are random; nothing leaks.
       allow read: if resource == null || isMemberOf(resource.data);
 
-      // createChallenge always seeds participantUids (and, once written,
-      // organizerUids) with only the creator.
+      // createChallenge seeds the creator as the only organizer, and as the
+      // only participant unless they're organizing without competing
+      // (then participantUids starts empty). Builds from before the
+      // organizer role omit organizerUids; the creator is then implied.
       allow create: if signedIn()
         && request.auth.uid == request.resource.data.createdBy
-        && request.resource.data.participantUids == [request.auth.uid]
         && request.resource.data.get('organizerUids', [request.auth.uid])
           == [request.auth.uid]
+        && (request.resource.data.participantUids == [request.auth.uid]
+          || (request.resource.data.participantUids == []
+            && request.resource.data.get('organizerUids', []) == [request.auth.uid]))
         && request.resource.data.get('status', 'active') == 'active'
         && request.resource.data.get('winnerUid', null) == null
         && !request.resource.data.keys().hasAny(serverOwnedChallengeKeys());
 
       // An organizer renaming/re-describing the challenge is the only
-      // client update. Its definition and outcome are fixed once created,
-      // and membership (participantUids) changes only server-side.
+      // client update. Every other organizer power (dates, rules, removing
+      // participants, corrections, ending early, co-organizers) goes
+      // through an audited callable in functions/src/organizer/; outcome
+      // and membership change only server-side.
       allow update: if isOrganizerOf(resource.data)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['title', 'description']);
@@ -185,6 +192,23 @@ service cloud.firestore {
 
         // Server-only: challenge deletion cascades in a Cloud Function.
         allow delete: if false;
+      }
+
+      // Progress entries (corrections now; proof-backed reports later).
+      // Private to the participant they belong to and the organizers.
+      // Written only by Cloud Functions for now.
+      match /entries/{entryId} {
+        allow read: if signedIn() && (
+          resource.data.uid == request.auth.uid
+          || isOrganizerOf(challengeDoc(competitionId)));
+        allow write: if false;
+      }
+
+      // Who did what, when, and why — organizers only, server-written so
+      // it can't be edited after the fact.
+      match /auditLog/{recordId} {
+        allow read: if isOrganizerOf(challengeDoc(competitionId));
+        allow write: if false;
       }
 
       match /events/{eventId} {

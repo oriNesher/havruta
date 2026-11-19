@@ -10,6 +10,12 @@ export interface BuildContextParams {
   participantId: string;
   before: FirebaseFirestore.DocumentData;
   after: FirebaseFirestore.DocumentData;
+  /**
+   * Whether this write is the participant being active (default true). An
+   * organizer correction isn't: it must not claim an active day or extend
+   * the activity streak.
+   */
+  countsAsActivity?: boolean;
 }
 
 interface ActiveDayClaim {
@@ -195,7 +201,15 @@ export async function buildEventsContext(
     .doc(participantId);
 
   const {todayDateStr, isNewActiveDay, newStreakCount} =
-    await claimActiveDay(participantRef, todayTimestamp);
+    params.countsAsActivity === false ?
+      {
+        todayDateStr: toDateString(todayTimestamp),
+        isNewActiveDay: false,
+        newStreakCount: typeof after.currentStreak === "number" ?
+          after.currentStreak :
+          0,
+      } :
+      await claimActiveDay(participantRef, todayTimestamp);
 
   return {
     competitionId,
