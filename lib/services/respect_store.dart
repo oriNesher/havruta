@@ -18,15 +18,21 @@ class RespectStore extends ChangeNotifier {
 
   int _serverBalance = 0;
   int _pendingSpend = 0;
+  int _totalReceived = 0;
 
   int get displayBalance => (_serverBalance - _pendingSpend).clamp(0, 1 << 31);
 
   bool get isWalletFull => displayBalance >= walletCapacity;
 
-  /// Called from a live listener on the user doc whenever the server
-  /// balance changes (daily grant or a confirmed spend).
-  void updateServerBalance(int balance) {
+  /// Lifetime Respect received (users/{uid}.totalRespectReceived).
+  int get totalReceived => _totalReceived;
+
+  /// Called from Home's live listener on the user doc whenever the server
+  /// balance changes (daily grant or a confirmed spend), and from callable
+  /// results. [totalReceived] only comes from the user doc.
+  void updateServerBalance(int balance, {int? totalReceived}) {
     _serverBalance = balance;
+    if (totalReceived != null) _totalReceived = totalReceived;
     notifyListeners();
   }
 
@@ -53,6 +59,7 @@ class RespectStore extends ChangeNotifier {
   void reset() {
     _serverBalance = 0;
     _pendingSpend = 0;
+    _totalReceived = 0;
     notifyListeners();
   }
 }

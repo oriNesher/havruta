@@ -28,6 +28,16 @@ class FirestoreService {
         .snapshots();
   }
 
+  /// Marks every Respect notification so far as seen (users/{uid}
+  /// .respectSeenAt), which clears the bell's Respect dot and popup.
+  /// Cosmetic and per-user, so a direct client write like lastOpenedDate.
+  Future<void> markRespectSeen(String uid) {
+    return _db.collection('users').doc(uid).set(
+      {'respectSeenAt': FieldValue.serverTimestamp()},
+      SetOptions(merge: true),
+    );
+  }
+
   /// Get username from uid
   Future<String?> getMyUsername(String uid) async {
     final doc = await _db.collection('users').doc(uid).get();

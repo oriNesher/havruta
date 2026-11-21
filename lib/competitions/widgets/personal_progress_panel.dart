@@ -19,9 +19,9 @@ class PersonalProgressPanel extends StatelessWidget {
   final Map<String, dynamic> me;
 
   /// The Home card's version, the same for every mode: a glance ring beside
-  /// the viewer's recent progress, then the Aggressor Badge (who holds it,
-  /// and how far the viewer is from taking or keeping it). The full curve
-  /// and calendar stay on Challenge Details.
+  /// the viewer's recent progress, with the Aggressor Badge's status (who
+  /// holds it, and how far the viewer is from taking or keeping it) tucked
+  /// under the latter. The full curve and calendar stay on Challenge Details.
   final bool compact;
 
   /// Everyone's participant docs, for the compact view.
@@ -45,40 +45,46 @@ class PersonalProgressPanel extends StatelessWidget {
       final participants = this.participants ?? [me];
       final ring = glanceRingOf(challenge, progress, me, participants);
       final uid = me['uid'] as String?;
+      final showAggressor = uid != null && challenge.hasAggressorBadge;
 
+      // Its own height whatever it's placed in; the Home card centres it in
+      // whatever space the card has.
       return Padding(
-        padding: const EdgeInsets.only(top: 8, bottom: 10),
-        child: Column(
-          // Its own height whatever it's placed in — the Home carousel sizes
-          // itself from this.
-          mainAxisSize: MainAxisSize.min,
+        padding: const EdgeInsets.only(top: 22, bottom: 20),
+        child: Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Center(
-                    child: ring != null
-                        ? _GlanceRingView(ring: ring)
-                        : _Headline(headline: progress.headline, compact: true),
-                  ),
-                ),
-                const _HalfDivider(),
-                Expanded(
-                  child: Center(
-                    child: _RecentProgress(
+            Expanded(
+              child: Center(
+                child: ring != null
+                    ? _GlanceRingView(ring: ring)
+                    : _Headline(headline: progress.headline, compact: true),
+              ),
+            ),
+            _HalfDivider(height: showAggressor ? 116 : 88),
+            Expanded(
+              // Left-aligned rather than centred, so the stat and the badge
+              // under it share one edge whatever their widths.
+              child: Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _RecentProgress(
                       amount: aggressorWindowTotal(challenge, me, now),
                     ),
-                  ),
+                    if (showAggressor) ...[
+                      const SizedBox(height: 16),
+                      _AggressorStatus(
+                        challenge: challenge,
+                        standing:
+                            aggressorStanding(challenge, participants, uid, now),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
-            if (uid != null && challenge.hasAggressorBadge) ...[
-              const SizedBox(height: 18),
-              _AggressorBanner(
-                challenge: challenge,
-                standing: aggressorStanding(challenge, participants, uid, now),
               ),
-            ],
+            ),
           ],
         ),
       );
@@ -272,7 +278,7 @@ class _GlanceRingView extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final size = math.min(constraints.maxWidth * 0.85, 124.0);
+        final size = math.min(constraints.maxWidth * 0.85, 132.0);
         return SizedBox.square(
           dimension: size,
           child: CustomPaint(
@@ -325,12 +331,16 @@ class _GlanceRingView extends StatelessWidget {
 }
 
 class _HalfDivider extends StatelessWidget {
-  const _HalfDivider();
+  /// Fixed rather than matched to the row: the ring's LayoutBuilder rules
+  /// out IntrinsicHeight.
+  final double height;
+
+  const _HalfDivider({required this.height});
 
   @override
   Widget build(BuildContext context) => Container(
     width: 1,
-    height: 88,
+    height: height,
     color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.25),
   );
 }
@@ -345,87 +355,100 @@ class _RecentProgress extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.trending_up, size: 18, color: scheme.primary),
-                const SizedBox(width: 6),
-                Text(
-                  'Recent progress',
-                  maxLines: 1,
-                  style: AppTheme.display(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface.withValues(alpha: 0.85),
-                  ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.trending_up, size: 18, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Recent progress',
+                maxLines: 1,
+                style: AppTheme.display(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface.withValues(alpha: 0.85),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              amount > 0 ? '+${formatCount(amount)}' : '0',
-              maxLines: 1,
-              style: AppTheme.mono(
-                fontSize: 44,
-                fontWeight: FontWeight.w800,
-                color: amount > 0
-                    ? scheme.primary
-                    : scheme.onSurface.withValues(alpha: 0.4),
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            amount > 0 ? '+${formatCount(amount)}' : '0',
+            maxLines: 1,
+            style: AppTheme.mono(
+              fontSize: 44,
+              fontWeight: FontWeight.w800,
+              color: amount > 0
+                  ? scheme.primary
+                  : scheme.onSurface.withValues(alpha: 0.4),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
 // ─────────────────────────────────────────────
-// Aggressor banner — who holds it, and how far the viewer is from it
+// Aggressor status — who holds it, and how far the viewer is from it
 // ─────────────────────────────────────────────
 
-/// Full width under the top row. Tapping it explains the badge.
-class _AggressorBanner extends StatelessWidget {
+/// How the viewer stands with the badge, which sets how loudly it's drawn.
+enum _AggressorTone { held, contested, over }
+
+/// A quiet outlined tag under Recent progress (the badge, plus the holder's
+/// window total) over a short caption: who holds it and what it'd take to
+/// get or keep it. Brighter while the viewer holds it, grey once the
+/// Challenge is over. Tapping it explains the badge.
+class _AggressorStatus extends StatelessWidget {
   final Challenge challenge;
   final AggressorStanding standing;
 
-  const _AggressorBanner({required this.challenge, required this.standing});
+  const _AggressorStatus({required this.challenge, required this.standing});
 
-  /// The line under the name: what it'd take to get or keep the badge.
-  String _distanceLine() {
+  /// Short enough for half the card: an emphasised lead (usually who holds
+  /// it), then the rest of the sentence with its own joiner.
+  (String?, String) _caption() {
     final unitSuffix = challenge.unit.isNotEmpty ? ' ${challenge.unit}' : '';
     String amount(int value) => '${formatCount(value)}$unitSuffix';
+    final holder = standing.viewerHolds ? 'You' : standing.holderUsername;
+    final closest = standing.closestUsername;
+
+    /// "Dana · rest", or just "Rest" while nobody holds it.
+    (String?, String) afterHolder(String rest) => holder == null
+        ? (null, '${rest[0].toUpperCase()}${rest.substring(1)}')
+        : (holder, ' · $rest');
 
     return switch (standing) {
       _ when challenge.isCompleted =>
-        standing.holderUsername != null
-            ? 'Held it when the Challenge ended'
-            : 'Nobody held it at the end',
-      AggressorStanding(needsRival: true) => 'Invite someone to compete for it',
+        holder != null
+            ? (holder, ' held it at the end')
+            : (null, 'Nobody held it at the end'),
+      AggressorStanding(needsRival: true) =>
+        afterHolder('invite a rival to compete for it'),
       AggressorStanding(viewerHolds: true, lead: final lead?) when lead == 0 =>
-        '${standing.closestUsername ?? 'Someone'} is tied with you',
+        ('You', ' · tied with ${closest ?? 'someone'}'),
       AggressorStanding(viewerHolds: true, lead: final lead?) =>
-        'You lead ${standing.closestUsername ?? 'the rest'} by ${amount(lead)}',
-      AggressorStanding(viewerHolds: true) => "Nobody's close yet",
-      AggressorStanding(viewerOut: true) => "You're out of the running",
+        ('You', ' lead ${closest ?? 'the rest'} by ${amount(lead)}'),
+      AggressorStanding(viewerHolds: true) => ('You', " · nobody's close yet"),
+      AggressorStanding(viewerOut: true) =>
+        afterHolder("you're out of the running"),
       AggressorStanding(toTake: final toTake?)
           when standing.holderUsername == null =>
-        'Log ${amount(toTake)} to claim it',
-      AggressorStanding(toTake: final toTake?) =>
-        '${_gapIsBig(toTake) ? '' : 'Only '}${amount(toTake)} '
-            'to snatch it for yourself',
-      _ => '',
+        ('Up for grabs', ' · log ${amount(toTake)} to claim it'),
+      AggressorStanding(toTake: final toTake?) => afterHolder(
+        '${_gapIsBig(toTake) ? '' : 'only '}${amount(toTake)} to take it',
+      ),
+      _ => (holder, ''),
     };
   }
 
@@ -439,117 +462,116 @@ class _AggressorBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isOver = challenge.isCompleted;
-    final holder = standing.holderUsername;
-    final name = holder == null
-        ? (isOver ? null : 'Up for grabs')
+    final tone = isOver
+        ? _AggressorTone.over
         : standing.viewerHolds
-        ? 'You'
-        : holder;
-    final holderTotal = standing.holderTotal;
-    final distanceLine = _distanceLine();
+        ? _AggressorTone.held
+        : _AggressorTone.contested;
+    final muted = scheme.onSurface.withValues(alpha: 0.55);
+
+    final (border, icon, label, total) = switch (tone) {
+      _AggressorTone.held => (
+        kAggressorColor.withValues(alpha: 0.6),
+        kAggressorColor,
+        kAggressorColor,
+        kAggressorColor,
+      ),
+      _AggressorTone.contested => (
+        kAggressorColor.withValues(alpha: 0.28),
+        kAggressorColor.withValues(alpha: 0.7),
+        scheme.onSurface.withValues(alpha: 0.6),
+        kAggressorColor.withValues(alpha: 0.7),
+      ),
+      _AggressorTone.over => (
+        scheme.onSurface.withValues(alpha: 0.18),
+        scheme.onSurface.withValues(alpha: 0.45),
+        scheme.onSurface.withValues(alpha: 0.5),
+        muted,
+      ),
+    };
+    // A closed challenge's window has moved on; the number wouldn't mean
+    // anything.
+    final holderTotal = isOver ? null : standing.holderTotal;
+    final (captionLead, captionRest) = _caption();
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => showAggressorInfo(context, challenge),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: kAggressorColor.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: kAggressorColor.withValues(alpha: 0.35)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Scales down rather than truncating "FINAL AGGRESSOR" or a big
+          // total on a narrow phone.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: AnimatedContainer(
+              // Brightens as the badge changes hands to the viewer.
+              duration: const Duration(milliseconds: 300),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: kAggressorColor.withValues(alpha: 0.28),
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: border),
               ),
-              child: const Icon(
-                kAggressorIcon,
-                size: 22,
-                color: kAggressorColor,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      if (name != null) ...[
-                        Flexible(
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTheme.display(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: scheme.onSurface,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          ' · ',
-                          style: AppTheme.display(
-                            fontSize: 15,
-                            color: scheme.onSurface.withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ],
-                      Text(
-                        isOver ? 'Final Aggressor' : 'Aggressor',
-                        style: AppTheme.display(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: kAggressorColor,
-                        ),
-                      ),
-                    ],
+                  Icon(kAggressorIcon, size: 13, color: icon),
+                  const SizedBox(width: 5),
+                  Text(
+                    isOver ? 'FINAL AGGRESSOR' : 'AGGRESSOR',
+                    maxLines: 1,
+                    style: AppTheme.display(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.9,
+                      color: label,
+                    ),
                   ),
-                  if (distanceLine.isNotEmpty) ...[
-                    const SizedBox(height: 2),
+                  if (holderTotal != null) ...[
+                    const SizedBox(width: 8),
                     Text(
-                      distanceLine,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTheme.display(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: scheme.onSurface.withValues(alpha: 0.75),
+                      '+${formatCount(holderTotal)}',
+                      maxLines: 1,
+                      style: AppTheme.mono(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: total,
                       ),
                     ),
                   ],
                 ],
               ),
             ),
-            // A closed challenge's window has moved on; the number wouldn't
-            // mean anything.
-            if (!isOver && holderTotal != null) ...[
-              const SizedBox(width: 10),
-              // Capped, so a huge total shrinks instead of crushing the name.
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 60),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    '+${formatCount(holderTotal)}',
-                    maxLines: 1,
-                    style: AppTheme.mono(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: kAggressorColor,
+          ),
+          if (captionLead != null || captionRest.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text.rich(
+              TextSpan(
+                children: [
+                  if (captionLead != null)
+                    TextSpan(
+                      text: captionLead,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurface.withValues(alpha: 0.85),
+                      ),
                     ),
-                  ),
-                ),
+                  TextSpan(text: captionRest),
+                ],
               ),
-            ],
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppTheme.display(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                height: 1.25,
+                color: muted,
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

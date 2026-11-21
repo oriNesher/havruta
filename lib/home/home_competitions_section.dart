@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart'
+    show GestureBinding, PointerScrollEvent, PointerSignalEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,6 +27,9 @@ import '../competitions/competition_details_screen.dart';
 // Section — owns the competitions stream
 // ─────────────────────────────────────────────
 
+/// The user's Challenges as a vertical carousel, one full-height card per
+/// page. Needs a bounded height: Home gives it everything below "My
+/// Competitions".
 class HomeCompetitionsSection extends StatefulWidget {
   final String uid;
   const HomeCompetitionsSection({super.key, required this.uid});
@@ -39,6 +44,26 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
   late final Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
   _competitionsStream;
 
+  /// Each page is this share of the height, so the next card's top peeks
+  /// in below — the hint that there's more.
+  static const _viewportFraction = 0.94;
+  static const _pageGap = 10.0;
+  static const _pageAnimation = Duration(milliseconds: 380);
+
+  final _pageController = PageController(viewportFraction: _viewportFraction);
+  int _page = 0;
+
+  /// The Challenge on screen, so it stays put when the list updates or
+  /// reorders (the stream's order is by document id, not by anything the
+  /// user sees).
+  String? _currentId;
+  Set<String>? _knownIds;
+  List<String> _ids = const [];
+
+  /// Paging from a mouse wheel / trackpad is ignored until then, so one
+  /// flick moves one card.
+  DateTime _wheelLockUntil = DateTime(0);
+
   @override
   void initState() {
     super.initState();
@@ -47,16 +72,89 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
   }
 
   @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  /// Keeps the carousel on the same Challenge across list changes, and
+  /// moves to a Challenge that just appeared (one the user created or
+  /// joined).
+  void _syncPage(List<String> ids) {
+    final known = _knownIds;
+    _knownIds = ids.toSet();
+    _ids = ids;
+    if (ids.isEmpty) return;
+
+    String? targetId;
+    var animate = false;
+    if (known != null) {
+      final added = ids.where((id) => !known.contains(id));
+      if (added.isNotEmpty) {
+        targetId = added.last;
+        animate = true;
+      }
+    }
+    targetId ??= _currentId;
+    final index = targetId == null ? -1 : ids.indexOf(targetId);
+    final target = index >= 0 ? index : _page.clamp(0, ids.length - 1);
+    _currentId = ids[target];
+    if (target == _page) return;
+    _page = target;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      if (animate) {
+        _pageController.animateToPage(
+          target,
+          duration: _pageAnimation,
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _pageController.jumpToPage(target);
+      }
+    });
+  }
+
+  bool _canMove(int direction) {
+    final next = _page + direction;
+    return next >= 0 && next < _ids.length;
+  }
+
+  void _move(int direction) {
+    if (!_canMove(direction) || !_pageController.hasClients) return;
+    _pageController.animateToPage(
+      _page + direction,
+      duration: _pageAnimation,
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _moveByWheel(int direction) {
+    final now = DateTime.now();
+    if (now.isBefore(_wheelLockUntil)) return;
+    _wheelLockUntil = now.add(const Duration(milliseconds: 450));
+    _move(direction);
+  }
+
+  Widget _card(QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+      _CompetitionCard(
+        key: ValueKey(doc.id),
+        competitionId: doc.id,
+        competition: doc.data(),
+        currentUid: widget.uid,
+        firestoreService: _firestoreService,
+      );
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
       stream: _competitionsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Column(
-            children: [
-              _SkeletonCompetitionCard(),
-              _SkeletonCompetitionCard(),
-            ],
+          return const Align(
+            alignment: Alignment.topCenter,
+            child: _SkeletonCompetitionCard(),
           );
         }
 
@@ -66,21 +164,166 @@ class _HomeCompetitionsSectionState extends State<HomeCompetitionsSection> {
         }
 
         final docs = snapshot.data ?? [];
+        _syncPage([for (final doc in docs) doc.id]);
 
-        if (docs.isEmpty) return const _NoChallengesCard();
+        if (docs.isEmpty) {
+          return const Align(
+            alignment: Alignment.topCenter,
+            child: _NoChallengesCard(),
+          );
+        }
+        // Nothing to page through: the one card takes the whole space.
+        if (docs.length == 1) return _card(docs.single);
 
-        return Column(
-          children: docs.map((doc) {
-            return _CompetitionCard(
-              key: ValueKey(doc.id),
-              competitionId: doc.id,
-              competition: doc.data(),
-              currentUid: widget.uid,
-              firestoreService: _firestoreService,
-            );
-          }).toList(),
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            PageView.builder(
+              controller: _pageController,
+              scrollDirection: Axis.vertical,
+              // First card at the top, the next one peeking in below.
+              padEnds: false,
+              itemCount: docs.length,
+              onPageChanged: (page) => setState(() {
+                _page = page;
+                _currentId = docs[page].id;
+              }),
+              itemBuilder: (context, index) => _PageHandoff(
+                canMove: _canMove,
+                onDrag: _move,
+                onWheel: _moveByWheel,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: _pageGap),
+                  child: _card(docs[index]),
+                ),
+              ),
+            ),
+            // In the page's right gutter, outside the card.
+            Positioned(
+              top: 0,
+              bottom: 0,
+              right: -11,
+              child: IgnorePointer(
+                child: Center(
+                  child: _VerticalDots(count: docs.length, current: _page),
+                ),
+              ),
+            ),
+          ],
         );
       },
+    );
+  }
+}
+
+/// Passes a page's vertical gestures on to the carousel when the scrollable
+/// inside the card (a long leaderboard) can't use them: a drag pulled past
+/// its top or bottom, or a mouse wheel / trackpad scroll it doesn't take.
+/// A leaderboard that fits its page claims no drags at all, so those reach
+/// the carousel directly.
+class _PageHandoff extends StatefulWidget {
+  final bool Function(int direction) canMove;
+  final void Function(int direction) onDrag;
+  final void Function(int direction) onWheel;
+  final Widget child;
+
+  const _PageHandoff({
+    required this.canMove,
+    required this.onDrag,
+    required this.onWheel,
+    required this.child,
+  });
+
+  @override
+  State<_PageHandoff> createState() => _PageHandoffState();
+}
+
+class _PageHandoffState extends State<_PageHandoff> {
+  /// How far past its edge an inner list has to be pulled to change cards.
+  static const _threshold = 48.0;
+
+  double _overscroll = 0;
+  bool _handedOff = false;
+
+  bool _onScroll(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    if (notification is ScrollStartNotification) {
+      _overscroll = 0;
+      _handedOff = false;
+    } else if (notification is OverscrollNotification &&
+        notification.dragDetails != null) {
+      // Clamping physics (Android, web): the list reports what it refused.
+      _overscroll += notification.overscroll;
+    } else if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      // Bouncing physics (iOS): the list itself goes past its edge.
+      final metrics = notification.metrics;
+      _overscroll = metrics.pixels > metrics.maxScrollExtent
+          ? metrics.pixels - metrics.maxScrollExtent
+          : metrics.pixels < metrics.minScrollExtent
+          ? metrics.pixels - metrics.minScrollExtent
+          : 0;
+    }
+    if (!_handedOff && _overscroll.abs() > _threshold) {
+      _handedOff = true;
+      widget.onDrag(_overscroll > 0 ? 1 : -1);
+    }
+    return false;
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || event.scrollDelta.dy == 0) return;
+    final direction = event.scrollDelta.dy > 0 ? 1 : -1;
+    if (!widget.canMove(direction)) return;
+    // Registered from inside the page, so an inner list that can still
+    // scroll registers first and keeps the wheel; otherwise this beats
+    // the carousel's own pixel scroll, which would just snap back.
+    GestureBinding.instance.pointerSignalResolver.register(
+      event,
+      (_) => widget.onWheel(direction),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerSignal: _onPointerSignal,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Where you are in the carousel: a dot per Challenge, the current one a
+/// taller pill — the vertical twin of the progress carousel's dots.
+class _VerticalDots extends StatelessWidget {
+  final int count;
+  final int current;
+
+  const _VerticalDots({required this.count, required this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < count; i++)
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.symmetric(vertical: 3),
+            width: 6,
+            height: i == current ? 16 : 6,
+            decoration: BoxDecoration(
+              color: i == current
+                  ? colorScheme.primary
+                  : colorScheme.onSurface.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -359,10 +602,11 @@ class _CompetitionCard extends StatelessWidget {
     final daysLeft = _daysLeft(challenge);
     final goalChip = _goalChipLabel(challenge);
 
+    // Fills its carousel page: the fixed parts keep their size and the
+    // Your Progress / Leaderboard area takes whatever height is left.
     return GestureDetector(
       onTap: () => _openDetails(context, challenge),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
@@ -465,10 +709,12 @@ class _CompetitionCard extends StatelessWidget {
                 onlyAddressedToMe: challenge.isLarge,
               ),
               // ── Participants ─────────────────────────
-              _ParticipantsList(
-                challenge: challenge,
-                currentUid: currentUid,
-                firestoreService: firestoreService,
+              Expanded(
+                child: _ParticipantsList(
+                  challenge: challenge,
+                  currentUid: currentUid,
+                  firestoreService: firestoreService,
+                ),
               ),
             ],
           ),
@@ -709,22 +955,32 @@ class _ParticipantsListState extends State<_ParticipantsList> {
       stream: _stream,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          // Skeleton rows match the exact height of real _ParticipantRow widgets,
-          // so the card does not change size when real data arrives.
-          return const Column(
-            children: [
-              _SkeletonParticipantRow(),
-              _SkeletonParticipantRow(isLast: true),
-            ],
+          return const Align(
+            alignment: Alignment.topCenter,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _SkeletonParticipantRow(),
+                _SkeletonParticipantRow(isLast: true),
+              ],
+            ),
           );
         }
         if (snap.hasError) {
           debugPrint('Participants stream error: ${snap.error}');
-          return Text('Error: ${snap.error}');
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Text('Error: ${snap.error}'),
+          );
         }
 
         final docs = snap.data?.docs ?? [];
-        if (docs.isEmpty) return const Text('No participants yet');
+        if (docs.isEmpty) {
+          return const Align(
+            alignment: Alignment.topLeft,
+            child: Text('No participants yet'),
+          );
+        }
 
         final challenge = widget.challenge;
         final participants = rankParticipants(
@@ -786,19 +1042,21 @@ class _ParticipantsListState extends State<_ParticipantsList> {
         return Column(
           children: [
             // A participant sees their own progress first, the leaderboard a
-            // swipe away; anyone else just the leaderboard.
-            if (myData.isNotEmpty)
-              _ProgressCarousel(
-                progress: PersonalProgressPanel(
-                  challenge: challenge,
-                  me: myData,
-                  compact: true,
-                  participants: participants,
-                ),
-                leaderboard: leaderboard,
-              )
-            else
-              leaderboard,
+            // swipe away; anyone else just the leaderboard. Either way it
+            // takes the card's spare height.
+            Expanded(
+              child: myData.isNotEmpty
+                  ? _ProgressCarousel(
+                      progress: PersonalProgressPanel(
+                        challenge: challenge,
+                        me: myData,
+                        compact: true,
+                        participants: participants,
+                      ),
+                      leaderboard: leaderboard,
+                    )
+                  : SingleChildScrollView(child: leaderboard),
+            ),
             // Pinned below the (re-orderable) rows instead of on "my" row
             // itself — otherwise overtaking someone reshuffles the
             // leaderboard mid-tap and a spammed tap can land on the card
@@ -818,11 +1076,13 @@ class _ParticipantsListState extends State<_ParticipantsList> {
 // Progress carousel — your progress first, the leaderboard a swipe away
 // ─────────────────────────────────────────────
 
-/// Two pages exactly as tall as [progress]: the viewer's own progress, then
-/// [leaderboard], which scrolls inside that height when it's longer — so
-/// the card (and the Add Progress button under it) never changes size on a
-/// swipe. Always opens on the progress page. Taps anywhere but the dots
-/// fall through to the card, which opens Challenge Details.
+/// Two pages filling the height the card gives it: the viewer's own
+/// progress, centred, then [leaderboard], which scrolls inside that height
+/// when it's longer — so the card (and the Add Progress button under it)
+/// never changes size on a swipe. A leaderboard that fits claims no
+/// vertical drags, so those still change Challenges. Always opens on the
+/// progress page. Taps anywhere but the dots fall through to the card,
+/// which opens Challenge Details.
 class _ProgressCarousel extends StatefulWidget {
   final Widget progress;
   final Widget leaderboard;
@@ -850,31 +1110,16 @@ class _ProgressCarouselState extends State<_ProgressCarousel> {
 
     return Column(
       children: [
-        Stack(
-          children: [
-            // An invisible copy of the progress view sets the height of both
-            // pages.
-            SizedBox(
-              width: double.infinity,
-              child: Visibility(
-                visible: false,
-                maintainSize: true,
-                maintainAnimation: true,
-                maintainState: true,
-                child: widget.progress,
-              ),
-            ),
-            Positioned.fill(
-              child: PageView(
-                controller: _controller,
-                onPageChanged: (page) => setState(() => _page = page),
-                children: [
-                  widget.progress,
-                  SingleChildScrollView(child: widget.leaderboard),
-                ],
-              ),
-            ),
-          ],
+        Expanded(
+          child: PageView(
+            controller: _controller,
+            onPageChanged: (page) => setState(() => _page = page),
+            children: [
+              // Scrolls only if a very short screen can't fit it.
+              Center(child: SingleChildScrollView(child: widget.progress)),
+              SingleChildScrollView(child: widget.leaderboard),
+            ],
+          ),
         ),
         const SizedBox(height: 6),
         Row(
